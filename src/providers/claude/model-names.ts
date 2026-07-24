@@ -22,8 +22,9 @@ const DISPLAY_NAMES: Record<string, string> = {
   "gpt-5.4-pro": "GPT-5.4 Pro",
   "gpt-5.3-codex": "GPT-5.3 Codex",
 
-  // Current Claude generation (June 2026)
+  // Current Claude generation (July 2026)
   "claude-fable-5": "Claude Fable 5",
+  "claude-opus-5": "Claude Opus 5",
   "claude-opus-4-8": "Claude Opus 4.8",
   "claude-opus-4-7": "Claude Opus 4.7",
   "claude-sonnet-4-6": "Claude Sonnet 4.6",

@@ -36,9 +36,13 @@ export interface ModelPricing {
 }
 
 const PRICING: Record<string, ModelPricing> = {
-  // Current generation (June 2026)
-  // Fable 5 is the new top tier above Opus — $10/$50 per MTok.
+  // Current generation (July 2026)
+  // Fable 5 is the top tier above Opus at $10/$50 per MTok.
+  // Opus 5 fast mode uses the same model ID at 2x rates. Claude transcripts do
+  // not currently expose a speed discriminator here, so this table uses the
+  // standard rate rather than guessing which requests were accelerated.
   "claude-fable-5":     { input: 10, output: 50, cacheWrite: 12.50, cacheRead: 1.00 },
+  "claude-opus-5":      { input: 5,  output: 25, cacheWrite: 6.25, cacheRead: 0.50 },
   "claude-opus-4-8":    { input: 5,  output: 25, cacheWrite: 6.25, cacheRead: 0.50 },
   "claude-opus-4-7":    { input: 5,  output: 25, cacheWrite: 6.25, cacheRead: 0.50 },
   "claude-sonnet-5":    { input: 3,  output: 15, cacheWrite: 3.75, cacheRead: 0.30 },
@@ -76,10 +80,10 @@ export function pricingFingerprintSource(): string {
 
 /**
  * Anthropic model IDs come in three flavors:
- *   - Alias:           "claude-opus-4-8"
+ *   - Alias:           "claude-opus-5"
  *   - Snapshot:        "claude-haiku-4-5-20251001"
- *   - Context variant: "claude-opus-4-8[1m]" (1M-context routing — same
- *     standard pricing, no long-context premium)
+ *   - Context variant: "claude-opus-5[1m]" (1M-context routing with the same
+ *     standard pricing and no long-context premium)
  * Strip the bracket suffix first, then an 8-digit date suffix, so every
  * shape resolves to the same table entry. Without the bracket strip, [1m]
  * sessions fail the lookup and silently bill at $0.

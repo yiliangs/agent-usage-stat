@@ -5,19 +5,50 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { UsageCalculator } from "../dist/providers/claude/usage-calculator.js";
 
-function assistant(id, usage) {
+function assistant(id, usage, model = "gpt-5.6-sol") {
   return JSON.stringify({
     type: "assistant",
     timestamp: "2026-07-18T00:00:00.000Z",
     message: {
       id,
       role: "assistant",
-      model: "gpt-5.6-sol",
+      model,
       content: [{ type: "text", text: "done" }],
       usage,
     },
   });
 }
+
+test("Claude Opus 5 aliases use current Anthropic pricing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-opus-5-"));
+  const sessionId = "55555555-5555-5555-5555-555555555555";
+  const path = join(dir, `${sessionId}.jsonl`);
+  const usage = {
+    input_tokens: 1_000,
+    cache_creation_input_tokens: 2_000,
+    cache_read_input_tokens: 400,
+    output_tokens: 100,
+  };
+
+  await writeFile(
+    path,
+    assistant("resp_opus_5", usage, "claude-opus-5-20260724[1m]"),
+    "utf8",
+  );
+
+  try {
+    const calculator = new UsageCalculator();
+    const result = await calculator.calculate(path, sessionId);
+
+    assert.equal(result.totalTokens, 3_500);
+    assert.equal(Number(result.totalCost.toFixed(6)), 0.0202);
+    assert.deepEqual(result.modelsUsed, ["claude-opus-5"]);
+    assert.equal(result.modelBreakdowns[0].displayName, "Claude Opus 5");
+    assert.deepEqual(calculator.getUnknownModels(), []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test("Claude transcripts dedupe GPT responses and apply OpenAI request pricing", async () => {
   const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-claude-gpt-"));
