@@ -40,11 +40,22 @@ shell command wrappers. The explicit fallback is
 `agent-usage-stat run claude -- <arguments>`, with `codex` or `claudex` accepted
 in place of `claude`.
 
-After initialization, use the dedicated one-click portal launcher whenever you
-want a fresh portal: `portal/Agent-Usage-Stat.bat` on Windows or
-`portal/Agent-Usage-Stat.command` on macOS. It stops the previous local server,
-reconciles local Claude and Codex sessions into the configured `logbook.d/`, rebuilds the
-browser data, and opens the portal.
+The portal runs at `http://127.0.0.1:4179`. Its **Refresh data** button scans
+local Claude and Codex transcripts, reconciles changed sessions into the configured
+`logbook.d/`, rebuilds the browser snapshot, and reloads the updated view.
+
+On Windows, keep the portal available after login with:
+
+```bash
+aus portal enable
+```
+
+Use `aus portal status` or `aus portal disable` to inspect or disable login
+startup. Disabling startup leaves the currently running portal available until it
+is stopped or the user logs out. The dedicated launchers remain safe fallbacks:
+`portal/Agent-Usage-Stat.bat` on Windows and `portal/Agent-Usage-Stat.command`
+on macOS. If the server is already running, the launcher only opens it; otherwise,
+it starts a foreground server.
 
 ## What you get
 
@@ -60,16 +71,20 @@ Each completed session becomes one JSON file under `<your-folder>/logbook.d/`. Y
 
 ## Terminal alternative
 
+From a source checkout, link the short `aus` command once:
+
 ```bash
-npm install -g agent-usage-stat
-agent-usage-stat setup
-agent-usage-stat
+npm link
+aus setup
+aus
 ```
 
-`setup` asks for the data folder only. To change it later:
+`aus` and `aus portal` both open the portal. The full `agent-usage-stat` command
+remains available for scripts and compatibility. `setup` asks for the data folder
+only. To change it later:
 
 ```bash
-agent-usage-stat config --set dataRoot="<new-folder>"
+aus config --set dataRoot="<new-folder>"
 ```
 
 ## Development

@@ -9,6 +9,7 @@ npm test
 npm run build
 npm run build:portal
 node bin/agent-usage-stat.js portal
+node bin/agent-usage-stat.js portal enable
 node bin/agent-usage-stat.js capture --provider codex --session <id>
 node bin/agent-usage-stat.js setup
 ```

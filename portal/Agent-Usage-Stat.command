@@ -24,17 +24,16 @@ node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 20 ? 0 : 1)
   false
 }
 
-echo ""
-echo "Stopping any previous portal server..."
-pids="$(lsof -ti tcp:4179 2>/dev/null || true)"
-if [ -n "$pids" ]; then
-  # shellcheck disable=SC2086
-  kill $pids 2>/dev/null || true
+if lsof -ti tcp:4179 >/dev/null 2>&1; then
+  echo ""
+  echo "Agent Usage Stat is already running at http://127.0.0.1:4179."
+  open "http://127.0.0.1:4179"
+  exit 0
 fi
 
 echo ""
 echo "Starting Agent Usage Stat at http://127.0.0.1:4179..."
-echo "Keep this window open while using the portal."
+echo "Keep this window open while using the fallback server."
 echo ""
 trap - ERR
-node "../bin/agent-usage-stat.js" portal
+node "../bin/agent-usage-stat.js" portal --port 4179
