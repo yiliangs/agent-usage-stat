@@ -44,14 +44,18 @@ program
 
 program
   .command("portal")
-  .description("Open the local usage portal")
+  .description("Open the portal or manage its Windows login task")
+  .argument("[action]", "Persistence action: enable, disable, or status")
   .option("--port <number>", "Local server port", "4179")
   .option("--no-open", "Start without opening a browser")
   .option("--no-sync", "Skip agent session reconciliation")
-  .action(async (options) => {
-    if (options.sync !== false) {
-      const { SyncCommand } = await import("./commands/sync.js");
-      await new SyncCommand().execute({ quiet: true });
+  .action(async (action, options) => {
+    if (action) {
+      const { PortalAutostartCommand } = await import(
+        "./commands/portal-autostart.js"
+      );
+      await new PortalAutostartCommand().execute(action, options);
+      return;
     }
     const { PortalCommand } = await import("./commands/portal.js");
     await new PortalCommand().execute(options);

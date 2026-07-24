@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import { detectInstalledAgents } from "../dist/commands/setup.js";
+import { portalTaskScript } from "../dist/commands/portal-autostart.js";
 import { buildPortalData } from "../portal/scripts/build-data.mjs";
 import { detectProvider } from "../dist/index.js";
 
@@ -421,15 +422,37 @@ test("health check validates each shard against its provider pricing", async () 
   }
 });
 
-test("one-click portal launchers delegate to the packaged portal command", async () => {
+test("the package exposes the short aus terminal command", async () => {
+  const manifest = JSON.parse(
+    await readFile(join(process.cwd(), "package.json"), "utf8"),
+  );
+  assert.equal(manifest.bin.aus, "bin/agent-usage-stat.js");
+  assert.equal(manifest.bin["agent-usage-stat"], manifest.bin.aus);
+});
+
+test("one-click portal launchers preserve the persistent server when available", async () => {
   for (const launcher of [
     "portal/Agent-Usage-Stat.bat",
     "portal/Agent-Usage-Stat.command",
   ]) {
     const content = await readFile(join(process.cwd(), launcher), "utf8");
     assert.match(content, /bin[\\/]agent-usage-stat\.js["']? portal/);
-    assert.doesNotMatch(content, /npm run data|npx vite/);
+    assert.match(content, /127\.0\.0\.1:4179/);
+    assert.doesNotMatch(content, /npm run data|npx vite|taskkill|kill \$pids/);
   }
+});
+
+test("portal autostart runs a hidden restartable login task", () => {
+  const task = portalTaskScript(
+    "C:\\Program Files\\nodejs\\node.exe",
+    "C:\\tools\\agent-usage-stat\\bin\\agent-usage-stat.js",
+  );
+  assert.match(task, /New-ScheduledTaskAction/);
+  assert.match(task, /agent-usage-stat\.js" portal --no-open --port 4179/);
+  assert.match(task, /New-ScheduledTaskTrigger -AtLogOn/);
+  assert.match(task, /ExecutionTimeLimit \(\[TimeSpan\]::Zero\)/);
+  assert.match(task, /RestartCount 3/);
+  assert.match(task, /Start-ScheduledTask/);
 });
 
 function runCli(args, home) {

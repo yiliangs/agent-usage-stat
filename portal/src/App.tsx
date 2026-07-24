@@ -73,6 +73,8 @@ export function App() {
   const [drill, setDrill] = useState<any>(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchVal, setSearchVal] = useState('')
+  const [refreshState, setRefreshState] = useState<'idle' | 'running' | 'success' | 'error'>('idle')
+  const [refreshMessage, setRefreshMessage] = useState('')
   const searchRef = useRef<any>(null)
 
   useEffect(() => {
@@ -151,12 +153,41 @@ export function App() {
     return { projects, sessions: sess }
   }, [searchVal, ready])
 
+  const refreshData = async () => {
+    if (refreshState === 'running') return
+    setRefreshState('running')
+    setRefreshMessage('Scanning agent sessions')
+    try {
+      const base = import.meta.env.BASE_URL || '/'
+      const response = await fetch(base + 'api/refresh', { method: 'POST' })
+      const result = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(result?.error || `Refresh failed (${response.status})`)
+      const updated = Number(result?.updated || 0)
+      setRefreshState('success')
+      setRefreshMessage(updated ? `${updated} session${updated === 1 ? '' : 's'} updated` : 'Already current')
+      window.setTimeout(() => location.reload(), 450)
+    } catch (error) {
+      setRefreshState('error')
+      setRefreshMessage(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const refreshControl = (
+    <div className={'refresh-control ' + refreshState}>
+      <button className="refreshbtn" onClick={refreshData} disabled={refreshState === 'running'}>
+        {refreshState === 'running' ? 'Refreshing' : 'Refresh data'}
+      </button>
+      {refreshMessage && <span className="refresh-message" title={refreshMessage}>{refreshMessage}</span>}
+    </div>
+  )
+
   if (loadErr)
     return (
       <div className="app" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="zero" style={{ textAlign: 'center' }}>
           <div className="big">no data</div>
-          {loadErr}
+          <div>{loadErr}</div>
+          {refreshControl}
         </div>
       </div>
     )
@@ -171,7 +202,8 @@ export function App() {
       <div className="app" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="zero" style={{ textAlign: 'center' }}>
           <div className="big">Ready for your first session</div>
-          Use Claude Code or Codex, then open Agent Usage Stat again.
+          <div>Use Claude Code or Codex, then refresh the ledger.</div>
+          {refreshControl}
         </div>
       </div>
     )
@@ -241,6 +273,7 @@ export function App() {
           )}
         </div>
         <span className="sp" />
+        {refreshControl}
         <div className="fresh">
           <span className="dot" />
           Built <b>{fmt.rel(LH.BUILD.getTime())}</b>

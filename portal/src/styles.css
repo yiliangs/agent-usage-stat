@@ -69,6 +69,24 @@ button{ font-family:inherit; }
 .gsearch-it .nm{ font-size:12.5px; color:var(--txt0); }
 .gsearch-it .meta{ margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--txt2); }
 
+/* portal refresh */
+.refresh-control{ display:flex; align-items:center; gap:8px; min-width:0; }
+.refreshbtn{ height:30px; padding:0 11px; border:1px solid var(--border-default); border-radius:7px;
+  background:var(--bg2); color:var(--txt1); font-family:var(--mono); font-size:9px; letter-spacing:.1em;
+  text-transform:uppercase; cursor:pointer; white-space:nowrap; transition:border-color .12s,color .12s,background .12s; }
+.refreshbtn:hover:not(:disabled){ border-color:var(--border-strong); color:var(--txt0); background:var(--bg3); }
+.refreshbtn:disabled{ cursor:wait; color:var(--txt-disabled); }
+.refresh-control.running .refreshbtn::before{ content:''; display:inline-block; width:6px; height:6px; margin-right:7px;
+  border:1px solid var(--txt-disabled); border-top-color:var(--lime); border-radius:50%; animation:refresh-spin .7s linear infinite; }
+.refresh-control.success .refreshbtn{ border-color:rgba(134,176,122,.5); }
+.refresh-control.error .refreshbtn{ border-color:rgba(202,107,107,.55); }
+.refresh-message{ max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-family:var(--mono); font-size:9px; color:var(--txt2); }
+.refresh-control.success .refresh-message{ color:var(--good); }
+.refresh-control.error .refresh-message{ color:var(--bad); }
+.zero .refresh-control{ justify-content:center; margin-top:18px; }
+@keyframes refresh-spin{ to{ transform:rotate(360deg); } }
+
 /* freshness pill */
 .fresh{ display:inline-flex; align-items:center; gap:9px; font-family:var(--mono); font-size:10px;
   letter-spacing:.06em; text-transform:uppercase; color:var(--txt2); padding:6px 12px;

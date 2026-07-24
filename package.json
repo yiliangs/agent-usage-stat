@@ -19,7 +19,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "agent-usage-stat": "bin/agent-usage-stat.js"
+    "agent-usage-stat": "bin/agent-usage-stat.js",
+    "aus": "bin/agent-usage-stat.js"
   },
   "files": [
     "dist",
