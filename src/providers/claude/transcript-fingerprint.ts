@@ -4,7 +4,7 @@ import { pricingFingerprintSource } from "./pricing.js";
 import { findSessionTranscriptFiles } from "./session-files.js";
 
 const TAIL_BYTES = 64 * 1024;
-const USAGE_ALGORITHM_VERSION = "claude-usage-v2";
+const USAGE_ALGORITHM_VERSION = "claude-usage-v3";
 const SNAPSHOT_VERSION = createHash("sha256")
   .update(USAGE_ALGORITHM_VERSION)
   .update(pricingFingerprintSource())

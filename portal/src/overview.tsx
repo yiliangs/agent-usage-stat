@@ -41,7 +41,7 @@ export function Overview({ sessions, prevSessions, win, bks, filters, toggleFilt
       <div className="grid" style={{ gridTemplateColumns: '2fr 1fr', marginTop: 14 }}>
         <LHU.Card
           title="Spend Over Time"
-          hint={'usd · per ' + unit + ' · by primary model'}
+          hint={'usd · per ' + unit + ' · by response model'}
           right={<LHU.Legend feats={costStack} hidden={hidden} onToggle={toggleHide} />}
         >
           <LHC.StackedBars series={costStack} labels={bks.map((b: any) => b.label)} height={250} hidden={hidden} yFmt={fmt.usdC} />

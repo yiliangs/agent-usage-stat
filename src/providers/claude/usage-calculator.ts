@@ -9,7 +9,11 @@ import {
 } from "./transcript-fingerprint.js";
 import { expandHome } from "../../utils/paths.js";
 import type { TranscriptMessage } from "./transcript-format.js";
-import type { SessionUsage, ModelBreakdown } from "../../types/session.js";
+import type {
+  SessionUsage,
+  ModelBreakdown,
+  TurnUsage,
+} from "../../types/session.js";
 
 interface ModelTotals {
   inputTokens: number;
@@ -17,6 +21,11 @@ interface ModelTotals {
   cacheCreationTokens: number;
   cacheReadTokens: number;
   cost: number;
+}
+
+interface TemporalUsage {
+  turns: TurnUsage[];
+  complete: boolean;
 }
 
 /**
@@ -62,12 +71,14 @@ export class UsageCalculator {
     // a billing event must count exactly once no matter where it appears.
     const seenBillingKeys = new Set<string>();
     const fingerprintParts: string[] = [];
+    const temporal: TemporalUsage = { turns: [], complete: true };
 
     for (const file of await findSessionTranscriptFiles(expanded, sessionId)) {
       const part = await this.accumulateFile(
         file,
         totalsByModel,
         seenBillingKeys,
+        temporal,
       );
       if (part) fingerprintParts.push(part);
     }
@@ -114,6 +125,11 @@ export class UsageCalculator {
       totalCost,
       modelsUsed: breakdowns.map((b) => b.modelName),
       modelBreakdowns: breakdowns,
+      turns: temporal.complete
+        ? temporal.turns.sort(
+            (a, b) => Date.parse(a.endTime) - Date.parse(b.endTime),
+          )
+        : undefined,
       sourceFingerprint: fingerprintTranscriptParts(fingerprintParts),
     };
   }
@@ -131,6 +147,7 @@ export class UsageCalculator {
     path: string,
     totalsByModel: Map<string, ModelTotals>,
     seenBillingKeys: Set<string>,
+    temporal: TemporalUsage,
   ): Promise<string | null> {
     let content: string;
     try {
@@ -182,6 +199,22 @@ export class UsageCalculator {
       );
       if (!pricing) this.unknownModels.add(model);
 
+      const cost = pricing
+        ? (inputTokens * pricing.input +
+            outputTokens * pricing.output +
+            cacheCreationTokens * pricing.cacheWrite +
+            cacheReadTokens * pricing.cacheRead) /
+          1_000_000
+        : 0;
+      const breakdown: ModelBreakdown = {
+        modelName: model,
+        displayName: displayModelName(model),
+        inputTokens,
+        outputTokens,
+        cacheCreationTokens,
+        cacheReadTokens,
+        cost,
+      };
       const totals = totalsByModel.get(model) ?? {
         inputTokens: 0,
         outputTokens: 0,
@@ -193,15 +226,34 @@ export class UsageCalculator {
       totals.outputTokens += outputTokens;
       totals.cacheCreationTokens += cacheCreationTokens;
       totals.cacheReadTokens += cacheReadTokens;
-      if (pricing) {
-        totals.cost +=
-          (inputTokens * pricing.input +
-            outputTokens * pricing.output +
-            cacheCreationTokens * pricing.cacheWrite +
-            cacheReadTokens * pricing.cacheRead) /
-          1_000_000;
-      }
+      totals.cost += cost;
       totalsByModel.set(model, totals);
+
+      if (!msg.timestamp || Number.isNaN(Date.parse(msg.timestamp))) {
+        temporal.complete = false;
+      } else {
+        temporal.turns.push({
+          id:
+            msgId ||
+            msg.uuid ||
+            msg.requestId ||
+            `claude-response-${temporal.turns.length + 1}`,
+          startTime: msg.timestamp,
+          endTime: msg.timestamp,
+          inputTokens,
+          outputTokens,
+          cacheCreationTokens,
+          cacheReadTokens,
+          totalTokens:
+            inputTokens +
+            outputTokens +
+            cacheCreationTokens +
+            cacheReadTokens,
+          totalCost: cost,
+          modelsUsed: [model],
+          modelBreakdowns: [breakdown],
+        });
+      }
     }
     return fingerprintTranscriptContentPart(content);
   }

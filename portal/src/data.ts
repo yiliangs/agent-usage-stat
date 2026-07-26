@@ -55,7 +55,10 @@ export function modelShort(model: string): string {
     const tier = gptTier[2]
     return `${gptTier[1]} ${tier.charAt(0).toUpperCase()}${tier.slice(1)}`
   }
-  if (/^gpt-/i.test(model)) return model.replace(/^gpt-/i, 'GPT ')
+  if (/^gpt-/i.test(model)) {
+    const parts = model.replace(/^gpt-/i, '').split('-')
+    return `GPT ${parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')}`
+  }
   if (model === 'codex-auto-review') return 'Auto Review'
   const m = (model || '').replace(/^claude-/, '').replace(/\[.*\]$/, '')
   const parts = m.split('-')

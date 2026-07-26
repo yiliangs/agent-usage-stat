@@ -9,20 +9,30 @@
    (and tokens) to its PRIMARY model family (first model id listed). Token-
    TYPE rollups (input/output/cache) are exact — those columns are per session.
    ============================================================ */
-import { LH, familyOf } from './data'
+import { LH, familyOf, modelShort } from './data'
 import type { Filters, RangeKey } from './types'
 
+function startOfLocalDay(ms: number) {
+  const date = new Date(ms)
+  date.setHours(0, 0, 0, 0)
+  return date.getTime()
+}
+
+function addLocalDays(ms: number, days: number) {
+  const date = new Date(ms)
+  date.setDate(date.getDate() + days)
+  return date.getTime()
+}
+
 function windowFor(range: RangeKey) {
-  const DAY = LH.DAY
   const END = LH.BUILD.getTime()
   const days = range === '7d' ? 7 : range === '14d' ? 14 : range === '30d' ? 30 : range === '90d' ? 90 : LH.SPAN + 1
-  // Calendar window keyed on END time, anchored to UTC dates so this matches the
-  // terminal statusline (which slices the UTC ISO timestamp) to the dollar.
-  // start = UTC midnight of (today − days) ≡ `date -u -d "<days> days ago"`.
-  const c = new Date(END - days * DAY)
-  const start = Date.UTC(c.getUTCFullYear(), c.getUTCMonth(), c.getUTCDate())
+  // Portal labels are local calendar dates, so filtering and buckets must use
+  // the same local-midnight boundary. Mixing UTC windows with local labels can
+  // move late-evening usage into the neighboring displayed day.
+  const start = addLocalDays(startOfLocalDay(END), -days)
   const unit = days <= 92 ? 'day' : 'week'
-  return { days, start, end: END, prevStart: start - days * DAY, prevEnd: start, unit }
+  return { days, start, end: END, prevStart: addLocalDays(start, -days), prevEnd: start, unit }
 }
 
 // apply all filters → array of sessions
@@ -59,27 +69,22 @@ function applyFilters(f: Filters) {
 
 // ---- time bucketing ----
 function buckets(win: any) {
-  const DAY = LH.DAY
   const out: any[] = []
   if (win.unit === 'day') {
-    let d = new Date(win.start)
-    d.setHours(0, 0, 0, 0)
-    const end = new Date(win.end)
-    while (d <= end) {
-      const s = d.getTime()
-      out.push({ start: s, end: s + DAY, label: LH.fmt.date(s) })
-      d = new Date(s + DAY)
+    let start = startOfLocalDay(win.start)
+    while (start <= win.end) {
+      const end = addLocalDays(start, 1)
+      out.push({ start, end, label: LH.fmt.date(start) })
+      start = end
     }
   } else {
-    let d = new Date(win.start)
-    d.setHours(0, 0, 0, 0)
-    const wd = (d.getDay() + 6) % 7
-    d = new Date(d.getTime() - wd * DAY)
-    const end = new Date(win.end)
-    while (d <= end) {
-      const s = d.getTime()
-      out.push({ start: s, end: s + 7 * DAY, label: LH.fmt.date(s) })
-      d = new Date(s + 7 * DAY)
+    const first = new Date(startOfLocalDay(win.start))
+    const weekdayFromMonday = (first.getDay() + 6) % 7
+    let start = addLocalDays(first.getTime(), -weekdayFromMonday)
+    while (start <= win.end) {
+      const end = addLocalDays(start, 7)
+      out.push({ start, end, label: LH.fmt.date(start) })
+      start = end
     }
   }
   return out
@@ -187,17 +192,20 @@ function cacheHitSeries(sessions: any[], bks: any[]) {
 function modelMix(sessions: any[]) {
   const FAMS = LH.FAMS
   const m: any = {}
-  FAMS.forEach((f) => (m[f.key] = { cost: 0, tokens: 0, sessions: 0 }))
+  FAMS.forEach((f) => (m[f.key] = { cost: 0, tokens: 0, sessions: 0, models: new Set<string>() }))
   let totCost = 0, totTok = 0
   for (const s of sessions) {
     m[s.fam].cost += s.cost
     m[s.fam].tokens += s.totalTokens
     m[s.fam].sessions += 1
+    if (s.primaryModel) m[s.fam].models.add(modelShort(s.primaryModel))
     totCost += s.cost
     totTok += s.totalTokens
   }
   return FAMS.map((f) => ({
-    key: f.key, label: f.label, color: f.color, border: f.border,
+    key: f.key,
+    label: f.key === 'gpt' && m[f.key].models.size ? [...m[f.key].models].sort().join(' / ') : f.label,
+    color: f.color, border: f.border,
     cost: m[f.key].cost, tokens: m[f.key].tokens, sessions: m[f.key].sessions,
     share: totCost ? m[f.key].cost / totCost : 0,
     tokShare: totTok ? m[f.key].tokens / totTok : 0,

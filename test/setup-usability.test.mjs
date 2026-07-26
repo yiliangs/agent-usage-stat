@@ -349,7 +349,7 @@ test("sync backfills Claude sessions and fingerprints recursive subagent usage",
     assert.equal(second.code, 0, second.output);
     const repriced = JSON.parse(await readFile(shard, "utf8"));
     assert.equal(repriced.total_cost_usd, 0.012);
-    assert.match(repriced.source_fingerprint, /^claude-usage-v2:/);
+    assert.match(repriced.source_fingerprint, /^claude-usage-v3:/);
 
     const beforeThirdSync = await stat(shard);
     const third = await runCli(["sync", "--quiet"], home);
