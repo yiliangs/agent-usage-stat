@@ -9,7 +9,7 @@
    (and tokens) to its PRIMARY model family (first model id listed). Token-
    TYPE rollups (input/output/cache) are exact — those columns are per session.
    ============================================================ */
-import { LH, familyOf } from './data'
+import { LH, familyOf, modelShort } from './data'
 import type { Filters, RangeKey } from './types'
 
 function startOfLocalDay(ms: number) {
@@ -192,17 +192,20 @@ function cacheHitSeries(sessions: any[], bks: any[]) {
 function modelMix(sessions: any[]) {
   const FAMS = LH.FAMS
   const m: any = {}
-  FAMS.forEach((f) => (m[f.key] = { cost: 0, tokens: 0, sessions: 0 }))
+  FAMS.forEach((f) => (m[f.key] = { cost: 0, tokens: 0, sessions: 0, models: new Set<string>() }))
   let totCost = 0, totTok = 0
   for (const s of sessions) {
     m[s.fam].cost += s.cost
     m[s.fam].tokens += s.totalTokens
     m[s.fam].sessions += 1
+    if (s.primaryModel) m[s.fam].models.add(modelShort(s.primaryModel))
     totCost += s.cost
     totTok += s.totalTokens
   }
   return FAMS.map((f) => ({
-    key: f.key, label: f.label, color: f.color, border: f.border,
+    key: f.key,
+    label: f.key === 'gpt' && m[f.key].models.size ? [...m[f.key].models].sort().join(' / ') : f.label,
+    color: f.color, border: f.border,
     cost: m[f.key].cost, tokens: m[f.key].tokens, sessions: m[f.key].sessions,
     share: totCost ? m[f.key].cost / totCost : 0,
     tokShare: totTok ? m[f.key].tokens / totTok : 0,
