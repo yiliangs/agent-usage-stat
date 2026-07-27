@@ -1,6 +1,20 @@
 const DAY = 86_400_000
 const RANGE_DAYS = { '07D': 7, '14D': 14, '30D': 30, '90D': 90 }
-const state = { sessions: [], meta: null, current: [], range: '30D', spendView: 'heatmap', projectView: 'overview', rhythmView: 'week', rhythmAnchor: null, focusFamily: null }
+const state = {
+  sessions: [],
+  meta: null,
+  current: [],
+  range: '30D',
+  view: 'overview',
+  spendView: 'heatmap',
+  projectView: 'overview',
+  rhythmView: 'week',
+  rhythmAnchor: null,
+  focusFamily: null,
+  projectSort: { key: 'cost', direction: -1 },
+  sessionSort: { key: 'start', direction: -1 },
+  sessionQuery: '',
+}
 
 const MODEL_STYLES = {
   fable: { base: '#CE604A' },
@@ -226,7 +240,9 @@ function render() {
   renderTopology(current)
   renderTokens(currentTotals)
   renderWorkRhythm(state.sessions, period)
+  renderAnalysisViews(current, previous, period)
   applyProjectView()
+  applyPortalView()
   bindPageInteractions()
 }
 
@@ -482,6 +498,246 @@ function projectRows(sessions) {
     ...project,
     family: Object.entries(project.families).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other',
   })).sort((a, b) => b.value - a.value)
+}
+
+function renderAnalysisViews(current, previous, period) {
+  renderSpendAnalysis(current, previous, period)
+  renderTokenAnalysis(current, previous, period)
+  renderProjectAnalysis(current)
+  renderSessionAnalysis(current)
+}
+
+function renderKpis(selector, items) {
+  $(selector).innerHTML = items.map((item) => `
+    <div class="analysis-kpi">
+      <span class="micro">${escapeHtml(item.label)}</span>
+      <b>${escapeHtml(item.value)}</b>
+      <small>${escapeHtml(item.note || '')}</small>
+    </div>`).join('')
+}
+
+function dailyUsageRows(sessions, period) {
+  const count = clamp(Math.ceil((period.end - period.start) / DAY), 7, 30)
+  const rows = makeCalendarBuckets(sessions, period.end, count).map((bucket) => ({
+    ...bucket,
+    input: 0,
+    output: 0,
+    cacheCreate: 0,
+    cacheRead: 0,
+  }))
+  const byDate = new Map(rows.map((row) => [row.key, row]))
+  for (const session of sessions) {
+    const row = byDate.get(localDateKey(new Date(session.t)))
+    if (!row) continue
+    row.input += session.input || 0
+    row.output += session.output || 0
+    row.cacheCreate += session.cacheCreate || 0
+    row.cacheRead += session.cacheRead || 0
+  }
+  return rows
+}
+
+function renderLineChart(selector, rows, read, formatValue) {
+  const svg = $(selector)
+  const width = 760
+  const height = 245
+  const left = 52
+  const right = 746
+  const top = 18
+  const bottom = 208
+  const values = rows.map(read)
+  const max = Math.max(1, ...values)
+  const xFor = (index) => left + (right - left) * index / Math.max(1, rows.length - 1)
+  const yFor = (value) => bottom - (bottom - top) * value / max
+  const line = values.map((value, index) => `${index ? 'L' : 'M'}${xFor(index).toFixed(1)} ${yFor(value).toFixed(1)}`).join(' ')
+  const area = `${line} L${right} ${bottom} L${left} ${bottom} Z`
+  const grid = Array.from({ length: 5 }, (_, index) => {
+    const value = max * (4 - index) / 4
+    const y = top + (bottom - top) * index / 4
+    return `<line class="gridline" x1="${left}" y1="${y}" x2="${right}" y2="${y}"/><text x="${left - 8}" y="${y + 3}" text-anchor="end">${escapeHtml(formatValue(value))}</text>`
+  }).join('')
+  const labelIndexes = [...new Set([0, Math.floor((rows.length - 1) / 2), rows.length - 1])]
+  const labels = labelIndexes.map((index) => `<text x="${xFor(index)}" y="232" text-anchor="${index === 0 ? 'start' : index === rows.length - 1 ? 'end' : 'middle'}">${fmt.date(new Date(`${rows[index].key}T12:00:00Z`))}</text>`).join('')
+  svg.innerHTML = `${grid}<line class="axis" x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}"/><path class="area" d="${area}"/><path class="line" d="${line}"/>${values.map((value, index) => `<circle cx="${xFor(index)}" cy="${yFor(value)}" r="3" fill="${styleForFamily(Object.entries(rows[index].families || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other').base}" data-tip="${escapeHtml(rows[index].key)} | ${escapeHtml(formatValue(value))}"></circle>`).join('')}${labels}`
+}
+
+function renderAnalysisBars(selector, rows, options = {}) {
+  const max = Math.max(1, ...rows.map((row) => row.value))
+  $(selector).innerHTML = rows.length ? rows.map((row) => {
+    const tag = row.sessionId != null || row.project ? 'button' : 'div'
+    const attributes = row.sessionId != null
+      ? ` data-analysis-session="${row.sessionId}"`
+      : row.project ? ` data-analysis-project="${escapeHtml(row.project)}"` : ''
+    return `<${tag} class="analysis-bar-row"${attributes}><span class="analysis-bar-label">${escapeHtml(row.label)}${row.note ? `<small>${escapeHtml(row.note)}</small>` : ''}</span><span class="analysis-bar-track"><i style="width:${100 * row.value / max}%;${row.color ? `background:${row.color}` : ''}"></i></span><span class="analysis-bar-value">${escapeHtml(options.format ? options.format(row.value) : fmt.compact(row.value))}</span></${tag}>`
+  }).join('') : '<p class="note">No recorded activity in this period.</p>'
+}
+
+function renderComposition(selector, rows, total, formatValue = fmt.usd) {
+  $(selector).innerHTML = rows.length ? rows.map((row) => `
+    <div class="composition-row" style="--series:${row.color || styleForFamily(row.key).base}">
+      <i></i><span>${escapeHtml(row.key)}</span><b>${fmt.pct(row.value / Math.max(1, total))} / ${escapeHtml(formatValue(row.value))}</b>
+      <span class="composition-meter"><i style="width:${100 * row.value / Math.max(1, total)}%"></i></span>
+    </div>`).join('') : '<p class="note">No recorded activity in this period.</p>'
+}
+
+function renderSpendAnalysis(current, previous, period) {
+  const value = totals(current)
+  const prior = totals(previous)
+  const activeDays = new Set(current.map((session) => localDateKey(new Date(session.t)))).size
+  const maximum = current.slice().sort((a, b) => (b.cost || 0) - (a.cost || 0))[0]
+  renderKpis('#spendKpis', [
+    { label: 'Total spend', value: fmt.usd(value.cost), note: deltaText(value.cost, prior.cost, true) },
+    { label: 'Average / session', value: fmt.usd(value.avgCost), note: `${value.sessions} recorded sessions` },
+    { label: 'Spend / active day', value: fmt.usd(value.cost / Math.max(1, activeDays)), note: `${activeDays} active day${activeDays === 1 ? '' : 's'}` },
+    { label: 'Most expensive', value: fmt.usd(maximum?.cost || 0), note: maximum?.project || 'No sessions' },
+  ])
+  const days = dailyUsageRows(current, period)
+  renderLineChart('#spendTrend', days, (row) => row.cost, fmt.usd)
+  const machines = group(current, (session) => session.machine, (session) => session.cost || 0)
+  renderComposition('#spendMachines', machines, value.cost)
+  renderAnalysisBars('#spendProjects', projectRows(current).slice(0, 10).map((row) => ({ label: row.key, note: row.family, value: row.value, project: row.key, color: styleForFamily(row.family).base })), { format: fmt.usd })
+  renderAnalysisBars('#spendSessions', current.slice().sort((a, b) => (b.cost || 0) - (a.cost || 0)).slice(0, 10).map((session) => ({ label: session.project, note: `${session.slug || session.sid || 'Session'} / ${shortModel(session.primaryModel)}`, value: session.cost || 0, sessionId: session._i, color: styleForFamily(familyOf(session.primaryModel)).base })), { format: fmt.usd })
+}
+
+function renderTokenAnalysis(current, previous, period) {
+  const value = totals(current)
+  const prior = totals(previous)
+  const tokensPerDollar = value.cost ? value.tokens / value.cost : 0
+  renderKpis('#tokenKpis', [
+    { label: 'Total tokens', value: fmt.compact(value.tokens), note: deltaText(value.tokens, prior.tokens) },
+    { label: 'Output', value: fmt.compact(value.output), note: fmt.pct(value.output / Math.max(1, value.tokens)) + ' of volume' },
+    { label: 'Cache read', value: fmt.compact(value.cacheRead), note: fmt.pct(value.cacheRatio) + ' cache hit' },
+    { label: 'Tokens / dollar', value: fmt.compact(tokensPerDollar), note: 'Recorded volume per API-equivalent dollar' },
+  ])
+  const days = dailyUsageRows(current, period)
+  renderLineChart('#tokenTrend', days, (row) => row.tokens, fmt.compact)
+  const composition = [
+    { key: 'Input', value: value.input, color: '#8f8d86' },
+    { key: 'Output', value: value.output, color: '#5f5e59' },
+    { key: 'Cache write', value: value.cacheCreate, color: '#bab6ad' },
+    { key: 'Cache read', value: value.cacheRead, color: '#d8d2c5' },
+  ]
+  renderComposition('#tokenComposition', composition, value.tokens, fmt.compact)
+  const projects = aggregateProjects(current).sort((a, b) => b.tokens - a.tokens).slice(0, 10)
+  renderAnalysisBars('#tokenProjects', projects.map((project) => ({ label: project.project, note: project.family, value: project.tokens, project: project.project, color: styleForFamily(project.family).base })))
+  const cacheRows = days.filter((row) => row.tokens > 0).slice(-10).map((row) => ({ label: row.key.slice(5), note: `${fmt.compact(row.cacheRead)} cache-read tokens`, value: row.cacheRead / row.tokens }))
+  renderAnalysisBars('#cacheDays', cacheRows, { format: fmt.pct })
+}
+
+function aggregateProjects(sessions) {
+  const rows = new Map()
+  for (const session of sessions) {
+    const row = rows.get(session.project) || {
+      project: session.project,
+      sessions: 0,
+      cost: 0,
+      tokens: 0,
+      durSec: 0,
+      machines: new Set(),
+      families: {},
+      last: 0,
+    }
+    const family = familyOf(session.primaryModel)
+    row.sessions += 1
+    row.cost += session.cost || 0
+    row.tokens += session.totalTokens || 0
+    row.durSec += session.durSec || 0
+    row.machines.add(session.machine)
+    row.families[family] = (row.families[family] || 0) + (session.cost || 0)
+    row.last = Math.max(row.last, session.t)
+    rows.set(session.project, row)
+  }
+  return [...rows.values()].map((row) => ({
+    ...row,
+    machineCount: row.machines.size,
+    avgCost: row.cost / Math.max(1, row.sessions),
+    family: Object.entries(row.families).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other',
+  }))
+}
+
+function formatDuration(seconds) {
+  const value = Math.max(0, Math.round(seconds || 0))
+  if (value < 60) return `${value}s`
+  const minutes = Math.floor(value / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ${minutes % 60}m`
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`
+}
+
+function sortRows(rows, sort, readers) {
+  const read = readers[sort.key]
+  return rows.slice().sort((a, b) => {
+    const left = read(a)
+    const right = read(b)
+    if (left < right) return -sort.direction
+    if (left > right) return sort.direction
+    return 0
+  })
+}
+
+function sortMark(key, sort) {
+  return sort.key === key ? (sort.direction < 0 ? ' ↓' : ' ↑') : ''
+}
+
+function renderProjectAnalysis(sessions) {
+  const projects = aggregateProjects(sessions)
+  const sorted = sortRows(projects, state.projectSort, {
+    project: (row) => row.project.toLowerCase(),
+    sessions: (row) => row.sessions,
+    cost: (row) => row.cost,
+    tokens: (row) => row.tokens,
+    avgCost: (row) => row.avgCost,
+    durSec: (row) => row.durSec,
+    family: (row) => row.family,
+    machines: (row) => row.machineCount,
+    last: (row) => row.last,
+  })
+  const top = projects.slice().sort((a, b) => b.cost - a.cost)[0]
+  const busiest = projects.slice().sort((a, b) => b.sessions - a.sessions)[0]
+  renderKpis('#projectKpis', [
+    { label: 'Projects', value: String(projects.length), note: 'Active in selected period' },
+    { label: 'Top spender', value: fmt.usd(top?.cost || 0), note: top?.project || 'No activity' },
+    { label: 'Busiest', value: `${busiest?.sessions || 0} sessions`, note: busiest?.project || 'No activity' },
+    { label: 'Average / project', value: fmt.usd(sum(projects, (row) => row.cost) / Math.max(1, projects.length)), note: 'API-equivalent value' },
+  ])
+  $('#projectCount').textContent = `${projects.length} project${projects.length === 1 ? '' : 's'} / click a row for detail`
+  const columns = [
+    ['project', 'Project'], ['sessions', 'Sessions'], ['cost', 'Spend'], ['tokens', 'Tokens'], ['avgCost', 'Avg / session'], ['durSec', 'Duration'], ['family', 'Top model'], ['machines', 'Boxes'], ['last', 'Last active'],
+  ]
+  $('#projectTable').innerHTML = `<thead><tr>${columns.map(([key, label]) => `<th data-project-sort="${key}" class="${['sessions', 'cost', 'tokens', 'avgCost', 'durSec', 'machines'].includes(key) ? 'numeric' : ''}">${label}${sortMark(key, state.projectSort)}</th>`).join('')}</tr></thead><tbody>${sorted.map((row) => `<tr data-analysis-project="${escapeHtml(row.project)}"><td class="primary">${escapeHtml(row.project)}</td><td class="numeric">${row.sessions}</td><td class="numeric">${fmt.usd(row.cost)}</td><td class="numeric">${fmt.compact(row.tokens)}</td><td class="numeric">${fmt.usd(row.avgCost)}</td><td class="numeric">${formatDuration(row.durSec)}</td><td><i class="model-mark" style="--series:${styleForFamily(row.family).base}"></i>${escapeHtml(row.family)}</td><td class="numeric">${row.machineCount}</td><td>${fmt.dateYear(new Date(row.last))}</td></tr>`).join('')}</tbody>`
+}
+
+function renderSessionAnalysis(sessions) {
+  const query = state.sessionQuery.trim().toLowerCase()
+  const filtered = query ? sessions.filter((session) => [session.slug, session.sid, session.project, session.machine, session.provider, ...(session.models || [])].some((value) => String(value || '').toLowerCase().includes(query))) : sessions
+  const sorted = sortRows(filtered, state.sessionSort, {
+    slug: (session) => session.slug || session.sid || '',
+    project: (session) => session.project.toLowerCase(),
+    machine: (session) => session.machine.toLowerCase(),
+    model: (session) => session.primaryModel,
+    start: (session) => Date.parse(session.start),
+    durSec: (session) => session.durSec || 0,
+    tokens: (session) => session.totalTokens || 0,
+    cost: (session) => session.cost || 0,
+  })
+  $('#sessionCount').textContent = `${sorted.length} of ${sessions.length} sessions / ${fmt.usd(sum(sorted, (session) => session.cost || 0))}`
+  const columns = [
+    ['slug', 'Session'], ['project', 'Project'], ['machine', 'Machine'], ['model', 'Model'], ['start', 'Started'], ['durSec', 'Duration'], ['tokens', 'Tokens'], ['cost', 'Cost'],
+  ]
+  $('#sessionTable').innerHTML = `<thead><tr>${columns.map(([key, label]) => `<th data-session-sort="${key}" class="${['durSec', 'tokens', 'cost'].includes(key) ? 'numeric' : ''}">${label}${sortMark(key, state.sessionSort)}</th>`).join('')}</tr></thead><tbody>${sorted.map((session) => {
+    const family = familyOf(session.primaryModel)
+    return `<tr data-analysis-session="${session._i}"><td>${escapeHtml(session.slug || session.sid || 'Session')}</td><td class="primary">${escapeHtml(session.project)}</td><td>${escapeHtml(session.machine)}</td><td><i class="model-mark" style="--series:${styleForFamily(family).base}"></i>${escapeHtml(shortModel(session.primaryModel))}</td><td>${fmt.dateYear(new Date(session.start))} / ${clockTime(Date.parse(session.start))}</td><td class="numeric">${escapeHtml(session.durHuman || formatDuration(session.durSec))}</td><td class="numeric">${fmt.compact(session.totalTokens || 0)}</td><td class="numeric">${fmt.usd(session.cost || 0)}</td></tr>`
+  }).join('')}</tbody>`
+}
+
+function applyPortalView() {
+  $$('.portal-view').forEach((view) => { view.hidden = view.dataset.view !== state.view })
+  $$('[data-portal-view]').forEach((button) => {
+    const active = button.dataset.portalView === state.view
+    button.classList.toggle('active', active)
+    button.setAttribute('aria-selected', String(active))
+  })
 }
 
 function renderProjects(sessions) {
@@ -1039,6 +1295,39 @@ function openProjectDetail(project) {
   })
 }
 
+function openSessionDetail(session) {
+  if (!session) return
+  const value = totals([session])
+  const vendorRows = Object.entries(session.byVendor || {}).map(([vendor, usage]) => ({ label: vendor.toUpperCase(), value: `${fmt.usd(usage.cost || 0)} / ${fmt.compact(usage.tokens || 0)} tokens` }))
+  const tokenRows = [
+    { label: 'Input', value: fmt.compact(session.input || 0) },
+    { label: 'Output', value: fmt.compact(session.output || 0) },
+    { label: 'Cache write', value: fmt.compact(session.cacheCreate || 0) },
+    { label: 'Cache read', value: fmt.compact(session.cacheRead || 0) },
+  ]
+  openDetail({
+    eyebrow: 'Session detail',
+    title: session.project,
+    stats: [
+      { label: 'Period value', value: fmt.usd(value.cost) },
+      { label: 'Tokens', value: fmt.compact(value.tokens) },
+      { label: 'Duration', value: session.durHuman || formatDuration(session.durSec) },
+      { label: 'Cache read', value: fmt.pct(value.cacheRatio) },
+    ],
+    sections: [
+      { title: 'Identity', html: detailList([
+        { label: 'Session', value: session.slug || session.sid || 'Unknown' },
+        { label: 'Provider', value: String(session.provider || 'unknown').toUpperCase() },
+        { label: 'Machine', value: session.machine },
+        { label: 'Primary model', value: shortModel(session.primaryModel) },
+      ]) },
+      { title: 'Token composition', html: detailList(tokenRows) },
+      ...(vendorRows.length ? [{ title: 'Vendor allocation', html: detailList(vendorRows) }] : []),
+      { title: 'Recorded window', text: `${fmt.dateYear(new Date(session.start))} ${clockTime(Date.parse(session.start))} to ${session.end ? `${fmt.dateYear(new Date(session.end))} ${clockTime(Date.parse(session.end))}` : 'unknown end'}.` },
+    ],
+  })
+}
+
 function openTopologyDetail(project, family) {
   const familyRows = group(state.current, (session) => familyOf(session.primaryModel), (session) => session.cost || 0)
   const visible = new Set(familyRows.slice(0, 3).map((row) => row.key))
@@ -1177,6 +1466,32 @@ function bindPageInteractions() {
   $$('.metric').forEach((metric, index) => {
     metric.onclick = () => openMetricDetail(index)
   })
+  $$('[data-analysis-project]').forEach((element) => {
+    element.onclick = () => openProjectDetail(element.dataset.analysisProject)
+  })
+  $$('[data-analysis-session]').forEach((element) => {
+    element.onclick = () => openSessionDetail(state.sessions.find((session) => String(session._i) === element.dataset.analysisSession))
+  })
+  $$('[data-project-sort]').forEach((element) => {
+    element.onclick = () => {
+      const key = element.dataset.projectSort
+      state.projectSort = state.projectSort.key === key
+        ? { key, direction: -state.projectSort.direction }
+        : { key, direction: key === 'project' || key === 'family' ? 1 : -1 }
+      renderProjectAnalysis(state.current)
+      bindPageInteractions()
+    }
+  })
+  $$('[data-session-sort]').forEach((element) => {
+    element.onclick = () => {
+      const key = element.dataset.sessionSort
+      state.sessionSort = state.sessionSort.key === key
+        ? { key, direction: -state.sessionSort.direction }
+        : { key, direction: ['slug', 'project', 'machine', 'model'].includes(key) ? 1 : -1 }
+      renderSessionAnalysis(state.current)
+      bindPageInteractions()
+    }
+  })
 }
 
 function bindTooltips() {
@@ -1238,7 +1553,8 @@ async function load() {
     ])
     state.sessions = sessions.map(normalize).filter((session) => Number.isFinite(session.t))
     state.meta = meta
-    $('.footer span:first-child').innerHTML = '<strong>Style study 13</strong> / modular real-data prototype / original portal unchanged'
+    const requestedView = window.location.hash.slice(1)
+    if (['overview', 'spend', 'tokens', 'projects', 'sessions'].includes(requestedView)) state.view = requestedView
     render()
   } catch (error) {
     const stateValue = $$('.top-meta b')[2]
@@ -1254,6 +1570,19 @@ $$('.ranges .chip').forEach((chip) => chip.addEventListener('click', () => {
   state.range = chip.textContent.trim()
   render()
 }))
+
+$$('[data-portal-view]').forEach((button) => button.addEventListener('click', () => {
+  state.view = button.dataset.portalView
+  window.history.replaceState(null, '', `#${state.view}`)
+  applyPortalView()
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}))
+
+$('#sessionSearch').addEventListener('input', (event) => {
+  state.sessionQuery = event.target.value
+  renderSessionAnalysis(state.current)
+  bindPageInteractions()
+})
 
 $$('[data-spend-view]').forEach((button) => button.addEventListener('click', () => {
   state.spendView = button.dataset.spendView
