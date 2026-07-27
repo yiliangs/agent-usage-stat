@@ -19,14 +19,16 @@
       --line-dark: #9f9c93;
       --accent: #ba5d37;
       --accent-dark: #92503a;
-      --series-blue: #3172c1;
-      --series-orange: #ba5d37;
-      --series-aqua: #238e6e;
-      --series-yellow: #a97e0e;
-      --series-magenta: #b56181;
-      --series-green: #0f7c0e;
-      --series-violet: #6459b7;
-      --series-red: #b84e4e;
+      --model-fable: #ce604a;
+      --model-sol: #00897d;
+      --model-opus: #76569a;
+      --model-sonnet: #2d804f;
+      --model-haiku: #405fa0;
+      --model-terra: #a27b18;
+      --model-luna: #aa4778;
+      --model-codex: #007f9a;
+      --status-good: #35765f;
+      --status-error: #a3483a;
       --cache-read: #8e8b83;
       --token-dark: #5f5e59;
       --token-mid: #8f8d86;
@@ -208,7 +210,7 @@
     .refresh-button i {
       width: 8px;
       height: 8px;
-      border: 2px solid var(--series-blue);
+      border: 2px solid var(--accent);
       border-right-color: transparent;
       border-radius: 50%;
     }
@@ -216,8 +218,8 @@
     .refresh-button:hover { background: var(--ink); color: var(--paper); }
     .refresh-button:disabled { cursor: wait; opacity: .65; }
     .refresh-button.running i { animation: spin .7s linear infinite; }
-    .refresh-button.success { border-color: var(--series-aqua); }
-    .refresh-button.error { border-color: var(--series-red); }
+    .refresh-button.success { border-color: var(--status-good); }
+    .refresh-button.error { border-color: var(--status-error); }
     .refresh-message { max-width: 170px; color: var(--graphite); font-family: var(--mono); font-size: 10px; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -592,7 +594,7 @@
       width: 9px;
       height: 9px;
       border-radius: 50%;
-      background: conic-gradient(var(--series-blue), var(--series-orange), var(--series-aqua), var(--series-violet), var(--series-blue));
+      background: conic-gradient(var(--model-fable), var(--model-sol), var(--model-opus), var(--model-haiku), var(--model-fable));
     }
 
     .plot {
@@ -638,7 +640,7 @@
       padding: 12px 14px;
       background: var(--ink);
       color: var(--paper-hi);
-      border-left: 4px solid var(--series-blue);
+      border-left: 4px solid var(--accent);
       font-family: var(--mono);
       font-size: 11.5px;
       line-height: 1.55;
@@ -798,7 +800,7 @@
       position: relative;
       border-radius: 50%;
       border: 1px solid var(--line-dark);
-      background: conic-gradient(var(--series-blue) 0 40%, var(--series-orange) 40% 73%, var(--series-aqua) 73% 100%);
+      background: conic-gradient(var(--model-fable) 0 40%, var(--model-sol) 40% 73%, var(--model-opus) 73% 100%);
     }
     .model-pie-caption {
       display: flex;
@@ -1056,7 +1058,7 @@
       margin: 0 auto;
       position: relative;
       border-radius: 50%;
-      background: conic-gradient(var(--series-blue) 0 63%, var(--series-orange) 63% 81%, var(--series-aqua) 81% 92%, #d0cdc4 92% 100%);
+      background: conic-gradient(var(--model-fable) 0 63%, var(--model-sol) 63% 81%, var(--model-opus) 81% 92%, #d0cdc4 92% 100%);
     }
 
     .ring::after {
@@ -1228,60 +1230,163 @@
       background-image: var(--texture);
     }
     .rhythm-head {
-      min-height: 76px;
+      min-height: 112px;
       display: grid;
-      grid-template-columns: 1fr auto;
+      grid-template-columns: minmax(300px, 1fr) auto;
       align-items: center;
-      gap: 24px;
-      padding: 0 23px;
+      gap: 32px;
+      padding: 18px 23px;
       border-bottom: 1px solid var(--line-dark);
     }
-    .rhythm-head h2 {
-      margin: 1px 0 0;
+    .rhythm-heading h2 {
+      margin: 2px 0 5px;
       font-family: var(--serif);
-      font-size: 28px;
+      font-size: 30px;
       font-weight: 400;
-      letter-spacing: -.035em;
+      letter-spacing: -.04em;
     }
-    .rhythm-head-meta {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-      gap: 8px 20px;
-      color: var(--muted);
+    .rhythm-heading p {
+      max-width: 660px;
+      margin: 0;
+      color: var(--graphite);
       font-family: var(--sans);
-      font-size: 9.5px;
-      letter-spacing: .09em;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    .rhythm-head-tools {
+      display: grid;
+      justify-items: end;
+      gap: 13px;
+    }
+    .rhythm-stats {
+      display: flex;
+      align-items: stretch;
+      margin: 0;
+    }
+    .rhythm-stat {
+      min-width: 118px;
+      margin: 0;
+      padding: 0 14px;
+      border-left: 1px solid var(--line);
+    }
+    .rhythm-stat:first-child { border-left: 0; }
+    .rhythm-stat dt {
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 7.5px;
+      letter-spacing: .12em;
       text-transform: uppercase;
+    }
+    .rhythm-stat dd {
+      margin: 0;
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .rhythm-control-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .rhythm-calendar-nav {
+      display: inline-flex;
+      flex: 0 0 auto;
+      border: 1px solid var(--line-dark);
+    }
+    .rhythm-calendar-nav button {
+      min-width: 28px;
+      height: 25px;
+      border: 0;
+      border-left: 1px solid var(--line-dark);
+      background: transparent;
+      color: var(--graphite);
+      padding: 0 8px;
+      font-family: var(--sans);
+      font-size: 10px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .rhythm-calendar-nav button:first-child { border-left: 0; }
+    .rhythm-calendar-nav button:hover:not(:disabled) { background: rgba(23,24,23,.06); color: var(--ink); }
+    .rhythm-calendar-nav button:disabled { color: var(--line-dark); cursor: default; opacity: .55; }
+    .rhythm-calendar-nav #rhythmToday { min-width: 48px; font-size: 8.5px; letter-spacing: .05em; text-transform: uppercase; }
+    .rhythm-key {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 6px 11px;
+      color: var(--graphite);
+      font-family: var(--sans);
+      font-size: 8px;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+    .rhythm-key-label,
+    .rhythm-key-note { color: var(--muted); }
+    .rhythm-family-key,
+    .rhythm-density-key { display: inline-flex; align-items: center; gap: 6px; }
+    .rhythm-family-key i {
+      width: 10px;
+      height: 9px;
+      border: 1px solid rgba(23,24,23,.24);
+      border-left: 3px solid var(--series);
+      background: var(--fill);
+    }
+    .rhythm-density-key {
+      gap: 8px;
+      font-size: 8.5px;
+    }
+    .rhythm-density-key i {
+      width: 58px;
+      height: 9px;
+      border: 1px solid var(--line-dark);
+      background: linear-gradient(90deg, #176f98 0%, #d8d2c5 50%, #a3483a 100%);
     }
     .rhythm-scroll {
       overflow: auto;
-      padding: 0 23px 24px;
+      padding: 20px 23px 24px;
     }
-    .rhythm-field {
-      --hour-height: 32px;
-      --timeline-height: 768px;
-      min-width: 1080px;
+    .rhythm-field { min-width: 920px; }
+    .rhythm-field.week-view {
+      --hour-height: 28px;
+      --six-hour-height: 168px;
+      --timeline-height: 672px;
       display: grid;
-      grid-template-columns: 64px minmax(0, 1fr);
-      grid-template-rows: 54px var(--timeline-height);
+      grid-template-columns: 76px minmax(0, 1fr);
+      grid-template-rows: 82px var(--timeline-height);
+    }
+    .rhythm-field.month-view {
+      --hour-height: 32px;
+      --six-hour-height: 192px;
+      --timeline-height: 768px;
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr);
+      grid-template-rows: 62px var(--timeline-height);
     }
     .rhythm-calendar-corner {
       position: sticky;
       left: 0;
       z-index: 30;
       display: flex;
-      align-items: flex-end;
-      padding: 0 9px 8px 0;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 2px;
+      padding: 0 10px 12px 0;
       border-right: 1px solid var(--line-dark);
       border-bottom: 2px solid var(--line-dark);
       background: var(--paper);
       color: var(--muted);
       font-family: var(--mono);
-      font-size: 8px;
+      font-size: 9.5px;
       letter-spacing: .08em;
+      text-align: right;
       text-transform: uppercase;
     }
+    .rhythm-calendar-corner b { color: var(--ink); font-size: 11px; font-weight: 600; }
     .rhythm-date-head,
     .rhythm-days {
       min-width: 0;
@@ -1289,22 +1394,39 @@
     }
     .rhythm-date-head { border-bottom: 2px solid var(--line-dark); }
     .rhythm-date {
+      position: relative;
       min-width: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 3px;
-      padding: 0 2px 8px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      grid-template-rows: auto auto;
+      align-content: end;
+      gap: 2px 8px;
+      padding: 0 10px 11px;
       border-left: 1px solid var(--line);
       color: var(--graphite);
       font-family: var(--mono);
-      font-size: 8.5px;
       white-space: nowrap;
     }
-    .rhythm-date b { color: var(--ink); font-size: 9.5px; font-weight: 500; }
+    .rhythm-date > span {
+      grid-row: span 2;
+      align-self: center;
+      color: var(--muted);
+      font-size: 9.5px;
+      letter-spacing: .07em;
+    }
+    .rhythm-date b { color: var(--ink); font-size: 13px; font-weight: 600; }
+    .rhythm-date small { color: var(--graphite); font-size: 8.5px; }
     .rhythm-date.week-start { border-left: 2px solid var(--line-dark); }
-    .rhythm-date.weekend { background: rgba(23,24,23,.022); }
+    .rhythm-date.weekend { background: rgba(23,24,23,.025); }
+    .rhythm-date.today::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 8px;
+      right: 8px;
+      height: 3px;
+      background: var(--accent);
+    }
     .rhythm-time-axis {
       position: sticky;
       left: 0;
@@ -1315,13 +1437,15 @@
     }
     .rhythm-hour {
       position: absolute;
-      right: 9px;
-      color: var(--muted);
+      right: 12px;
+      color: var(--graphite);
       font-family: var(--mono);
-      font-size: 8px;
+      font-size: 11.5px;
+      font-weight: 500;
       transform: translateY(-50%);
     }
     .rhythm-hour:first-child { transform: none; }
+    .rhythm-hour.end { transform: translateY(-100%); }
     .rhythm-days { height: var(--timeline-height); }
     .rhythm-day {
       position: relative;
@@ -1329,73 +1453,148 @@
       min-width: 0;
       overflow: hidden;
       border-left: 1px solid var(--line);
-      background-color: rgba(250,248,242,.62);
+      background-color: rgba(250,248,242,.68);
       background-image:
-        repeating-linear-gradient(to bottom,
-          transparent 0,
-          transparent 15px,
-          rgba(202,198,188,.42) 15px,
-          rgba(202,198,188,.42) 16px,
-          transparent 16px,
-          transparent 31px,
-          rgba(104,103,97,.45) 31px,
-          rgba(104,103,97,.45) 32px);
+        linear-gradient(to bottom, rgba(23,24,23,.026) 0 33.333%, transparent 33.333% 75%, rgba(23,24,23,.026) 75% 100%),
+        repeating-linear-gradient(to bottom, transparent 0 167px, rgba(104,103,97,.5) 167px 168px),
+        repeating-linear-gradient(to bottom, transparent 0 27px, rgba(202,198,188,.52) 27px 28px);
     }
     .rhythm-day:last-child { border-right: 1px solid var(--line-dark); }
     .rhythm-day.week-start { border-left: 2px solid var(--line-dark); }
-    .rhythm-day.weekend { background-color: rgba(23,24,23,.035); }
+    .rhythm-day.weekend { background-color: rgba(23,24,23,.042); }
+    .rhythm-day.today { box-shadow: inset 0 0 0 1px rgba(186,93,55,.55); }
+    .rhythm-day.empty::after {
+      content: 'NO SESSIONS';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      color: rgba(104,103,97,.34);
+      font-family: var(--mono);
+      font-size: 7px;
+      letter-spacing: .1em;
+      transform: translate(-50%, -50%) rotate(-90deg);
+      white-space: nowrap;
+    }
     .rhythm-event {
       position: absolute;
-      min-height: 3px;
+      min-height: 4px;
       overflow: hidden;
-      border: 1px solid rgba(23,24,23,.48);
-      border-left-width: 2px;
-      border-radius: 1px;
-      padding: 2px 3px;
+      border: 1px solid rgba(23,24,23,.28);
+      border-left-width: 3px;
+      border-radius: 2px;
+      box-shadow: inset 0 0 0 1px rgba(250,248,242,.2);
+      padding: 4px 5px;
       font-family: var(--sans);
-      font-size: 10px;
-      line-height: 1.08;
+      font-size: 9.5px;
+      line-height: 1.1;
       text-align: left;
       cursor: pointer;
       z-index: 1;
     }
-    .rhythm-event span {
+    .rhythm-event span,
+    .rhythm-event small {
       display: block;
       overflow: hidden;
       text-overflow: ellipsis;
-      white-space: normal;
-      overflow-wrap: anywhere;
-      font-weight: 600;
       pointer-events: none;
     }
-    .rhythm-event.compact span { display: none; }
-    .rhythm-event:hover {
+    .rhythm-event span { font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
+    .rhythm-event small { margin-top: 4px; font-family: var(--mono); font-size: 7px; white-space: nowrap; opacity: .78; }
+    .rhythm-event.brief small,
+    .rhythm-event.compact span,
+    .rhythm-event.compact small { display: none; }
+    .rhythm-event:hover,
+    .rhythm-event:focus-visible {
       z-index: 20;
-      outline: 1px solid var(--ink);
-      outline-offset: 1px;
+      outline: 2px solid var(--paper-hi);
+      box-shadow: 0 0 0 3px var(--ink), 0 6px 16px rgba(23,24,23,.18);
       filter: contrast(1.08);
+    }
+    .rhythm-field.month-view .rhythm-calendar-corner { padding-bottom: 9px; }
+    .rhythm-field.month-view .rhythm-date {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 3px;
+      padding: 0 1px 8px;
+      text-align: center;
+    }
+    .rhythm-field.month-view .rhythm-date > span {
+      grid-row: auto;
+      align-self: auto;
+      font-size: 9.5px;
+      letter-spacing: .04em;
+    }
+    .rhythm-field.month-view .rhythm-date b { font-size: 12px; font-weight: 600; }
+    .rhythm-field.month-view .rhythm-date.outside-window { opacity: .42; }
+    .rhythm-field.month-view .rhythm-date.today::before { left: 4px; right: 4px; }
+    .rhythm-field.month-view .rhythm-day {
+      background-color: rgba(250,248,242,.7);
+      background-image:
+        linear-gradient(to bottom, rgba(23,24,23,.024) 0 33.333%, transparent 33.333% 75%, rgba(23,24,23,.024) 75% 100%),
+        repeating-linear-gradient(to bottom, transparent 0 191px, rgba(104,103,97,.5) 191px 192px),
+        repeating-linear-gradient(to bottom, transparent 0 31px, rgba(202,198,188,.5) 31px 32px);
+    }
+    .rhythm-field.month-view .rhythm-day.empty::after { display: none; }
+    .rhythm-field.month-view .rhythm-day.outside-window {
+      background:
+        repeating-linear-gradient(135deg, transparent 0 7px, rgba(23,24,23,.025) 7px 8px),
+        rgba(202,198,188,.16);
     }
     .rhythm-density-band {
       position: absolute;
-      left: 2px;
-      right: 2px;
+      left: 3px;
+      right: 3px;
       min-height: 2px;
       border: 0;
+      border-radius: 1px;
       padding: 0;
+      background-color: var(--band);
+      background-image: repeating-linear-gradient(135deg, rgba(250,248,242,.24) 0 1px, transparent 1px 4px);
+      box-shadow: inset 0 0 0 1px rgba(23,24,23,.12);
+      opacity: var(--band-opacity, .72);
       cursor: pointer;
+      transition: opacity .12s, filter .12s, box-shadow .12s;
       z-index: 1;
     }
-    .rhythm-density-band:hover { z-index: 20; outline: 1px solid var(--ink); outline-offset: 1px; }
-    .rhythm-field.month-view .rhythm-date { padding-left: 0; padding-right: 0; }
-    .rhythm-field.month-view .rhythm-date span { font-size: 7px; }
-    .rhythm-field.month-view .rhythm-date b { font-size: 8px; }
-    .rhythm-density-key { display: inline-flex; align-items: center; gap: 7px; }
-    .rhythm-density-key i {
-      width: 34px;
-      height: 8px;
-      border: 1px solid var(--line-dark);
-      background: linear-gradient(90deg, #dedbd2, #5f5e59);
+    .rhythm-density-band:hover,
+    .rhythm-density-band:focus-visible {
+      z-index: 20;
+      outline: 2px solid var(--paper-hi);
+      box-shadow: 0 0 0 3px var(--ink);
+      opacity: 1;
+      filter: contrast(1.06);
     }
+    .rhythm-data-table {
+      margin-top: 16px;
+      border-top: 1px solid var(--line-dark);
+    }
+    .rhythm-data-table summary {
+      width: max-content;
+      padding: 11px 0 2px;
+      color: var(--graphite);
+      font-family: var(--mono);
+      font-size: 8px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .rhythm-table-wrap { overflow-x: auto; padding-top: 10px; }
+    .rhythm-data-table table { width: 100%; min-width: 620px; border-collapse: collapse; }
+    .rhythm-data-table th,
+    .rhythm-data-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      color: var(--graphite);
+      font-family: var(--mono);
+      font-size: 8px;
+      text-align: right;
+    }
+    .rhythm-data-table th:first-child,
+    .rhythm-data-table td:first-child { text-align: left; }
+    .rhythm-data-table thead th { color: var(--muted); font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
+    .rhythm-data-table tbody th { color: var(--ink); font-weight: 500; }
 
     .footer {
       height: 48px;
@@ -1428,7 +1627,7 @@
       background: var(--paper);
       transform: rotate(45deg);
     }
-    .metric:hover { box-shadow: inset 0 0 0 1px var(--series-blue); }
+    .metric:hover { box-shadow: inset 0 0 0 1px var(--accent); }
     .project-row { transition: background-color .12s, transform .12s; }
     .project-row:hover { background: rgba(49,114,193,.045); transform: translateX(2px); }
     .project-row:hover .bar i { filter: brightness(.86); }
@@ -1575,6 +1774,9 @@
       .heatmap-summary { display: grid; grid-template-columns: repeat(3, 1fr); }
       .heatmap-summary div { padding: 0 12px; border-right: 1px solid var(--line); }
       .heatmap-summary div:last-child { border-right: 0; }
+      .rhythm-head { grid-template-columns: 1fr; gap: 16px; }
+      .rhythm-head-tools { width: 100%; grid-template-columns: 1fr auto; align-items: end; justify-items: start; }
+      .rhythm-control-row { justify-self: end; }
     }
 
     @media (max-width: 1120px) {
@@ -1597,7 +1799,13 @@
       .section-head { flex-wrap: wrap; }
       .section-head .view-toggle { margin-left: auto; }
       .concentration-content { grid-template-columns: 1fr; }
-      .rhythm-head { grid-template-columns: 1fr; gap: 8px; padding-top: 14px; padding-bottom: 14px; }
+      .rhythm-head { grid-template-columns: 1fr; gap: 14px; padding-top: 16px; padding-bottom: 16px; }
+      .rhythm-head-tools { grid-template-columns: 1fr; justify-items: stretch; }
+      .rhythm-stats { overflow-x: auto; }
+      .rhythm-stat { min-width: 112px; padding-left: 10px; padding-right: 10px; }
+      .rhythm-control-row { justify-self: stretch; justify-content: space-between; flex-wrap: wrap; }
+      .rhythm-control-row .rhythm-key { flex: 1 1 100%; justify-content: flex-start; }
+      .rhythm-scroll { padding-left: 14px; padding-right: 14px; }
       .footer { height: auto; gap: 12px; padding-top: 16px; padding-bottom: 16px; }
     }
 
@@ -1608,7 +1816,7 @@
     }
   </style>
 </head>
-<body data-palette="#3172c1,#ba5d37,#238e6e,#a97e0e,#b56181,#0f7c0e,#6459b7,#b84e4e">
+<body data-palette="#ce604a,#00897d,#76569a,#2d804f,#405fa0,#a27b18,#aa4778,#007f9a">
   <main class="page">
     <header class="topbar">
       <div class="mark" aria-label="Agent Usage Stat mark">
@@ -1827,11 +2035,34 @@
 
       <section class="rhythm-module">
         <div class="rhythm-head">
-          <div><span class="micro">Temporal signature</span><h2>Session timeline</h2></div>
-          <div class="rhythm-head-meta"><span id="rhythmWindow">Latest week</span><span>Local time / Chicago</span><span id="rhythmCoverage">All providers</span><span>Wall-clock span</span><span class="rhythm-density-key"><i></i>Higher tokens / min</span><div class="view-toggle rhythm-toggle" aria-label="Session timeline view"><button class="active" data-rhythm-view="week">Week</button><button data-rhythm-view="month">Month</button></div></div>
+          <div class="rhythm-heading">
+            <span class="micro">Temporal signature</span>
+            <h2>Session timeline</h2>
+            <p id="rhythmDescription">A precise wall-clock view of each recorded session. Overlapping sessions share the day column; darker blocks carry higher token velocity.</p>
+          </div>
+          <div class="rhythm-head-tools">
+            <dl class="rhythm-stats">
+              <div class="rhythm-stat"><dt>Window</dt><dd id="rhythmWindow">Latest week</dd></div>
+              <div class="rhythm-stat"><dt>Coverage</dt><dd id="rhythmCoverage">All providers</dd></div>
+              <div class="rhythm-stat"><dt>Reading</dt><dd id="rhythmViewNote">24-hour schedule</dd></div>
+            </dl>
+            <div class="rhythm-control-row">
+              <div class="rhythm-key" id="rhythmKey"><span class="rhythm-density-key"><i></i>Token velocity</span></div>
+              <div class="rhythm-calendar-nav" aria-label="Timeline period navigation">
+                <button id="rhythmPrev" aria-label="Previous period">←</button>
+                <button id="rhythmToday">Today</button>
+                <button id="rhythmNext" aria-label="Next period">→</button>
+              </div>
+              <div class="view-toggle rhythm-toggle" aria-label="Session timeline view"><button class="active" data-rhythm-view="week">Week</button><button data-rhythm-view="month">Month</button></div>
+            </div>
+          </div>
         </div>
         <div class="rhythm-scroll">
-          <div class="rhythm-field" id="workRhythm" aria-label="Sessions by date and local time, spanning start to end"></div>
+          <div class="rhythm-field week-view" id="workRhythm" aria-label="Sessions by date and local time, spanning start to end"></div>
+          <details class="rhythm-data-table">
+            <summary>View data table</summary>
+            <div class="rhythm-table-wrap" id="rhythmTable"></div>
+          </details>
         </div>
       </section>
     </div>

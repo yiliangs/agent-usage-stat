@@ -1,18 +1,18 @@
 const DAY = 86_400_000
 const RANGE_DAYS = { '07D': 7, '14D': 14, '30D': 30, '90D': 90 }
-const state = { sessions: [], meta: null, current: [], range: '30D', spendView: 'heatmap', projectView: 'overview', rhythmView: 'week', focusFamily: null }
+const state = { sessions: [], meta: null, current: [], range: '30D', spendView: 'heatmap', projectView: 'overview', rhythmView: 'week', rhythmAnchor: null, focusFamily: null }
 
 const MODEL_STYLES = {
-  fable: { color: '#3172c1' },
-  sol: { color: '#ba5d37' },
-  opus: { color: '#238e6e' },
-  sonnet: { color: '#a97e0e' },
-  haiku: { color: '#b56181' },
-  terra: { color: '#0f7c0e' },
-  luna: { color: '#6459b7' },
-  codex: { color: '#b84e4e' },
-  gpt: { color: '#6459b7' },
-  other: { color: '#7d807c' },
+  fable: { base: '#CE604A' },
+  sol: { base: '#00897D' },
+  opus: { base: '#76569A' },
+  sonnet: { base: '#2D804F' },
+  haiku: { base: '#405FA0' },
+  terra: { base: '#A27B18' },
+  luna: { base: '#AA4778' },
+  codex: { base: '#007F9A' },
+  gpt: { base: '#AA4778' },
+  other: { base: '#66717F' },
 }
 
 const $ = (selector, root = document) => root.querySelector(selector)
@@ -80,7 +80,16 @@ function familyOf(model) {
 }
 
 function styleForFamily(family) {
-  return MODEL_STYLES[(family || 'other').toLowerCase()] || MODEL_STYLES.other
+  const style = MODEL_STYLES[(family || 'other').toLowerCase()] || MODEL_STYLES.other
+  return { base: style.base, color: tintColor(style.base, .78) }
+}
+
+function tintColor(hex, strength) {
+  const value = hex.replace('#', '')
+  const series = [0, 2, 4].map((index) => parseInt(value.slice(index, index + 2), 16))
+  const paper = [250, 248, 242]
+  const mixed = series.map((channel, index) => Math.round(channel * strength + paper[index] * (1 - strength)))
+  return `rgb(${mixed.join(', ')})`
 }
 
 function shortModel(model) {
@@ -584,14 +593,32 @@ function quantile(sorted, ratio) {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower)
 }
 
-function grayscaleScale(values) {
+function normalizedLogScale(values) {
   const logged = values.map((value) => Math.log1p(value)).sort((a, b) => a - b)
   const low = quantile(logged, .1)
   const high = quantile(logged, .9)
+  return (value) => high > low ? clamp((Math.log1p(value) - low) / (high - low), 0, 1) : .5
+}
+
+function interpolateColor(start, end, amount) {
+  const channels = (hex) => [0, 2, 4].map((index) => parseInt(hex.slice(index + 1, index + 3), 16))
+  const from = channels(start)
+  const to = channels(end)
+  const mixed = from.map((channel, index) => Math.round(channel + (to[index] - channel) * amount))
+  return `rgb(${mixed.join(', ')})`
+}
+
+function monthHeatScale(values) {
+  const normalize = normalizedLogScale(values)
+  const chill = '#176F98'
+  const neutral = '#D8D2C5'
+  const busy = '#A3483A'
   return (value) => {
-    const normalized = high > low ? clamp((Math.log1p(value) - low) / (high - low), 0, 1) : .5
-    const shade = Math.round(222 + (95 - 222) * normalized)
-    return { normalized, color: `rgb(${shade}, ${shade - 1}, ${shade - 6})` }
+    const normalized = normalize(value)
+    const color = normalized <= .5
+      ? interpolateColor(chill, neutral, normalized / .5)
+      : interpolateColor(neutral, busy, (normalized - .5) / .5)
+    return { normalized, color }
   }
 }
 
@@ -600,10 +627,10 @@ function densityScale(sessions) {
     const { start, end } = sessionTimes(session)
     return (session.totalTokens || 0) / Math.max(1, (end - start) / 60_000)
   }
-  const shadeFor = grayscaleScale(sessions.map(density))
+  const normalize = normalizedLogScale(sessions.map(density))
   return (session) => {
     const tokensPerMinute = density(session)
-    return { tokensPerMinute, ...shadeFor(tokensPerMinute) }
+    return { tokensPerMinute, normalized: normalize(tokensPerMinute) }
   }
 }
 
@@ -634,7 +661,7 @@ function layoutConcurrent(segments) {
 }
 
 function rhythmDateKeys(window) {
-  const current = localDateKey(new Date(window.end))
+  const current = state.rhythmAnchor || localDateKey(new Date(window.end))
   if (state.rhythmView === 'week') {
     const currentDate = new Date(`${current}T12:00:00Z`)
     const monday = new Date(currentDate)
@@ -657,6 +684,10 @@ function wrappedProjectLabel(project) {
   if (split < 1) return escapeHtml(value)
   return `${escapeHtml(value.slice(0, split))}<br>${escapeHtml(value.slice(split + 1))}`
 }
+
+const WEEK_TIMELINE_HEIGHT = 672
+const WEEK_HOUR_HEIGHT = WEEK_TIMELINE_HEIGHT / 24
+const MONTH_TIMELINE_HEIGHT = 768
 
 function renderWorkRhythm(sessions, window) {
   const dateKeys = rhythmDateKeys(window)
@@ -693,61 +724,141 @@ function renderWorkRhythm(sessions, window) {
   }
 
   const monthView = state.rhythmView === 'month'
-  const dayWidth = monthView ? 34 : 140
-  const columns = `repeat(${dateKeys.length}, minmax(${dayWidth}px, 1fr))`
-  const dateHead = dateKeys.map((date, index) => {
-    const value = new Date(`${date}T12:00:00Z`)
-    const day = value.getUTCDay()
-    const classes = ['rhythm-date', day === 1 && index ? 'week-start' : '', day === 0 || day === 6 ? 'weekend' : ''].filter(Boolean).join(' ')
-    const weekday = new Intl.DateTimeFormat('en-US', { weekday: monthView ? 'narrow' : 'short', timeZone: 'UTC' }).format(value).toUpperCase()
-    const label = monthView
-      ? String(value.getUTCDate()).padStart(2, '0')
-      : new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', timeZone: 'UTC' }).format(value).toUpperCase()
-    return `<span class="${classes}"><span>${weekday}</span><b>${label}</b></span>`
-  }).join('')
-  const timeAxis = Array.from({ length: 12 }, (_, index) => {
-    const hour = index * 2
-    return `<span class="rhythm-hour" style="top:${hour * 32}px">${String(hour).padStart(2, '0')}:00</span>`
-  }).join('')
-  const days = monthView
-    ? renderMonthRhythmDays(dateKeys, segmentsByDate)
-    : renderWeekRhythmDays(dateKeys, segmentsByDate)
-
+  const observedThrough = localDateKey(new Date(window.end))
   const field = $('#workRhythm')
-  field.classList.toggle('week-view', !monthView)
-  field.classList.toggle('month-view', monthView)
-  field.style.minWidth = `${Math.max(1080, 64 + dateKeys.length * dayWidth)}px`
-  field.innerHTML = `<div class="rhythm-calendar-corner">Time</div><div class="rhythm-date-head" style="grid-template-columns:${columns}">${dateHead}</div><div class="rhythm-time-axis">${timeAxis}</div><div class="rhythm-days" style="grid-template-columns:${columns}">${days}</div>`
+  field.className = `rhythm-field ${monthView ? 'month-view' : 'week-view'}`
+  field.style.minWidth = monthView ? `${Math.max(1080, 76 + dateKeys.length * 34)}px` : '1020px'
+  field.innerHTML = monthView
+    ? renderMonthRhythm(dateKeys, segmentsByDate, observedThrough)
+    : renderWeekRhythm(dateKeys, segmentsByDate)
+  renderRhythmKey(visibleSessions, monthView)
+  renderRhythmTable(dateKeys, segmentsByDate, monthView ? observedThrough : null)
+
   $('.rhythm-scroll').scrollLeft = 0
   $$('.rhythm-toggle button').forEach((button) => button.classList.toggle('active', button.dataset.rhythmView === state.rhythmView))
   const monthLabel = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${lastDate}T12:00:00Z`))
   $('#rhythmWindow').textContent = monthView ? monthLabel : `${firstDate.slice(5)} – ${lastDate.slice(5)}`
-  $('#rhythmCoverage').textContent = `${visibleSessions.length} sessions`
+  $('#rhythmCoverage').textContent = `${visibleSessions.length} session${visibleSessions.length === 1 ? '' : 's'}`
+  $('#rhythmViewNote').textContent = monthView ? 'Daily columns · 24-hour field' : '24-hour schedule'
+  $('#rhythmDescription').textContent = monthView
+    ? 'Each date is a vertical 24-hour heatmap. Cool blue marks chill intervals, warm brick red marks the busiest combined token velocity, and neutral bands sit between.'
+    : 'A precise wall-clock view of each recorded session. Blocks use the shared model-family colors; darker shading indicates higher token velocity.'
+  updateRhythmNavigation(window, dateKeys)
 }
 
-function rhythmDayClasses(date, index) {
+function updateRhythmNavigation(window, dateKeys) {
+  const latestDate = localDateKey(new Date(window.end))
+  const atLatest = state.rhythmView === 'month'
+    ? dateKeys[0].slice(0, 7) >= latestDate.slice(0, 7)
+    : dateKeys[dateKeys.length - 1] >= latestDate
+  $('#rhythmNext').disabled = atLatest
+  $('#rhythmToday').disabled = !state.rhythmAnchor
+}
+
+function shiftRhythmWindow(direction) {
+  const window = currentWindow()
+  const anchor = state.rhythmAnchor || localDateKey(new Date(window.end))
+  const value = new Date(`${anchor}T12:00:00Z`)
+  if (state.rhythmView === 'month') {
+    value.setUTCDate(1)
+    value.setUTCMonth(value.getUTCMonth() + direction)
+  } else {
+    value.setUTCDate(value.getUTCDate() + direction * 7)
+  }
+  state.rhythmAnchor = value.toISOString().slice(0, 10)
+  renderWorkRhythm(state.sessions, window)
+  bindPageInteractions()
+}
+
+function resetRhythmWindow() {
+  if (!state.rhythmAnchor) return
+  state.rhythmAnchor = null
+  renderWorkRhythm(state.sessions, currentWindow())
+  bindPageInteractions()
+}
+
+function daySessions(segments) {
+  return [...new Map(segments.map((segment) => [segment.session._i, segment.session])).values()]
+}
+
+function renderRhythmKey(sessions, monthView) {
+  const key = $('#rhythmKey')
+  if (monthView) {
+    key.innerHTML = '<span class="rhythm-density-key"><span>Chill</span><i></i><span>Busy</span></span>'
+    return
+  }
+  const families = [...new Set(sessions.map((session) => familyOf(session.primaryModel)))]
+  if (!families.length) {
+    key.innerHTML = '<span class="rhythm-key-note">No model activity in view</span>'
+    return
+  }
+  key.innerHTML = `<span class="rhythm-key-label">Model family</span>${families.map((family) => {
+    const series = styleForFamily(family).base
+    return `<span class="rhythm-family-key"><i style="--series:${series};--fill:${tintColor(series, .46)}"></i>${escapeHtml(family)}</span>`
+  }).join('')}<span class="rhythm-key-note">Shade = velocity</span>`
+}
+
+function minuteLabel(minute) {
+  const bounded = clamp(Math.round(minute), 0, 1440)
+  const hour = Math.floor(bounded / 60)
+  const minutes = bounded % 60
+  return `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function rhythmDayFlags(date, index, segments = []) {
   const day = new Date(`${date}T12:00:00Z`).getUTCDay()
-  return ['rhythm-day', day === 1 && index ? 'week-start' : '', day === 0 || day === 6 ? 'weekend' : ''].filter(Boolean).join(' ')
+  return [
+    day === 1 && index ? 'week-start' : '',
+    day === 0 || day === 6 ? 'weekend' : '',
+    date === localDateKey(new Date()) ? 'today' : '',
+    segments.length ? '' : 'empty',
+  ].filter(Boolean).join(' ')
+}
+
+function rhythmDayClasses(date, index, segments = []) {
+  return `rhythm-day ${rhythmDayFlags(date, index, segments)}`
+}
+
+function renderWeekRhythm(dateKeys, segmentsByDate) {
+  const columns = `repeat(${dateKeys.length}, minmax(126px, 1fr))`
+  const dateHead = dateKeys.map((date, index) => {
+    const value = new Date(`${date}T12:00:00Z`)
+    const segments = segmentsByDate.get(date)
+    const sessions = daySessions(segments)
+    const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' }).format(value).toUpperCase()
+    const label = new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', timeZone: 'UTC' }).format(value).toUpperCase()
+    return `<div class="rhythm-date ${rhythmDayFlags(date, index, segments)}"><span>${weekday}</span><b>${label}</b><small>${sessions.length ? `${sessions.length} session${sessions.length === 1 ? '' : 's'}` : 'No sessions'}</small></div>`
+  }).join('')
+  const timeAxis = Array.from({ length: 9 }, (_, index) => {
+    const hour = index * 3
+    const position = hour / 24 * WEEK_TIMELINE_HEIGHT
+    return `<span class="rhythm-hour${hour === 24 ? ' end' : ''}" style="top:${position}px">${String(hour).padStart(2, '0')}:00</span>`
+  }).join('')
+  const days = renderWeekRhythmDays(dateKeys, segmentsByDate)
+  return `<div class="rhythm-calendar-corner"><span>Local</span><b>Chicago</b></div><div class="rhythm-date-head" style="grid-template-columns:${columns}">${dateHead}</div><div class="rhythm-time-axis">${timeAxis}</div><div class="rhythm-days" style="grid-template-columns:${columns}">${days}</div>`
 }
 
 function renderWeekRhythmDays(dateKeys, segmentsByDate) {
   return dateKeys.map((date, dateIndex) => {
-    const events = layoutConcurrent(segmentsByDate.get(date)).map((segment) => {
-      const top = segment.startMinute / 1440 * 768
-      const height = Math.max(3, (segment.endMinute - segment.startMinute) / 1440 * 768)
+    const segments = segmentsByDate.get(date)
+    const events = layoutConcurrent(segments).map((segment) => {
+      const top = segment.startMinute / 1440 * WEEK_TIMELINE_HEIGHT
+      const height = Math.max(4, (segment.endMinute - segment.startMinute) / 1440 * WEEK_TIMELINE_HEIGHT)
       const left = 100 * segment.lane / segment.laneCount
       const width = 100 / segment.laneCount
-      const compact = height < 18 ? ' compact' : ''
-      const textColor = segment.normalized > .58 ? '#faf8f2' : '#171817'
+      const compact = height < 19 ? ' compact' : height < 38 ? ' brief' : ''
+      const family = familyOf(segment.session.primaryModel)
+      const seriesColor = styleForFamily(family).base
+      const fillColor = tintColor(seriesColor, .34 + segment.normalized * .18)
       const durationMinutes = Math.max(1, (segment.end - segment.start) / 60_000)
-      const tip = `${segment.session.project} | ${clockTime(segment.start)}–${clockTime(segment.end)} | ${Math.round(durationMinutes)} min | ${fmt.compact(segment.session.totalTokens || 0)} tokens | ${fmt.compact(segment.tokensPerMinute)} tokens/min`
-      return `<button class="rhythm-event${compact}" data-session-id="${segment.session._i}" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}" style="top:${top}px;height:${height}px;left:calc(${left}% + 1px);width:calc(${width}% - 2px);background:${segment.color};color:${textColor}"><span>${wrappedProjectLabel(segment.session.project)}</span></button>`
+      const tip = `${segment.session.project} | ${family} | ${clockTime(segment.start)}–${clockTime(segment.end)} | ${Math.round(durationMinutes)} min | ${fmt.compact(segment.session.totalTokens || 0)} tokens | ${fmt.compact(segment.tokensPerMinute)} tokens/min`
+      return `<button class="rhythm-event${compact}" data-session-id="${segment.session._i}" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}" style="top:${top}px;height:${height}px;left:calc(${left}% + 2px);width:calc(${width}% - 4px);background:${fillColor};border-left-color:${seriesColor};color:#171817"><span>${wrappedProjectLabel(segment.session.project)}</span><small>${clockTime(segment.start)} · ${fmt.compact(segment.tokensPerMinute)}/min</small></button>`
     }).join('')
-    return `<div class="${rhythmDayClasses(date, dateIndex)}">${events}</div>`
+    return `<div class="${rhythmDayClasses(date, dateIndex, segments)}">${events}</div>`
   }).join('')
 }
 
-function renderMonthRhythmDays(dateKeys, segmentsByDate) {
+function monthBands(dateKeys, segmentsByDate) {
   const bandsByDate = new Map()
   const values = []
   for (const date of dateKeys) {
@@ -770,24 +881,61 @@ function renderMonthRhythmDays(dateKeys, segmentsByDate) {
     }
     bandsByDate.set(date, bands)
   }
-  const shadeFor = grayscaleScale(values)
+  return { bandsByDate, colorFor: monthHeatScale(values) }
+}
+
+function renderMonthRhythm(dateKeys, segmentsByDate, observedThrough) {
+  const { bandsByDate, colorFor } = monthBands(dateKeys, segmentsByDate)
+  const columns = `repeat(${dateKeys.length}, minmax(34px, 1fr))`
+  const dateHead = dateKeys.map((date, index) => {
+    const value = new Date(`${date}T12:00:00Z`)
+    const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'narrow', timeZone: 'UTC' }).format(value).toUpperCase()
+    const classes = [rhythmDayFlags(date, index, segmentsByDate.get(date)), date > observedThrough ? 'outside-window' : ''].filter(Boolean).join(' ')
+    return `<div class="rhythm-date rhythm-month-date ${classes}" title="${date}"><span>${weekday}</span><b>${String(value.getUTCDate()).padStart(2, '0')}</b></div>`
+  }).join('')
+  const timeAxis = Array.from({ length: 12 }, (_, index) => {
+    const hour = index * 2
+    return `<span class="rhythm-hour" style="top:${hour / 24 * MONTH_TIMELINE_HEIGHT}px">${String(hour).padStart(2, '0')}:00</span>`
+  }).join('')
+  const days = renderMonthRhythmDays(dateKeys, segmentsByDate, bandsByDate, colorFor, observedThrough)
+  return `<div class="rhythm-calendar-corner"><span>Local</span><b>Chicago</b></div><div class="rhythm-date-head" style="grid-template-columns:${columns}">${dateHead}</div><div class="rhythm-time-axis">${timeAxis}</div><div class="rhythm-days" style="grid-template-columns:${columns}">${days}</div>`
+}
+
+function renderMonthRhythmDays(dateKeys, segmentsByDate, bandsByDate, colorFor, observedThrough) {
   return dateKeys.map((date, dateIndex) => {
-    const bands = bandsByDate.get(date).map((band) => {
-      const top = band.startMinute / 1440 * 768
-      const height = Math.max(2, (band.endMinute - band.startMinute) / 1440 * 768)
-      const shade = shadeFor(band.density)
-      const time = `${String(Math.floor(band.startMinute / 60)).padStart(2, '0')}:${String(band.startMinute % 60).padStart(2, '0')}`
+    const outsideWindow = date > observedThrough
+    const bands = (outsideWindow ? [] : bandsByDate.get(date)).map((band) => {
+      const top = band.startMinute / 1440 * MONTH_TIMELINE_HEIGHT
+      const height = Math.max(2, (band.endMinute - band.startMinute) / 1440 * MONTH_TIMELINE_HEIGHT)
+      const heat = colorFor(band.density)
+      const activity = heat.normalized < .36 ? 'Chill' : heat.normalized > .68 ? 'Busy' : 'Moderate'
       const sessionLines = band.sessions.map((session) => {
         const { start, end } = sessionTimes(session)
         const velocity = (session.totalTokens || 0) / Math.max(1, (end - start) / 60_000)
         return { velocity, text: `${session.project} / ${shortModel(session.primaryModel)} / ${fmt.compact(velocity)} tokens/min` }
       }).sort((a, b) => b.velocity - a.velocity).map((item) => item.text)
-      const tip = [`${date} ${time}`, `${band.ids.length} concurrent session${band.ids.length === 1 ? '' : 's'} / ${fmt.compact(band.density)} combined tokens/min`, '', ...sessionLines].join('\n')
+      const tip = [`${date} ${minuteLabel(band.startMinute)}–${minuteLabel(band.endMinute)}`, `${activity} activity / ${band.ids.length} concurrent session${band.ids.length === 1 ? '' : 's'} / ${fmt.compact(band.density)} combined tokens/min`, '', ...sessionLines].join('\n')
       const tipAttribute = escapeHtml(tip).replace(/\n/g, '&#10;')
-      return `<button class="rhythm-density-band" data-session-ids="${band.ids.join(',')}" data-date="${date}" data-start-minute="${band.startMinute}" data-end-minute="${band.endMinute}" data-density="${band.density}" data-tip="${tipAttribute}" aria-label="${escapeHtml(tip.replace(/\n/g, ', '))}" style="top:${top}px;height:${height}px;background:${shade.color}"></button>`
+      const opacity = .74 + Math.abs(heat.normalized - .5) * .28
+      return `<button class="rhythm-density-band" data-session-ids="${band.ids.join(',')}" data-date="${date}" data-start-minute="${band.startMinute}" data-end-minute="${band.endMinute}" data-density="${band.density}" data-activity="${activity}" data-tip="${tipAttribute}" aria-label="${escapeHtml(tip.replace(/\n/g, ', '))}" style="top:${top}px;height:${height}px;--band:${heat.color};--band-opacity:${opacity}"></button>`
     }).join('')
-    return `<div class="${rhythmDayClasses(date, dateIndex)}">${bands}</div>`
+    const classes = [rhythmDayClasses(date, dateIndex, segmentsByDate.get(date)), outsideWindow ? 'outside-window' : ''].filter(Boolean).join(' ')
+    return `<div class="${classes}">${bands}</div>`
   }).join('')
+}
+
+function renderRhythmTable(dateKeys, segmentsByDate, observedThrough = null) {
+  const rows = dateKeys.map((date) => {
+    const segments = segmentsByDate.get(date)
+    const sessions = daySessions(segments)
+    const tokens = sum(sessions, (session) => session.totalTokens || 0)
+    const activeStart = segments.length ? Math.min(...segments.map((segment) => segment.startMinute)) : null
+    const activeEnd = segments.length ? Math.max(...segments.map((segment) => segment.endMinute)) : null
+    const dateLabel = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`))
+    const outsideWindow = observedThrough && date > observedThrough
+    return `<tr><th scope="row">${dateLabel}</th><td>${outsideWindow ? 'Outside window' : activeStart === null ? 'None' : `${minuteLabel(activeStart)}–${minuteLabel(activeEnd)}`}</td><td>${outsideWindow ? 'Not observed' : sessions.length}</td><td>${outsideWindow ? 'Not observed' : sessions.length ? fmt.compact(tokens) : '0'}</td></tr>`
+  }).join('')
+  $('#rhythmTable').innerHTML = `<table><thead><tr><th>Date</th><th>Activity window</th><th>Sessions</th><th>Recorded tokens</th></tr></thead><tbody>${rows}</tbody></table>`
 }
 
 function renderTopology(sessions) {
@@ -930,7 +1078,7 @@ function openModelDetail(family) {
     ],
     sections: [
       { title: 'Highest-value projects', html: detailList(projects.map((row) => ({ label: row.key, value: fmt.usd(row.value) }))) },
-      { title: 'Encoding', text: `${family} uses a fixed solid color throughout the portal. Pattern is reserved for non-model secondary information.` },
+      { title: 'Encoding', text: `${family} keeps one fixed base hue throughout the portal. The weekly timeline may use lighter paper-blended tints to encode velocity without changing model identity.` },
     ],
   })
 }
@@ -944,7 +1092,7 @@ function openRhythmDetail(element) {
     const endMinute = Number(element.dataset.endMinute)
     const clock = (minute) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`
     openDetail({
-      eyebrow: 'Coalesced month band',
+      eyebrow: 'Month activity band',
       title: `${element.dataset.date} / ${clock(startMinute)}`,
       stats: [
         { label: 'Concurrent sessions', value: String(sessions.length) },
@@ -954,7 +1102,7 @@ function openRhythmDetail(element) {
       ],
       sections: [
         { title: 'Sessions active in this band', html: detailList(sessions.slice().sort((a, b) => (b.totalTokens || 0) - (a.totalTokens || 0)).map((session) => ({ label: `${session.project} / ${shortModel(session.primaryModel)}`, value: fmt.compact(session.totalTokens || 0) }))) },
-        { title: 'Measurement', text: 'Month view samples the wall-clock timeline in 15-minute intervals, combines concurrent sessions into one band, and sums their token velocities. It preserves total usage but does not claim continuous active computation.' },
+        { title: 'Measurement', text: 'The month ribbon samples the 24-hour wall-clock span in 15-minute intervals. Concurrent sessions are combined and their token velocities are summed. It preserves recorded usage without implying continuous active computation.' },
       ],
     })
     return
@@ -1124,6 +1272,10 @@ $$('[data-rhythm-view]').forEach((button) => button.addEventListener('click', ()
   renderWorkRhythm(state.sessions, currentWindow())
   bindPageInteractions()
 }))
+
+$('#rhythmPrev').addEventListener('click', () => shiftRhythmWindow(-1))
+$('#rhythmToday').addEventListener('click', resetRhythmWindow)
+$('#rhythmNext').addEventListener('click', () => shiftRhythmWindow(1))
 
 $('#detailClose').addEventListener('click', closeDetail)
 $('#detailScrim').addEventListener('click', (event) => {
