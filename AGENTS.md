@@ -39,7 +39,8 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `src/utils/capture-run.ts`: machine-local run and capture-result protocol
 - `src/utils/usage-root.ts`: the only data-root resolver
 - `portal/scripts/build-data.mjs`: browser artifact builder
-- `portal/src/`: analytics interface
+- `portal/index.html`: integrated analytics layout and visual system
+- `portal/portal.js`: client-side aggregation, navigation, charts, tables, and detail interactions
 
 ## Invariants
 
