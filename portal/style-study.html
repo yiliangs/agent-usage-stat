@@ -28,6 +28,10 @@
       --series-violet: #6459b7;
       --series-red: #b84e4e;
       --cache-read: #8e8b83;
+      --token-dark: #5f5e59;
+      --token-mid: #8f8d86;
+      --token-light: #bbb8b0;
+      --token-pale: #dedbd2;
       --sans: "IBM Plex Sans", Aptos, "Segoe UI", sans-serif;
       --text: "IBM Plex Sans", Aptos, "Segoe UI", sans-serif;
       --mono: "Geist Mono", "Cascadia Mono", Consolas, monospace;
@@ -443,10 +447,10 @@
     .spend-heatmap-layout {
       min-height: 564px;
       display: grid;
-      grid-template-columns: minmax(260px, 1fr) 190px;
-      gap: 28px;
-      align-items: center;
-      padding: 28px 8px 12px;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 20px;
+      align-content: center;
+      padding: 24px 8px 12px;
     }
     .calendar-field {
       display: grid;
@@ -456,7 +460,7 @@
     }
     .calendar-days {
       display: grid;
-      grid-template-rows: repeat(7, 28px);
+      grid-template-rows: repeat(7, 24px);
       gap: 4px;
       padding-top: 24px;
       color: var(--muted);
@@ -465,7 +469,11 @@
       align-items: center;
     }
     .calendar-days span:nth-child(even) { visibility: hidden; }
-    .calendar-main { min-width: 0; }
+    .calendar-main {
+      min-width: 0;
+      overflow-x: auto;
+      padding-bottom: 6px;
+    }
     .calendar-months {
       height: 20px;
       display: flex;
@@ -478,16 +486,16 @@
     }
     .calendar-grid {
       display: grid;
-      grid-template-rows: repeat(7, 28px);
+      grid-template-rows: repeat(7, 24px);
       grid-auto-flow: column;
-      grid-auto-columns: 28px;
+      grid-auto-columns: 24px;
       gap: 4px;
       justify-content: start;
     }
     .calendar-cell,
     .calendar-blank {
-      width: 28px;
-      height: 28px;
+      width: 24px;
+      height: 24px;
       border: 1px solid var(--line);
     }
     .calendar-blank { border-color: transparent; }
@@ -496,23 +504,32 @@
       background: var(--paper-hi);
       cursor: pointer;
     }
+    .calendar-cell.level-0 { cursor: default; }
     .calendar-cell.level-1 { background: #d9e3e2; }
     .calendar-cell.level-2 { background: #a9c6c8; }
     .calendar-cell.level-3 { background: #6e9eaa; }
     .calendar-cell.level-4 { background: #397285; border-color: #397285; }
-    .calendar-cell.peak { box-shadow: inset 0 0 0 2px var(--accent); }
-    .calendar-cell:hover { outline: 1px solid var(--ink); outline-offset: 1px; }
+    .calendar-cell.current-window { box-shadow: inset 0 0 0 1px var(--ink); opacity: 1; }
+    .calendar-cell.prior-window { box-shadow: inset 0 0 0 1px var(--muted); opacity: .78; }
+    .calendar-cell.outside-window { opacity: .32; }
+    .calendar-cell.peak { outline: 1px solid var(--accent); outline-offset: 1px; }
+    .calendar-cell:hover { outline: 1px solid var(--ink); outline-offset: 1px; opacity: 1; }
     .heatmap-summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
       border-top: 1px solid var(--line-dark);
+      border-bottom: 1px solid var(--line-dark);
       font-family: var(--sans);
     }
     .heatmap-summary div {
-      min-height: 68px;
+      min-height: 62px;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      border-bottom: 1px solid var(--line);
+      padding: 0 16px;
+      border-right: 1px solid var(--line);
     }
+    .heatmap-summary div:last-child { border-right: 0; }
     .heatmap-summary span {
       color: var(--muted);
       font-size: 9px;
@@ -541,6 +558,22 @@
     .heatmap-scale i:nth-of-type(3) { background: #a9c6c8; }
     .heatmap-scale i:nth-of-type(4) { background: #6e9eaa; }
     .heatmap-scale i:nth-of-type(5) { background: #397285; border-color: #397285; }
+    .heatmap-window-key {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 8.5px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .heatmap-window-key span { display: inline-flex; align-items: center; gap: 6px; }
+    .heatmap-window-key i { width: 10px; height: 10px; background: var(--paper-hi); }
+    .heatmap-window-key i.current { box-shadow: inset 0 0 0 1px var(--ink); }
+    .heatmap-window-key i.prior { box-shadow: inset 0 0 0 1px var(--muted); opacity: .78; }
+    .heatmap-window-key i.outside { border: 1px solid var(--line); opacity: .32; }
 
     .legend {
       display: flex;
@@ -610,6 +643,10 @@
       font-size: 11.5px;
       line-height: 1.55;
       box-shadow: 0 12px 30px rgba(0,0,0,.18);
+    }
+    .tooltip.multiline {
+      width: 320px;
+      white-space: pre-line;
     }
 
     .detail-scrim {
@@ -838,22 +875,29 @@
     .cumulative-point:hover { fill: var(--accent); stroke: var(--accent-dark); }
     .cumulative-end { fill: var(--accent); stroke: var(--paper); stroke-width: 2; }
 
-    .cumulative-module,
-    .project-module,
-    .token-module {
-      padding: 23px 24px;
-    }
-
-    .cumulative-module,
-    .project-module {
+    .cumulative-pair {
+      min-width: 0;
       min-height: 528px;
       grid-column: span 2;
+      display: grid;
+      grid-template-columns: minmax(0, 3fr) minmax(178px, 1fr);
+      gap: 1px;
+      background: var(--line-dark);
     }
+    .cumulative-pair > section,
+    .project-module {
+      min-width: 0;
+      min-height: 528px;
+      padding: 23px 24px;
+      background-color: var(--paper);
+      background-image: var(--texture);
+    }
+    .project-module { grid-column: span 2; }
     .token-module {
-      min-height: 172px;
-      padding-top: 18px;
-      padding-bottom: 16px;
-      grid-column: span 4;
+      display: flex;
+      flex-direction: column;
+      padding-left: 18px;
+      padding-right: 18px;
     }
     /* Both project views share one fixed height so the toggle never shifts the page. */
     .project-view { height: 448px; overflow: hidden; }
@@ -922,85 +966,75 @@
     .model-tag { display: inline-flex; align-items: center; gap: 8px; }
 
     .token-figure {
-      height: 100px;
+      min-height: 330px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
       margin-top: 12px;
-      position: relative;
       border-bottom: 1px solid var(--ink);
     }
 
     .token-figure .big {
-      position: absolute;
-      left: 0;
-      top: 2px;
       font-family: var(--sans);
-      font-size: 40px;
-      letter-spacing: -.06em;
+      font-size: 48px;
+      line-height: .9;
+      letter-spacing: -.07em;
     }
 
     .token-figure .unit {
-      position: absolute;
-      top: 47px;
-      left: 3px;
+      margin-top: 7px;
       font-family: var(--mono);
-      font-size: 10px;
+      font-size: 9px;
       color: var(--graphite);
-      letter-spacing: .12em;
+      letter-spacing: .1em;
+      line-height: 1.45;
       text-transform: uppercase;
     }
 
     .token-grid {
-      position: absolute;
-      inset: 6px 0 12px 190px;
+      flex: 1;
+      min-height: 225px;
       display: grid;
-      grid-template-columns: repeat(48, 1fr);
-      grid-template-rows: repeat(3, 1fr);
+      grid-template-columns: repeat(6, minmax(8px, 1fr));
+      grid-template-rows: repeat(24, 1fr);
       gap: 2px;
-      align-items: end;
+      margin: 22px 0 14px;
     }
 
     .token-grid i {
       width: 100%;
       height: 100%;
-      min-height: 8px;
+      min-height: 5px;
       border: .5px solid var(--line-dark);
       background: var(--paper-hi);
     }
 
-    .token-grid i.cache-read { background: var(--cache-read); border-color: var(--cache-read); }
-    .token-grid i.input {
-      background-color: var(--paper-hi);
-      background-image: radial-gradient(circle, var(--ink) .55px, transparent .75px);
-      background-size: 3px 3px;
-    }
-    .token-grid i.cache-write {
-      background: repeating-linear-gradient(135deg, var(--ink) 0 .55px, var(--paper-hi) .55px 2.6px);
-    }
-    .token-grid i.output {
-      background-color: var(--paper-hi);
-      background-image:
-        repeating-linear-gradient(45deg, transparent 0 2.6px, var(--ink) 2.6px 3.1px),
-        repeating-linear-gradient(-45deg, transparent 0 2.6px, var(--ink) 2.6px 3.1px);
-    }
-
-    .cache-caption span { display: inline-flex; align-items: center; gap: 6px; }
-    .cache-caption span::before { content: ''; width: 10px; height: 10px; border: 1px solid var(--line-dark); }
-    .cache-caption span:nth-child(1)::before { background: radial-gradient(circle, var(--ink) .5px, transparent .7px) 0 0 / 2.5px 2.5px; }
-    .cache-caption span:nth-child(2)::before { background: repeating-linear-gradient(135deg, var(--ink) 0 1px, var(--paper-hi) 1px 4px); }
-    .cache-caption span:nth-child(3)::before { background: var(--cache-read); border-color: var(--cache-read); }
-    .cache-caption span:nth-child(4)::before {
-      background-image:
-        repeating-linear-gradient(45deg, transparent 0 2.2px, var(--ink) 2.2px 2.7px),
-        repeating-linear-gradient(-45deg, transparent 0 2.2px, var(--ink) 2.2px 2.7px);
-    }
+    .token-grid i.cache-read { background: var(--token-dark); border-color: var(--token-dark); }
+    .token-grid i.input { background: var(--token-mid); border-color: var(--token-mid); }
+    .token-grid i.cache-write { background: var(--token-light); border-color: var(--token-light); }
+    .token-grid i.output { background: var(--token-pale); border-color: var(--token-pale); }
 
     .cache-caption {
-      display: flex;
-      justify-content: space-between;
-      margin-top: 11px;
+      display: grid;
+      margin-top: 10px;
       font-family: var(--mono);
       color: var(--graphite);
-      font-size: 10px;
+      font-size: 9px;
     }
+    .cache-caption span {
+      min-height: 25px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    .cache-caption span:last-child { border-bottom: 0; }
+    .cache-caption span::before { content: ''; width: 9px; height: 9px; flex: 0 0 auto; border: 1px solid var(--line-dark); }
+    .cache-caption span:nth-child(1)::before { background: var(--token-mid); border-color: var(--token-mid); }
+    .cache-caption span:nth-child(2)::before { background: var(--token-light); border-color: var(--token-light); }
+    .cache-caption span:nth-child(3)::before { background: var(--token-dark); border-color: var(--token-dark); }
+    .cache-caption span:nth-child(4)::before { background: var(--token-pale); border-color: var(--token-pale); }
 
     .project-concentration { display: flex; flex-direction: column; }
 
@@ -1211,7 +1245,9 @@
     }
     .rhythm-head-meta {
       display: flex;
-      gap: 20px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px 20px;
       color: var(--muted);
       font-family: var(--sans);
       font-size: 9.5px;
@@ -1219,75 +1255,146 @@
       text-transform: uppercase;
     }
     .rhythm-scroll {
-      overflow-x: auto;
-      padding: 20px 23px 24px;
+      overflow: auto;
+      padding: 0 23px 24px;
     }
     .rhythm-field {
+      --hour-height: 32px;
+      --timeline-height: 768px;
       min-width: 1080px;
       display: grid;
-      grid-template-columns: 70px repeat(30, minmax(27px, 1fr)) 58px;
-      gap: 3px;
-      align-items: center;
+      grid-template-columns: 64px minmax(0, 1fr);
+      grid-template-rows: 54px var(--timeline-height);
     }
-    .rhythm-hour,
-    .rhythm-date,
-    .rhythm-row-total,
-    .rhythm-total-label {
-      color: var(--muted);
-      font-family: var(--mono);
-      font-size: 8.5px;
-    }
-    .rhythm-date {
-      height: 52px;
+    .rhythm-calendar-corner {
+      position: sticky;
+      left: 0;
+      z-index: 30;
       display: flex;
       align-items: flex-end;
-      justify-content: center;
-      padding-bottom: 5px;
-      white-space: nowrap;
-      transform: rotate(-55deg);
-      transform-origin: 50% 85%;
-    }
-    .rhythm-hour { padding-right: 8px; text-align: right; }
-    .rhythm-row-total { padding-left: 8px; }
-    .rhythm-cell {
-      position: relative;
-      height: 18px;
-      border: 1px solid var(--line);
-      background: var(--paper-hi);
-      padding: 0;
-      cursor: default;
-    }
-    .rhythm-cell.level-1 { background: #d9d6ce; }
-    .rhythm-cell.level-2 { background: #bab7af; }
-    .rhythm-cell.level-3 { background: #918f88; border-color: #918f88; }
-    .rhythm-cell.level-4 { background: #65645f; border-color: #65645f; }
-    .rhythm-cell.peak { background: var(--accent); border-color: var(--accent-dark); }
-    .rhythm-cell.has-data { cursor: pointer; }
-    .rhythm-cell.has-data:hover { outline: 1px solid var(--ink); outline-offset: 1px; }
-    .rhythm-total-label { padding-top: 8px; text-align: right; text-transform: uppercase; }
-    .rhythm-total {
-      position: relative;
-      height: 34px;
-      border-top: 1px solid var(--line-dark);
-      text-align: center;
-    }
-    .rhythm-total i {
-      position: absolute;
-      inset: auto 4px 0;
-      height: var(--bar, 0%);
-      background: var(--cache-read);
-    }
-    .rhythm-total b {
-      position: relative;
-      z-index: 1;
+      padding: 0 9px 8px 0;
+      border-right: 1px solid var(--line-dark);
+      border-bottom: 2px solid var(--line-dark);
+      background: var(--paper);
+      color: var(--muted);
       font-family: var(--mono);
       font-size: 8px;
-      font-weight: 400;
+      letter-spacing: .08em;
+      text-transform: uppercase;
     }
-    .rhythm-total-sum {
-      padding-left: 8px;
+    .rhythm-date-head,
+    .rhythm-days {
+      min-width: 0;
+      display: grid;
+    }
+    .rhythm-date-head { border-bottom: 2px solid var(--line-dark); }
+    .rhythm-date {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 3px;
+      padding: 0 2px 8px;
+      border-left: 1px solid var(--line);
+      color: var(--graphite);
       font-family: var(--mono);
-      font-size: 9px;
+      font-size: 8.5px;
+      white-space: nowrap;
+    }
+    .rhythm-date b { color: var(--ink); font-size: 9.5px; font-weight: 500; }
+    .rhythm-date.week-start { border-left: 2px solid var(--line-dark); }
+    .rhythm-date.weekend { background: rgba(23,24,23,.022); }
+    .rhythm-time-axis {
+      position: sticky;
+      left: 0;
+      z-index: 10;
+      height: var(--timeline-height);
+      background: var(--paper);
+      border-right: 1px solid var(--line-dark);
+    }
+    .rhythm-hour {
+      position: absolute;
+      right: 9px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 8px;
+      transform: translateY(-50%);
+    }
+    .rhythm-hour:first-child { transform: none; }
+    .rhythm-days { height: var(--timeline-height); }
+    .rhythm-day {
+      position: relative;
+      height: var(--timeline-height);
+      min-width: 0;
+      overflow: hidden;
+      border-left: 1px solid var(--line);
+      background-color: rgba(250,248,242,.62);
+      background-image:
+        repeating-linear-gradient(to bottom,
+          transparent 0,
+          transparent 15px,
+          rgba(202,198,188,.42) 15px,
+          rgba(202,198,188,.42) 16px,
+          transparent 16px,
+          transparent 31px,
+          rgba(104,103,97,.45) 31px,
+          rgba(104,103,97,.45) 32px);
+    }
+    .rhythm-day:last-child { border-right: 1px solid var(--line-dark); }
+    .rhythm-day.week-start { border-left: 2px solid var(--line-dark); }
+    .rhythm-day.weekend { background-color: rgba(23,24,23,.035); }
+    .rhythm-event {
+      position: absolute;
+      min-height: 3px;
+      overflow: hidden;
+      border: 1px solid rgba(23,24,23,.48);
+      border-left-width: 2px;
+      border-radius: 1px;
+      padding: 2px 3px;
+      font-family: var(--sans);
+      font-size: 10px;
+      line-height: 1.08;
+      text-align: left;
+      cursor: pointer;
+      z-index: 1;
+    }
+    .rhythm-event span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      font-weight: 600;
+      pointer-events: none;
+    }
+    .rhythm-event.compact span { display: none; }
+    .rhythm-event:hover {
+      z-index: 20;
+      outline: 1px solid var(--ink);
+      outline-offset: 1px;
+      filter: contrast(1.08);
+    }
+    .rhythm-density-band {
+      position: absolute;
+      left: 2px;
+      right: 2px;
+      min-height: 2px;
+      border: 0;
+      padding: 0;
+      cursor: pointer;
+      z-index: 1;
+    }
+    .rhythm-density-band:hover { z-index: 20; outline: 1px solid var(--ink); outline-offset: 1px; }
+    .rhythm-field.month-view .rhythm-date { padding-left: 0; padding-right: 0; }
+    .rhythm-field.month-view .rhythm-date span { font-size: 7px; }
+    .rhythm-field.month-view .rhythm-date b { font-size: 8px; }
+    .rhythm-density-key { display: inline-flex; align-items: center; gap: 7px; }
+    .rhythm-density-key i {
+      width: 34px;
+      height: 8px;
+      border: 1px solid var(--line-dark);
+      background: linear-gradient(90deg, #dedbd2, #5f5e59);
     }
 
     .footer {
@@ -1444,25 +1551,22 @@
     @media (min-width: 1920px) {
       .module-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
       .hero-chart { grid-column: span 4; }
-      .cumulative-module,
+      .cumulative-pair,
       .project-module { grid-column: span 3; }
-      .token-module,
       .rhythm-module { grid-column: span 6; }
     }
 
     @media (max-width: 1279px) {
       .module-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .cumulative-module { grid-column: span 2; }
+      .cumulative-pair,
       .project-module,
-      .token-module,
       .rhythm-module { grid-column: span 3; }
     }
 
     @media (max-width: 959px) {
       .module-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .cumulative-module { grid-column: span 1; }
+      .cumulative-pair,
       .project-module,
-      .token-module,
       .rhythm-module { grid-column: span 2; }
       .project-view { height: 560px; }
       .project-overview { grid-template-columns: 1fr; }
@@ -1481,10 +1585,11 @@
     @media (max-width: 680px) {
       .module-grid { grid-template-columns: 1fr; }
       .hero-chart,
-      .cumulative-module,
+      .cumulative-pair,
       .project-module,
-      .token-module,
       .rhythm-module { grid-column: span 1; }
+      .cumulative-pair { grid-template-columns: 1fr; }
+      .token-module { min-height: 528px; }
       .topbar { grid-template-columns: 64px 1fr; }
       .top-meta { display: none; }
       .control-band { grid-template-columns: 1fr; gap: 8px; padding-top: 10px; padding-bottom: 10px; }
@@ -1492,10 +1597,6 @@
       .section-head { flex-wrap: wrap; }
       .section-head .view-toggle { margin-left: auto; }
       .concentration-content { grid-template-columns: 1fr; }
-      .calendar-grid { grid-template-rows: repeat(7, 24px); grid-auto-columns: 24px; }
-      .calendar-days { grid-template-rows: repeat(7, 24px); }
-      .calendar-cell,
-      .calendar-blank { width: 24px; height: 24px; }
       .rhythm-head { grid-template-columns: 1fr; gap: 8px; padding-top: 14px; padding-bottom: 14px; }
       .footer { height: auto; gap: 12px; padding-top: 16px; padding-bottom: 16px; }
     }
@@ -1647,11 +1748,12 @@
               <div class="calendar-field">
                 <div class="calendar-days"><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span></div>
                 <div class="calendar-main">
-                  <div class="calendar-months"><span>Earlier</span><span>Later</span></div>
+                  <div class="calendar-months"><span>Ledger start</span><span>Latest day</span></div>
                   <div class="calendar-grid" id="spendHeatmap"></div>
                 </div>
               </div>
               <div class="heatmap-scale"><span>Less</span><i></i><i></i><i></i><i></i><i></i><span>More</span></div>
+              <div class="heatmap-window-key"><span><i class="current"></i>Current window</span><span><i class="prior"></i>Prior window</span><span><i class="outside"></i>Outside selection</span></div>
             </div>
             <div class="heatmap-summary" id="heatmapSummary"></div>
           </div>
@@ -1676,10 +1778,22 @@
         <div class="note"><span class="num">01</span><span>Three projects account for 63% of period value. Cache reuse rose while average session cost declined.</span></div>
       </aside>
 
-      <section class="cumulative-module">
-        <div class="section-head"><h2>Cumulative spend</h2><span class="rule"></span><span class="micro">Running period total</span></div>
-        <svg class="cumulative-plot" viewBox="0 0 760 430" role="img" aria-label="Cumulative API-equivalent spend over the selected period"></svg>
-      </section>
+      <div class="cumulative-pair">
+        <section class="cumulative-module">
+          <div class="section-head"><h2>Cumulative spend</h2><span class="rule"></span><span class="micro">Dots / weekly checkpoints</span></div>
+          <svg class="cumulative-plot" viewBox="0 0 760 430" role="img" aria-label="Cumulative API-equivalent spend over the selected period"></svg>
+        </section>
+
+        <section class="token-module">
+          <div class="section-head"><h2>Token reuse</h2><span class="rule"></span><span class="micro">Composition</span></div>
+          <div class="token-figure">
+            <span class="big">81%</span>
+            <span class="unit">Cache-derived context</span>
+            <div class="token-grid" aria-hidden="true" id="tokenGrid"></div>
+          </div>
+          <div class="cache-caption"><span>INPUT 1.66M</span><span>WRITE 0.34M</span><span>READ 12.40M</span><span>OUTPUT 1.19M</span></div>
+        </section>
+      </div>
 
       <section class="project-module">
         <div class="section-head">
@@ -1699,7 +1813,7 @@
               <span class="subsection-label">Concentration / share of value</span>
               <div class="concentration-content">
                 <div class="ring" role="img" aria-label="Top three projects by share of spend">
-                  <div class="ring-label"><span>Top 3</span><b>63%</b><span>of period value</span></div>
+                  <div class="ring-label"><span>Top 3</span><b>63%</b><span>of spend</span></div>
                 </div>
                 <div class="ring-key"></div>
               </div>
@@ -1711,22 +1825,13 @@
         </div>
       </section>
 
-      <section class="token-module">
-        <div class="section-head"><h2>Token reuse field</h2><span class="rule"></span><span class="micro">Composition</span></div>
-        <div class="token-figure">
-          <span class="big">81%</span>
-          <span class="unit">Cache-derived context</span>
-          <div class="token-grid" aria-hidden="true" id="tokenGrid"></div>
-        </div>
-        <div class="cache-caption"><span>INPUT 1.66M</span><span>WRITE 0.34M</span><span>READ 12.40M</span><span>OUTPUT 1.19M</span></div>
-      </section>
       <section class="rhythm-module">
         <div class="rhythm-head">
-          <div><span class="micro">Temporal signature</span><h2>Work rhythm</h2></div>
-          <div class="rhythm-head-meta"><span id="rhythmWindow">Latest 30 days</span><span>Local time / Chicago</span><span id="rhythmCoverage">All providers</span></div>
+          <div><span class="micro">Temporal signature</span><h2>Session timeline</h2></div>
+          <div class="rhythm-head-meta"><span id="rhythmWindow">Latest week</span><span>Local time / Chicago</span><span id="rhythmCoverage">All providers</span><span>Wall-clock span</span><span class="rhythm-density-key"><i></i>Higher tokens / min</span><div class="view-toggle rhythm-toggle" aria-label="Session timeline view"><button class="active" data-rhythm-view="week">Week</button><button data-rhythm-view="month">Month</button></div></div>
         </div>
         <div class="rhythm-scroll">
-          <div class="rhythm-field" id="workRhythm" aria-label="Session starts by day and local hour"></div>
+          <div class="rhythm-field" id="workRhythm" aria-label="Sessions by date and local time, spanning start to end"></div>
         </div>
       </section>
     </div>

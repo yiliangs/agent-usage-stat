@@ -1,6 +1,6 @@
 const DAY = 86_400_000
 const RANGE_DAYS = { '07D': 7, '14D': 14, '30D': 30, '90D': 90 }
-const state = { sessions: [], meta: null, current: [], range: '30D', spendView: 'bars', projectView: 'overview', focusFamily: null }
+const state = { sessions: [], meta: null, current: [], range: '30D', spendView: 'heatmap', projectView: 'overview', rhythmView: 'week', focusFamily: null }
 
 const MODEL_STYLES = {
   fable: { color: '#3172c1' },
@@ -42,6 +42,8 @@ const localPartsFormatter = new Intl.DateTimeFormat('en-US', {
   month: '2-digit',
   day: '2-digit',
   hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
   hourCycle: 'h23',
 })
 
@@ -56,6 +58,11 @@ function localDateKey(value) {
 
 function localHour(value) {
   return Number(localParts(value).hour)
+}
+
+function localMinute(value) {
+  const parts = localParts(value)
+  return Number(parts.hour) * 60 + Number(parts.minute) + Number(parts.second) / 60
 }
 
 function familyOf(model) {
@@ -162,6 +169,35 @@ function makeBuckets(sessions, start, end, preferredCount = 30) {
   return buckets
 }
 
+function makeCalendarBuckets(sessions, end, preferredCount = 30) {
+  const count = Math.max(1, Math.round(preferredCount))
+  const endDate = new Date(`${localDateKey(new Date(end))}T12:00:00Z`)
+  const dateKeys = Array.from({ length: count }, (_, index) => {
+    const date = new Date(endDate)
+    date.setUTCDate(endDate.getUTCDate() - (count - index - 1))
+    return date.toISOString().slice(0, 10)
+  })
+  const buckets = dateKeys.map((key) => ({
+    key,
+    start: Date.parse(`${key}T12:00:00Z`),
+    cost: 0,
+    sessions: 0,
+    tokens: 0,
+    families: {},
+  }))
+  const byDate = new Map(buckets.map((bucket) => [bucket.key, bucket]))
+  for (const session of sessions) {
+    const bucket = byDate.get(localDateKey(new Date(session.t)))
+    if (!bucket) continue
+    const family = familyOf(session.primaryModel)
+    bucket.cost += session.cost || 0
+    bucket.sessions += 1
+    bucket.tokens += session.totalTokens || 0
+    bucket.families[family] = (bucket.families[family] || 0) + (session.cost || 0)
+  }
+  return buckets
+}
+
 function render() {
   const period = currentWindow()
   const current = sessionsIn(period.start, period.end)
@@ -180,7 +216,7 @@ function render() {
   renderConcentration(current)
   renderTopology(current)
   renderTokens(currentTotals)
-  renderWorkRhythm(current, period)
+  renderWorkRhythm(state.sessions, period)
   applyProjectView()
   bindPageInteractions()
 }
@@ -242,18 +278,30 @@ function renderCadence(sessions, window) {
 
 function renderSpendField(sessions, window) {
   renderSpendChart(sessions, window)
-  renderSpendHeatmap(sessions, window)
+  renderSpendHeatmap(state.sessions, window)
   $('.spend-bars-view').hidden = state.spendView !== 'bars'
   $('.spend-heatmap-view').hidden = state.spendView !== 'heatmap'
   $$('.spend-toggle button').forEach((button) => button.classList.toggle('active', button.dataset.spendView === state.spendView))
 }
 
 function renderSpendHeatmap(sessions, window) {
+  const firstUsage = Math.min(...sessions.map((session) => session.t), window.end)
+  const firstKey = localDateKey(new Date(firstUsage))
+  const endKey = localDateKey(new Date(window.end))
+  const ledgerDays = Math.floor((Date.parse(`${endKey}T12:00:00Z`) - Date.parse(`${firstKey}T12:00:00Z`)) / DAY) + 1
+  const buckets = makeCalendarBuckets(sessions, window.end, Math.max(365, ledgerDays))
   const selectedDays = RANGE_DAYS[state.range]
-  const count = selectedDays || clamp(Math.ceil((window.end - window.start) / DAY), 30, 180)
-  const buckets = makeBuckets(sessions, window.start, window.end, count)
-  const maxCost = Math.max(1, ...buckets.map((bucket) => bucket.cost))
-  const leading = (new Date(buckets[0].start).getDay() + 6) % 7
+  const currentKeys = new Set(selectedDays
+    ? makeCalendarBuckets([], window.end, selectedDays).map((bucket) => bucket.key)
+    : buckets.map((bucket) => bucket.key))
+  const firstCurrent = [...currentKeys][0]
+  const priorEnd = Date.parse(`${firstCurrent}T12:00:00Z`) - DAY
+  const priorKeys = new Set(selectedDays
+    ? makeCalendarBuckets([], priorEnd, selectedDays).map((bucket) => bucket.key)
+    : [])
+  const rawMaxCost = Math.max(0, ...buckets.map((bucket) => bucket.cost))
+  const maxCost = Math.max(1, rawMaxCost)
+  const leading = (new Date(buckets[0].start).getUTCDay() + 6) % 7
   const peakIndex = buckets.reduce((best, bucket, index) => bucket.cost > buckets[best].cost ? index : best, 0)
   const level = (value) => {
     if (!value) return 0
@@ -264,22 +312,35 @@ function renderSpendHeatmap(sessions, window) {
     return 4
   }
   const blanks = Array.from({ length: leading }, () => '<span class="calendar-blank"></span>').join('')
-  $('#spendHeatmap').innerHTML = blanks + buckets.map((bucket, index) => `
-    <button class="calendar-cell level-${level(bucket.cost)}${index === peakIndex ? ' peak' : ''}"
-      data-tip="${fmt.date(new Date(bucket.start))} | ${fmt.usd(bucket.cost)} | ${bucket.sessions} sessions"
-      aria-label="${fmt.dateYear(new Date(bucket.start))}: ${fmt.usd(bucket.cost)}, ${bucket.sessions} sessions"></button>`).join('')
-  const activeDays = buckets.filter((bucket) => bucket.sessions).length
-  const totalCost = sum(buckets, (bucket) => bucket.cost)
-  const peak = buckets[peakIndex]
+  $('#spendHeatmap').innerHTML = blanks + buckets.map((bucket, index) => {
+    const windowClass = currentKeys.has(bucket.key) ? ' current-window' : priorKeys.has(bucket.key) ? ' prior-window' : ' outside-window'
+    const period = currentKeys.has(bucket.key) ? 'current window' : priorKeys.has(bucket.key) ? 'prior window' : 'outside selection'
+    return `<button class="calendar-cell level-${level(bucket.cost)}${windowClass}${rawMaxCost > 0 && index === peakIndex ? ' peak' : ''}"
+      data-tip="${fmt.date(new Date(bucket.start))} | ${fmt.usd(bucket.cost)} | ${bucket.sessions} sessions | ${period}"
+      aria-label="${fmt.dateYear(new Date(bucket.start))}: ${fmt.usd(bucket.cost)}, ${bucket.sessions} sessions, ${period}"></button>`
+  }).join('')
+  const currentCost = sum(buckets.filter((bucket) => currentKeys.has(bucket.key)), (bucket) => bucket.cost)
+  const priorCost = sum(buckets.filter((bucket) => priorKeys.has(bucket.key)), (bucket) => bucket.cost)
+  const change = priorCost ? (currentCost - priorCost) / priorCost : null
   $('#heatmapSummary').innerHTML = `
-    <div><span>Active days</span><b>${activeDays} / ${buckets.length}</b></div>
-    <div><span>Peak day</span><b>${fmt.usd(peak.cost)}</b></div>
-    <div><span>Daily average</span><b>${fmt.usd(totalCost / Math.max(1, buckets.length))}</b></div>`
+    <div><span>${selectedDays ? `Current ${selectedDays}D` : 'Ledger total'}</span><b>${fmt.usd(currentCost)}</b></div>
+    <div><span>${selectedDays ? `Prior ${selectedDays}D` : 'Prior window'}</span><b>${selectedDays ? fmt.usd(priorCost) : 'N/A'}</b></div>
+    <div><span>Period change</span><b>${change === null ? 'N/A' : `${change >= 0 ? '+' : ''}${Math.round(change * 100)}%`}</b></div>`
+  const monthLabels = $$('.calendar-months span')
+  monthLabels[0].textContent = fmt.dateYear(new Date(buckets[0].start))
+  monthLabels[1].textContent = fmt.dateYear(new Date(buckets[buckets.length - 1].start))
+  const calendarMain = $('.calendar-main')
+  requestAnimationFrame(() => { calendarMain.scrollLeft = calendarMain.scrollWidth })
 }
 
 function renderSpendChart(sessions, window) {
-  const count = state.range === '07D' ? 7 : state.range === '14D' ? 14 : 30
-  const buckets = makeBuckets(sessions, window.start, window.end, count)
+  const plot = $('.plot')
+  const renderedWidth = plot.getBoundingClientRect().width || Math.max(760, $('.hero-chart').clientWidth - 50)
+  const viewWidth = Math.max(760, Math.round(renderedWidth))
+  plot.setAttribute('viewBox', `0 0 ${viewWidth} 516`)
+  const selectedDays = RANGE_DAYS[state.range]
+  const count = selectedDays || clamp(Math.ceil((window.end - window.start) / DAY), 30, 180)
+  const buckets = makeCalendarBuckets(sessions, window.end, count)
   const familyTotals = new Map()
   for (const bucket of buckets) {
     for (const [family, value] of Object.entries(bucket.families)) {
@@ -294,10 +355,10 @@ function renderSpendChart(sessions, window) {
   const magnitude = 10 ** Math.floor(Math.log10(rawStep))
   const step = Math.ceil(rawStep / magnitude) * magnitude
   const top = step * 4
-  const left = 58, right = 738, chartTop = 54, baseline = 471
+  const left = 58, right = viewWidth - 22, chartTop = 54, baseline = 471
   const chartWidth = right - left, chartHeight = baseline - chartTop
   const slot = chartWidth / Math.max(1, buckets.length)
-  const barWidth = Math.min(28, Math.max(8, slot * .68))
+  const barWidth = Math.min(28, Math.max(2, slot * .68))
   const peakIndex = buckets.reduce((best, bucket, index) => bucket.cost > buckets[best].cost ? index : best, 0)
   const peak = buckets[peakIndex]
   const peakX = left + slot * peakIndex + slot / 2
@@ -343,8 +404,8 @@ function renderSpendChart(sessions, window) {
     <desc>${sessions.length} sessions in the selected period. Each daily bar is divided by model family.</desc>
     ${grid}${bars}
     <line x1="${peakX}" y1="${Math.max(28, baseline - chartHeight * peak.cost / top - 5)}" x2="${peakX}" y2="25" stroke="var(--ink)"/>
-    <text class="annotation" x="${Math.min(620, peakX + 10)}" y="31">PERIOD PEAK</text>
-    <text class="annotation" x="${Math.min(620, peakX + 10)}" y="46">${fmt.usd(peak.cost)} / ${peak.sessions} SESSIONS</text>
+    <text class="annotation" x="${Math.min(right - 130, peakX + 10)}" y="31">PERIOD PEAK</text>
+    <text class="annotation" x="${Math.min(right - 130, peakX + 10)}" y="46">${fmt.usd(peak.cost)} / ${peak.sessions} SESSIONS</text>
     ${labels}`
   bindTooltips()
 }
@@ -352,7 +413,7 @@ function renderSpendChart(sessions, window) {
 function renderCumulativeSpend(sessions, window) {
   const selectedDays = RANGE_DAYS[state.range]
   const count = selectedDays || clamp(Math.ceil((window.end - window.start) / DAY), 30, 120)
-  const buckets = makeBuckets(sessions, window.start, window.end, count)
+  const buckets = makeCalendarBuckets(sessions, window.end, count)
   let running = 0
   const values = buckets.map((bucket) => (running += bucket.cost))
   const total = Math.max(1, values[values.length - 1] || 0)
@@ -366,10 +427,14 @@ function renderCumulativeSpend(sessions, window) {
     const y = baseline - height * ratio
     return `<line class="${ratio ? 'cumulative-gridline' : 'cumulative-axis'}" x1="${left}" y1="${y}" x2="${right}" y2="${y}"/><text x="4" y="${y + 4}">${fmt.usd(total * ratio).replace('.00', '')}</text>`
   }).join('')
-  const markerStep = Math.max(1, Math.round(values.length / 7))
-  const points = values.map((value, index) => index % markerStep === 0 || index === values.length - 1
-    ? `<circle class="${index === values.length - 1 ? 'cumulative-end' : 'cumulative-point'}" cx="${xFor(index)}" cy="${yFor(value)}" r="${index === values.length - 1 ? 5 : 3.5}" data-tip="${fmt.date(new Date(buckets[index].start))} | cumulative ${fmt.usd(value)} | day ${fmt.usd(buckets[index].cost)}"/>`
-    : '').join('')
+  const points = values.map((value, index) => {
+    const date = new Date(buckets[index].start)
+    const weeklyCheckpoint = date.getUTCDay() === 1
+    if (index !== 0 && !weeklyCheckpoint && index !== values.length - 1) return ''
+    const isEnd = index === values.length - 1
+    const role = isEnd ? 'period total' : index === 0 ? 'period start' : 'weekly checkpoint'
+    return `<circle class="${isEnd ? 'cumulative-end' : 'cumulative-point'}" cx="${xFor(index)}" cy="${yFor(value)}" r="${isEnd ? 5 : 3.5}" data-tip="${fmt.date(date)} | ${role} | cumulative ${fmt.usd(value)} | day ${fmt.usd(buckets[index].cost)}"/>`
+  }).join('')
   const labels = [0, Math.round((buckets.length - 1) / 2), buckets.length - 1].map((index) => `<text x="${xFor(index)}" y="406" text-anchor="${index === 0 ? 'start' : index === buckets.length - 1 ? 'end' : 'middle'}">${fmt.date(new Date(buckets[index].start))}</text>`).join('')
   $('.cumulative-plot').innerHTML = `<defs><linearGradient id="cumulativeFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8e8b83" stop-opacity=".28"/><stop offset="1" stop-color="#8e8b83" stop-opacity=".03"/></linearGradient></defs>${grid}<path class="cumulative-area" d="${area}"/><path class="cumulative-line" d="${line}"/>${points}${labels}<text x="${right}" y="25" text-anchor="end" class="annotation">PERIOD TOTAL / ${fmt.usd(values[values.length - 1] || 0)}</text>`
 }
@@ -449,6 +514,22 @@ function renderTokens(current) {
   labels[3].textContent = `OUTPUT ${fmt.compact(current.output)}`
 }
 
+function segmentedConic(parts) {
+  if (!parts.length) return '#d0cdc4'
+  const gap = .22
+  let cursor = 0
+  const stops = []
+  parts.forEach((part, index) => {
+    const end = index === parts.length - 1 ? 100 : cursor + part.share * 100
+    const fillStart = index === 0 ? cursor : cursor + gap / 2
+    const fillEnd = index === parts.length - 1 ? end : end - gap / 2
+    if (fillEnd > fillStart) stops.push(`${part.color} ${fillStart}% ${fillEnd}%`)
+    if (index < parts.length - 1) stops.push(`var(--paper-hi) ${fillEnd}% ${end + gap / 2}%`)
+    cursor = end
+  })
+  return `conic-gradient(${stops.join(', ')})`
+}
+
 function renderConcentration(sessions) {
   const rows = projectRows(sessions)
   const total = sum(rows, (row) => row.value)
@@ -458,12 +539,12 @@ function renderConcentration(sessions) {
   const concentration = shares.reduce((value, share) => value + share, 0)
   $('.ring-label b').textContent = fmt.pct(concentration)
   $('.ring-label span:first-child').textContent = `Top ${top.length}`
-  $('.ring-label span:last-child').textContent = 'of period value'
+  $('.ring-label span:last-child').textContent = 'of spend'
   $('.note span:last-child').textContent = `${top.length} projects account for ${fmt.pct(concentration)} of period value. ${top[0] ? `${top[0].key} is the largest at ${fmt.usd(top[0].value)}.` : 'No project activity was recorded.'}`
-  const first = (shares[0] || 0) * 100
-  const second = first + (shares[1] || 0) * 100
-  const third = second + (shares[2] || 0) * 100
-  $('.ring').style.background = `conic-gradient(${styles[0]?.color || '#3172c1'} 0 ${first}%, ${styles[1]?.color || '#ba5d37'} ${first}% ${second}%, ${styles[2]?.color || '#238e6e'} ${second}% ${third}%, #d0cdc4 ${third}% 100%)`
+  const ringParts = top.map((row, index) => ({ share: shares[index], color: styles[index].color }))
+  const otherShare = Math.max(0, 1 - concentration)
+  if (otherShare) ringParts.push({ share: otherShare, color: '#d0cdc4' })
+  $('.ring').style.background = segmentedConic(ringParts)
   const detailed = top.map((row, index) => `
     <div class="conc-row project-filter" data-project="${escapeHtml(row.key)}">
       <span class="rank">${String(index + 1).padStart(2, '0')}</span>
@@ -481,66 +562,232 @@ function renderConcentration(sessions) {
     </div>`
 }
 
+function sessionTimes(session) {
+  const start = Date.parse(session.start)
+  const recordedEnd = Date.parse(session.end || '')
+  const fallbackSeconds = Math.max(60, Number(session.durSec) || 60)
+  const end = Number.isFinite(recordedEnd) && recordedEnd > start ? recordedEnd : start + fallbackSeconds * 1000
+  return { start, end }
+}
+
+function clockTime(value) {
+  const parts = localParts(new Date(value))
+  return `${parts.hour}:${parts.minute}`
+}
+
+function quantile(sorted, ratio) {
+  if (!sorted.length) return 0
+  const index = (sorted.length - 1) * ratio
+  const lower = Math.floor(index)
+  const upper = Math.ceil(index)
+  if (lower === upper) return sorted[lower]
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower)
+}
+
+function grayscaleScale(values) {
+  const logged = values.map((value) => Math.log1p(value)).sort((a, b) => a - b)
+  const low = quantile(logged, .1)
+  const high = quantile(logged, .9)
+  return (value) => {
+    const normalized = high > low ? clamp((Math.log1p(value) - low) / (high - low), 0, 1) : .5
+    const shade = Math.round(222 + (95 - 222) * normalized)
+    return { normalized, color: `rgb(${shade}, ${shade - 1}, ${shade - 6})` }
+  }
+}
+
+function densityScale(sessions) {
+  const density = (session) => {
+    const { start, end } = sessionTimes(session)
+    return (session.totalTokens || 0) / Math.max(1, (end - start) / 60_000)
+  }
+  const shadeFor = grayscaleScale(sessions.map(density))
+  return (session) => {
+    const tokensPerMinute = density(session)
+    return { tokensPerMinute, ...shadeFor(tokensPerMinute) }
+  }
+}
+
+function layoutConcurrent(segments) {
+  const sorted = segments.slice().sort((a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute)
+  let cluster = []
+  let clusterEnd = -1
+  const finishCluster = () => {
+    if (!cluster.length) return
+    const laneEnds = []
+    for (const segment of cluster) {
+      let lane = laneEnds.findIndex((end) => end <= segment.startMinute)
+      if (lane < 0) lane = laneEnds.length
+      laneEnds[lane] = segment.endMinute
+      segment.lane = lane
+    }
+    for (const segment of cluster) segment.laneCount = laneEnds.length
+    cluster = []
+    clusterEnd = -1
+  }
+  for (const segment of sorted) {
+    if (cluster.length && segment.startMinute >= clusterEnd) finishCluster()
+    cluster.push(segment)
+    clusterEnd = Math.max(clusterEnd, segment.endMinute)
+  }
+  finishCluster()
+  return sorted
+}
+
+function rhythmDateKeys(window) {
+  const current = localDateKey(new Date(window.end))
+  if (state.rhythmView === 'week') {
+    const currentDate = new Date(`${current}T12:00:00Z`)
+    const monday = new Date(currentDate)
+    monday.setUTCDate(currentDate.getUTCDate() - ((currentDate.getUTCDay() + 6) % 7))
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(monday)
+      date.setUTCDate(monday.getUTCDate() + index)
+      return date.toISOString().slice(0, 10)
+    })
+  }
+
+  const [year, month] = current.split('-').map(Number)
+  const dayCount = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return Array.from({ length: dayCount }, (_, index) => `${year}-${String(month).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`)
+}
+
+function wrappedProjectLabel(project) {
+  const value = String(project || 'Unassigned')
+  const split = value.indexOf('-')
+  if (split < 1) return escapeHtml(value)
+  return `${escapeHtml(value.slice(0, split))}<br>${escapeHtml(value.slice(split + 1))}`
+}
+
 function renderWorkRhythm(sessions, window) {
-  const selectedDays = RANGE_DAYS[state.range]
-  const dayCount = Math.min(30, selectedDays || 30)
-  const dateKeys = []
-  for (let offset = dayCount - 1; offset >= 0; offset -= 1) {
-    const key = localDateKey(new Date(window.end - offset * DAY))
-    if (!dateKeys.includes(key)) dateKeys.push(key)
+  const dateKeys = rhythmDateKeys(window)
+  const firstDate = dateKeys[0]
+  const lastDate = dateKeys[dateKeys.length - 1]
+  const visibleSessions = sessions.filter((session) => {
+    const { start, end } = sessionTimes(session)
+    return localDateKey(new Date(end)) >= firstDate && localDateKey(new Date(start)) <= lastDate
+  })
+  const segmentsByDate = new Map(dateKeys.map((date) => [date, []]))
+  const densityFor = densityScale(visibleSessions)
+
+  for (const session of visibleSessions) {
+    const { start, end } = sessionTimes(session)
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue
+    const startDate = localDateKey(new Date(start))
+    const endDate = localDateKey(new Date(end))
+    const density = densityFor(session)
+    for (const date of dateKeys) {
+      if (date < startDate || date > endDate) continue
+      const startMinute = date === startDate ? localMinute(new Date(start)) : 0
+      let endMinute = date === endDate ? localMinute(new Date(end)) : 1440
+      if (date === startDate && date === endDate && endMinute <= startMinute) endMinute = startMinute + 1
+      if (endMinute <= 0 || startMinute >= 1440) continue
+      segmentsByDate.get(date).push({
+        session,
+        start,
+        end,
+        startMinute: clamp(startMinute, 0, 1440),
+        endMinute: clamp(endMinute, 0, 1440),
+        ...density,
+      })
+    }
   }
-  const buckets = new Map()
-  for (const session of sessions) {
-    const start = new Date(session.start)
-    const date = localDateKey(start)
-    const hour = localHour(start)
-    if (!dateKeys.includes(date)) continue
-    const key = `${date}|${hour}`
-    const bucket = buckets.get(key) || { sessions: [], cost: 0, tokens: 0, families: {} }
-    const family = familyOf(session.primaryModel)
-    bucket.sessions.push(session)
-    bucket.cost += session.cost || 0
-    bucket.tokens += session.totalTokens || 0
-    bucket.families[family] = (bucket.families[family] || 0) + 1
-    buckets.set(key, bucket)
-  }
-  const maxCount = Math.max(1, ...[...buckets.values()].map((bucket) => bucket.sessions.length))
-  const dayTotals = Array(dateKeys.length).fill(0)
-  const level = (count) => {
-    if (!count) return 0
-    const ratio = count / maxCount
-    if (ratio < .25) return 1
-    if (ratio < .5) return 2
-    if (ratio < .8) return 3
-    return 4
-  }
-  const dateHead = dateKeys.map((date) => {
-    const labelDate = new Date(`${date}T12:00:00Z`)
-    const label = new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', timeZone: 'UTC' }).format(labelDate).toUpperCase()
-    return `<span class="rhythm-date">${label}</span>`
+
+  const monthView = state.rhythmView === 'month'
+  const dayWidth = monthView ? 34 : 140
+  const columns = `repeat(${dateKeys.length}, minmax(${dayWidth}px, 1fr))`
+  const dateHead = dateKeys.map((date, index) => {
+    const value = new Date(`${date}T12:00:00Z`)
+    const day = value.getUTCDay()
+    const classes = ['rhythm-date', day === 1 && index ? 'week-start' : '', day === 0 || day === 6 ? 'weekend' : ''].filter(Boolean).join(' ')
+    const weekday = new Intl.DateTimeFormat('en-US', { weekday: monthView ? 'narrow' : 'short', timeZone: 'UTC' }).format(value).toUpperCase()
+    const label = monthView
+      ? String(value.getUTCDate()).padStart(2, '0')
+      : new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', timeZone: 'UTC' }).format(value).toUpperCase()
+    return `<span class="${classes}"><span>${weekday}</span><b>${label}</b></span>`
   }).join('')
-  const rows = Array.from({ length: 24 }, (_, hour) => {
-    let hourTotal = 0
-    const cells = dateKeys.map((date, dateIndex) => {
-      const bucket = buckets.get(`${date}|${hour}`)
-      const count = bucket?.sessions.length || 0
-      hourTotal += count
-      dayTotals[dateIndex] += count
-      if (!count) return '<span class="rhythm-cell"></span>'
-      const dominant = Object.entries(bucket.families).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other'
-      const ids = bucket.sessions.map((session) => session._i).join(',')
-      return `<button class="rhythm-cell has-data level-${level(count)}${count === maxCount ? ' peak' : ''}" data-session-ids="${ids}" data-date="${date}" data-hour="${hour}" data-tip="${date} ${String(hour).padStart(2, '0')}:00 | ${count} sessions | ${fmt.usd(bucket.cost)} | ${dominant}" aria-label="${date}, ${hour}:00, ${count} sessions"></button>`
-    }).join('')
-    return `<span class="rhythm-hour">${String(hour).padStart(2, '0')}:00</span>${cells}<span class="rhythm-row-total">${hourTotal || '·'}</span>`
+  const timeAxis = Array.from({ length: 12 }, (_, index) => {
+    const hour = index * 2
+    return `<span class="rhythm-hour" style="top:${hour * 32}px">${String(hour).padStart(2, '0')}:00</span>`
   }).join('')
-  const maxDay = Math.max(1, ...dayTotals)
-  const totalsRow = dayTotals.map((count) => `<span class="rhythm-total" style="--bar:${100 * count / maxDay}%"><i></i><b>${count || ''}</b></span>`).join('')
+  const days = monthView
+    ? renderMonthRhythmDays(dateKeys, segmentsByDate)
+    : renderWeekRhythmDays(dateKeys, segmentsByDate)
+
   const field = $('#workRhythm')
-  field.style.gridTemplateColumns = `70px repeat(${dateKeys.length}, minmax(27px, 1fr)) 58px`
-  field.style.minWidth = `${Math.max(900, 70 + dateKeys.length * 31 + 58)}px`
-  field.innerHTML = `<span></span>${dateHead}<span class="rhythm-date">Σ</span>${rows}<span class="rhythm-total-label">Day total</span>${totalsRow}<span class="rhythm-total-sum">${sum(dayTotals, (value) => value)}</span>`
-  $('#rhythmWindow').textContent = `Latest ${dateKeys.length} days`
-  $('#rhythmCoverage').textContent = `${sum(dayTotals, (value) => value)} session starts`
+  field.classList.toggle('week-view', !monthView)
+  field.classList.toggle('month-view', monthView)
+  field.style.minWidth = `${Math.max(1080, 64 + dateKeys.length * dayWidth)}px`
+  field.innerHTML = `<div class="rhythm-calendar-corner">Time</div><div class="rhythm-date-head" style="grid-template-columns:${columns}">${dateHead}</div><div class="rhythm-time-axis">${timeAxis}</div><div class="rhythm-days" style="grid-template-columns:${columns}">${days}</div>`
+  $('.rhythm-scroll').scrollLeft = 0
+  $$('.rhythm-toggle button').forEach((button) => button.classList.toggle('active', button.dataset.rhythmView === state.rhythmView))
+  const monthLabel = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${lastDate}T12:00:00Z`))
+  $('#rhythmWindow').textContent = monthView ? monthLabel : `${firstDate.slice(5)} – ${lastDate.slice(5)}`
+  $('#rhythmCoverage').textContent = `${visibleSessions.length} sessions`
+}
+
+function rhythmDayClasses(date, index) {
+  const day = new Date(`${date}T12:00:00Z`).getUTCDay()
+  return ['rhythm-day', day === 1 && index ? 'week-start' : '', day === 0 || day === 6 ? 'weekend' : ''].filter(Boolean).join(' ')
+}
+
+function renderWeekRhythmDays(dateKeys, segmentsByDate) {
+  return dateKeys.map((date, dateIndex) => {
+    const events = layoutConcurrent(segmentsByDate.get(date)).map((segment) => {
+      const top = segment.startMinute / 1440 * 768
+      const height = Math.max(3, (segment.endMinute - segment.startMinute) / 1440 * 768)
+      const left = 100 * segment.lane / segment.laneCount
+      const width = 100 / segment.laneCount
+      const compact = height < 18 ? ' compact' : ''
+      const textColor = segment.normalized > .58 ? '#faf8f2' : '#171817'
+      const durationMinutes = Math.max(1, (segment.end - segment.start) / 60_000)
+      const tip = `${segment.session.project} | ${clockTime(segment.start)}–${clockTime(segment.end)} | ${Math.round(durationMinutes)} min | ${fmt.compact(segment.session.totalTokens || 0)} tokens | ${fmt.compact(segment.tokensPerMinute)} tokens/min`
+      return `<button class="rhythm-event${compact}" data-session-id="${segment.session._i}" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}" style="top:${top}px;height:${height}px;left:calc(${left}% + 1px);width:calc(${width}% - 2px);background:${segment.color};color:${textColor}"><span>${wrappedProjectLabel(segment.session.project)}</span></button>`
+    }).join('')
+    return `<div class="${rhythmDayClasses(date, dateIndex)}">${events}</div>`
+  }).join('')
+}
+
+function renderMonthRhythmDays(dateKeys, segmentsByDate) {
+  const bandsByDate = new Map()
+  const values = []
+  for (const date of dateKeys) {
+    const segments = segmentsByDate.get(date)
+    const bands = []
+    for (let startMinute = 0; startMinute < 1440; startMinute += 15) {
+      const endMinute = startMinute + 15
+      const active = segments.filter((segment) => segment.startMinute < endMinute && segment.endMinute > startMinute)
+      if (!active.length) continue
+      const density = sum(active, (segment) => segment.tokensPerMinute)
+      const ids = active.map((segment) => segment.session._i).sort((a, b) => a - b)
+      const key = ids.join(',')
+      const previous = bands[bands.length - 1]
+      if (previous && previous.key === key) {
+        previous.endMinute = endMinute
+      } else {
+        bands.push({ key, ids, density, sessions: active.map((segment) => segment.session), startMinute, endMinute })
+        values.push(density)
+      }
+    }
+    bandsByDate.set(date, bands)
+  }
+  const shadeFor = grayscaleScale(values)
+  return dateKeys.map((date, dateIndex) => {
+    const bands = bandsByDate.get(date).map((band) => {
+      const top = band.startMinute / 1440 * 768
+      const height = Math.max(2, (band.endMinute - band.startMinute) / 1440 * 768)
+      const shade = shadeFor(band.density)
+      const time = `${String(Math.floor(band.startMinute / 60)).padStart(2, '0')}:${String(band.startMinute % 60).padStart(2, '0')}`
+      const sessionLines = band.sessions.map((session) => {
+        const { start, end } = sessionTimes(session)
+        const velocity = (session.totalTokens || 0) / Math.max(1, (end - start) / 60_000)
+        return { velocity, text: `${session.project} / ${shortModel(session.primaryModel)} / ${fmt.compact(velocity)} tokens/min` }
+      }).sort((a, b) => b.velocity - a.velocity).map((item) => item.text)
+      const tip = [`${date} ${time}`, `${band.ids.length} concurrent session${band.ids.length === 1 ? '' : 's'} / ${fmt.compact(band.density)} combined tokens/min`, '', ...sessionLines].join('\n')
+      const tipAttribute = escapeHtml(tip).replace(/\n/g, '&#10;')
+      return `<button class="rhythm-density-band" data-session-ids="${band.ids.join(',')}" data-date="${date}" data-start-minute="${band.startMinute}" data-end-minute="${band.endMinute}" data-density="${band.density}" data-tip="${tipAttribute}" aria-label="${escapeHtml(tip.replace(/\n/g, ', '))}" style="top:${top}px;height:${height}px;background:${shade.color}"></button>`
+    }).join('')
+    return `<div class="${rhythmDayClasses(date, dateIndex)}">${bands}</div>`
+  }).join('')
 }
 
 function renderTopology(sessions) {
@@ -689,23 +936,52 @@ function openModelDetail(family) {
 }
 
 function openRhythmDetail(element) {
-  const ids = (element.dataset.sessionIds || '').split(',').filter(Boolean)
-  const sessions = ids.map((id) => state.sessions.find((session) => String(session._i) === id)).filter(Boolean)
-  const value = totals(sessions)
-  const projects = new Set(sessions.map((session) => session.project))
-  const hour = `${String(element.dataset.hour).padStart(2, '0')}:00`
+  const groupedIds = (element.dataset.sessionIds || '').split(',').filter(Boolean)
+  if (groupedIds.length) {
+    const sessions = groupedIds.map((id) => state.sessions.find((session) => String(session._i) === id)).filter(Boolean)
+    const value = totals(sessions)
+    const startMinute = Number(element.dataset.startMinute)
+    const endMinute = Number(element.dataset.endMinute)
+    const clock = (minute) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`
+    openDetail({
+      eyebrow: 'Coalesced month band',
+      title: `${element.dataset.date} / ${clock(startMinute)}`,
+      stats: [
+        { label: 'Concurrent sessions', value: String(sessions.length) },
+        { label: 'Combined tokens', value: fmt.compact(value.tokens) },
+        { label: 'Combined velocity', value: `${fmt.compact(Number(element.dataset.density))} / min` },
+        { label: 'Band span', value: `${endMinute - startMinute} min` },
+      ],
+      sections: [
+        { title: 'Sessions active in this band', html: detailList(sessions.slice().sort((a, b) => (b.totalTokens || 0) - (a.totalTokens || 0)).map((session) => ({ label: `${session.project} / ${shortModel(session.primaryModel)}`, value: fmt.compact(session.totalTokens || 0) }))) },
+        { title: 'Measurement', text: 'Month view samples the wall-clock timeline in 15-minute intervals, combines concurrent sessions into one band, and sums their token velocities. It preserves total usage but does not claim continuous active computation.' },
+      ],
+    })
+    return
+  }
+
+  const session = state.sessions.find((item) => String(item._i) === element.dataset.sessionId)
+  if (!session) return
+  const { start, end } = sessionTimes(session)
+  const durationMinutes = Math.max(1, (end - start) / 60_000)
+  const tokensPerMinute = (session.totalTokens || 0) / durationMinutes
   openDetail({
-    eyebrow: 'Local-time activity',
-    title: `${element.dataset.date} / ${hour}`,
+    eyebrow: 'Session timeline',
+    title: session.project,
     stats: [
-      { label: 'Session starts', value: String(value.sessions) },
-      { label: 'Period value', value: fmt.usd(value.cost) },
-      { label: 'Tokens', value: fmt.compact(value.tokens) },
-      { label: 'Projects', value: String(projects.size) },
+      { label: 'Tokens', value: fmt.compact(session.totalTokens || 0) },
+      { label: 'Wall span', value: session.durHuman || `${Math.round(durationMinutes)} min` },
+      { label: 'Token velocity', value: `${fmt.compact(tokensPerMinute)} / min` },
+      { label: 'Period value', value: fmt.usd(session.cost || 0) },
     ],
     sections: [
-      { title: 'Sessions beginning in this hour', html: detailList(sessions.slice().sort((a, b) => (b.cost || 0) - (a.cost || 0)).map((session) => ({ label: `${session.project} / ${shortModel(session.primaryModel)}`, value: fmt.usd(session.cost || 0) }))) },
-      { title: 'Measurement', text: 'This field records session starts in America/Chicago local time. It does not claim continuous hourly activity inside long-running sessions.' },
+      { title: 'Recorded session', html: detailList([
+        { label: 'Start', value: `${localDateKey(new Date(start))} / ${clockTime(start)}` },
+        { label: 'End', value: `${localDateKey(new Date(end))} / ${clockTime(end)}` },
+        { label: 'Provider', value: String(session.provider || 'unknown').toUpperCase() },
+        { label: 'Model', value: shortModel(session.primaryModel) },
+      ]) },
+      { title: 'Measurement', text: 'Token velocity is total recorded tokens divided by the session wall-clock span. Darker means more tokens per minute. The span may include idle time, because the transcript does not expose a continuous ready, running, or thinking state.' },
     ],
   })
 }
@@ -714,7 +990,7 @@ function openMetricDetail(index) {
   const current = totals(state.current)
   const definitions = [
     ['Session count', String(current.sessions), 'Recorded agent sessions in the selected period. The background hatch length compares this period with the previous period.'],
-    ['Token volume', fmt.compact(current.tokens), 'Total input, output, cache-write, and cache-read tokens. Token types use grayscale patterns rather than model colors.'],
+    ['Token volume', fmt.compact(current.tokens), 'Total input, output, cache-write, and cache-read tokens. Token types use ordered solid grayscale values rather than model colors.'],
     ['Average session value', fmt.usd(current.avgCost), 'API-equivalent value divided by the number of sessions in the selected period.'],
     ['Cache-read ratio', fmt.pct(current.cacheRatio), 'Share of total tokens supplied through cache reads.'],
   ]
@@ -747,8 +1023,8 @@ function bindPageInteractions() {
   $$('.topology-filter').forEach((cell) => {
     cell.onclick = () => openTopologyDetail(cell.dataset.project, cell.dataset.family)
   })
-  $$('.rhythm-cell.has-data').forEach((cell) => {
-    cell.onclick = () => openRhythmDetail(cell)
+  $$('.rhythm-event, .rhythm-density-band').forEach((event) => {
+    event.onclick = () => openRhythmDetail(event)
   })
   $$('.metric').forEach((metric, index) => {
     metric.onclick = () => openMetricDetail(index)
@@ -760,11 +1036,18 @@ function bindTooltips() {
   $$('[data-tip]').forEach((element) => {
     element.onmouseenter = () => {
       tooltip.textContent = element.dataset.tip
+      tooltip.classList.toggle('multiline', element.classList.contains('rhythm-density-band'))
       tooltip.style.display = 'block'
     }
     element.onmousemove = (event) => {
-      tooltip.style.left = `${event.clientX + 16}px`
-      tooltip.style.top = `${event.clientY + 16}px`
+      const bounds = tooltip.getBoundingClientRect()
+      const margin = 12
+      let left = event.clientX + 16
+      let top = event.clientY + 16
+      if (left + bounds.width > window.innerWidth - margin) left = event.clientX - bounds.width - 16
+      if (top + bounds.height > window.innerHeight - margin) top = Math.max(margin, event.clientY - bounds.height - 16)
+      tooltip.style.left = `${Math.max(margin, left)}px`
+      tooltip.style.top = `${top}px`
     }
     element.onmouseleave = () => { tooltip.style.display = 'none' }
   })
@@ -833,6 +1116,12 @@ $$('[data-spend-view]').forEach((button) => button.addEventListener('click', () 
 $$('[data-project-view]').forEach((button) => button.addEventListener('click', () => {
   state.projectView = button.dataset.projectView
   applyProjectView()
+  bindPageInteractions()
+}))
+
+$$('[data-rhythm-view]').forEach((button) => button.addEventListener('click', () => {
+  state.rhythmView = button.dataset.rhythmView
+  renderWorkRhythm(state.sessions, currentWindow())
   bindPageInteractions()
 }))
 

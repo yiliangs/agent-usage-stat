@@ -48,6 +48,11 @@ test("the running portal refreshes rebuilt data through its local API", async ()
 
     const page = await fetch(base);
     assert.equal(page.headers.get("cache-control"), "no-store");
+
+    const styleStudy = await fetch(`${base}/style-study.html`);
+    assert.equal(styleStudy.status, 200);
+    assert.match(await styleStudy.text(), /Style study 13/i);
+
     const initial = await fetch(`${base}/data/meta.json`).then((response) => response.json());
     assert.equal(initial.totalCost, 1);
 
