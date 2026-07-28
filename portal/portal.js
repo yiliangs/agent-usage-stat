@@ -17,16 +17,16 @@ const state = {
 }
 
 const MODEL_STYLES = {
-  fable: { base: '#CE604A' },
-  sol: { base: '#00897D' },
-  opus: { base: '#76569A' },
-  sonnet: { base: '#2D804F' },
-  haiku: { base: '#405FA0' },
-  terra: { base: '#A27B18' },
-  luna: { base: '#AA4778' },
-  codex: { base: '#007F9A' },
-  gpt: { base: '#AA4778' },
-  other: { base: '#66717F' },
+  fable: { variable: '--model-fable', fallback: '#CE604A' },
+  sol: { variable: '--model-sol', fallback: '#00897D' },
+  opus: { variable: '--model-opus', fallback: '#76569A' },
+  sonnet: { variable: '--model-sonnet', fallback: '#2D804F' },
+  haiku: { variable: '--model-haiku', fallback: '#405FA0' },
+  terra: { variable: '--model-terra', fallback: '#A27B18' },
+  luna: { variable: '--model-luna', fallback: '#AA4778' },
+  codex: { variable: '--model-codex', fallback: '#007F9A' },
+  gpt: { variable: '--model-luna', fallback: '#AA4778' },
+  other: { variable: '--muted', fallback: '#66717F' },
 }
 
 const $ = (selector, root = document) => root.querySelector(selector)
@@ -93,15 +93,24 @@ function familyOf(model) {
   return 'Other'
 }
 
+function cssColor(variable, fallback) {
+  return getComputedStyle(document.documentElement).getPropertyValue(variable).trim() || fallback
+}
+
+function colorChannels(hex) {
+  const value = hex.replace('#', '')
+  return [0, 2, 4].map((index) => parseInt(value.slice(index, index + 2), 16))
+}
+
 function styleForFamily(family) {
   const style = MODEL_STYLES[(family || 'other').toLowerCase()] || MODEL_STYLES.other
-  return { base: style.base, color: tintColor(style.base, .78) }
+  const base = cssColor(style.variable, style.fallback)
+  return { base, color: tintColor(base, .78) }
 }
 
 function tintColor(hex, strength) {
-  const value = hex.replace('#', '')
-  const series = [0, 2, 4].map((index) => parseInt(value.slice(index, index + 2), 16))
-  const paper = [250, 248, 242]
+  const series = colorChannels(hex)
+  const paper = colorChannels(cssColor('--paper-hi', '#FAF8F2'))
   const mixed = series.map((channel, index) => Math.round(channel * strength + paper[index] * (1 - strength)))
   return `rgb(${mixed.join(', ')})`
 }
@@ -461,7 +470,7 @@ function renderCumulativeSpend(sessions, window) {
     return `<circle class="${isEnd ? 'cumulative-end' : 'cumulative-point'}" cx="${xFor(index)}" cy="${yFor(value)}" r="${isEnd ? 5 : 3.5}" data-tip="${fmt.date(date)} | ${role} | cumulative ${fmt.usd(value)} | day ${fmt.usd(buckets[index].cost)}"/>`
   }).join('')
   const labels = [0, Math.round((buckets.length - 1) / 2), buckets.length - 1].map((index) => `<text x="${xFor(index)}" y="406" text-anchor="${index === 0 ? 'start' : index === buckets.length - 1 ? 'end' : 'middle'}">${fmt.date(new Date(buckets[index].start))}</text>`).join('')
-  $('.cumulative-plot').innerHTML = `<defs><linearGradient id="cumulativeFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8e8b83" stop-opacity=".28"/><stop offset="1" stop-color="#8e8b83" stop-opacity=".03"/></linearGradient></defs>${grid}<path class="cumulative-area" d="${area}"/><path class="cumulative-line" d="${line}"/>${points}${labels}<text x="${right}" y="25" text-anchor="end" class="annotation">PERIOD TOTAL / ${fmt.usd(values[values.length - 1] || 0)}</text>`
+  $('.cumulative-plot').innerHTML = `<defs><linearGradient id="cumulativeFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--token-mid)" stop-opacity=".28"/><stop offset="1" stop-color="var(--token-mid)" stop-opacity=".03"/></linearGradient></defs>${grid}<path class="cumulative-area" d="${area}"/><path class="cumulative-line" d="${line}"/>${points}${labels}<text x="${right}" y="25" text-anchor="end" class="annotation">PERIOD TOTAL / ${fmt.usd(values[values.length - 1] || 0)}</text>`
 }
 
 function renderModels(sessions) {
@@ -612,10 +621,10 @@ function renderTokenAnalysis(current, previous, period) {
   const days = dailyUsageRows(current, period)
   renderLineChart('#tokenTrend', days, (row) => row.tokens, fmt.compact)
   const composition = [
-    { key: 'Input', value: value.input, color: '#8f8d86' },
-    { key: 'Output', value: value.output, color: '#5f5e59' },
-    { key: 'Cache write', value: value.cacheCreate, color: '#bab6ad' },
-    { key: 'Cache read', value: value.cacheRead, color: '#d8d2c5' },
+    { key: 'Input', value: value.input, color: 'var(--token-mid)' },
+    { key: 'Output', value: value.output, color: 'var(--token-dark)' },
+    { key: 'Cache write', value: value.cacheCreate, color: 'var(--token-light)' },
+    { key: 'Cache read', value: value.cacheRead, color: 'var(--token-pale)' },
   ]
   renderComposition('#tokenComposition', composition, value.tokens, fmt.compact)
   const projects = aggregateProjects(current).sort((a, b) => b.tokens - a.tokens).slice(0, 10)
@@ -780,7 +789,7 @@ function renderTokens(current) {
 }
 
 function segmentedConic(parts) {
-  if (!parts.length) return '#d0cdc4'
+  if (!parts.length) return cssColor('--token-pale', '#d0cdc4')
   const gap = .22
   let cursor = 0
   const stops = []
@@ -808,7 +817,7 @@ function renderConcentration(sessions) {
   $('.note span:last-child').textContent = `${top.length} projects account for ${fmt.pct(concentration)} of period value. ${top[0] ? `${top[0].key} is the largest at ${fmt.usd(top[0].value)}.` : 'No project activity was recorded.'}`
   const ringParts = top.map((row, index) => ({ share: shares[index], color: styles[index].color }))
   const otherShare = Math.max(0, 1 - concentration)
-  if (otherShare) ringParts.push({ share: otherShare, color: '#d0cdc4' })
+  if (otherShare) ringParts.push({ share: otherShare, color: cssColor('--token-pale', '#d0cdc4') })
   $('.ring').style.background = segmentedConic(ringParts)
   const detailed = top.map((row, index) => `
     <div class="conc-row project-filter" data-project="${escapeHtml(row.key)}">
@@ -821,7 +830,7 @@ function renderConcentration(sessions) {
   const otherValue = Math.max(0, total - sum(top, (row) => row.value))
   $('.ring-key').innerHTML = detailed + `
     <div class="conc-row">
-      <span class="rank">04</span><i style="--series:#d0d1cd"></i>
+      <span class="rank">04</span><i style="--series:var(--token-pale)"></i>
       <span class="name">Other projects<small>${Math.max(0, rows.length - top.length)} PROJECTS</small></span>
       <span class="share">${fmt.pct(1 - concentration)}</span><span class="value">${fmt.usd(otherValue)}</span>
     </div>`
@@ -866,9 +875,9 @@ function interpolateColor(start, end, amount) {
 
 function monthHeatScale(values) {
   const normalize = normalizedLogScale(values)
-  const chill = '#176F98'
-  const neutral = '#D8D2C5'
-  const busy = '#A3483A'
+  const chill = cssColor('--heat-chill', '#176F98')
+  const neutral = cssColor('--heat-neutral', '#D8D2C5')
+  const busy = cssColor('--heat-busy', '#A3483A')
   return (value) => {
     const normalized = normalize(value)
     const color = normalized <= .5
@@ -1108,7 +1117,7 @@ function renderWeekRhythmDays(dateKeys, segmentsByDate) {
       const fillColor = tintColor(seriesColor, .34 + segment.normalized * .18)
       const durationMinutes = Math.max(1, (segment.end - segment.start) / 60_000)
       const tip = `${segment.session.project} | ${family} | ${clockTime(segment.start)}–${clockTime(segment.end)} | ${Math.round(durationMinutes)} min | ${fmt.compact(segment.session.totalTokens || 0)} tokens | ${fmt.compact(segment.tokensPerMinute)} tokens/min`
-      return `<button class="rhythm-event${compact}" data-session-id="${segment.session._i}" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}" style="top:${top}px;height:${height}px;left:calc(${left}% + 2px);width:calc(${width}% - 4px);background:${fillColor};border-left-color:${seriesColor};color:#171817"><span>${wrappedProjectLabel(segment.session.project)}</span><small>${clockTime(segment.start)} · ${fmt.compact(segment.tokensPerMinute)}/min</small></button>`
+      return `<button class="rhythm-event${compact}" data-session-id="${segment.session._i}" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}" style="top:${top}px;height:${height}px;left:calc(${left}% + 2px);width:calc(${width}% - 4px);background:${fillColor};border-left-color:${seriesColor};color:var(--event-ink)"><span>${wrappedProjectLabel(segment.session.project)}</span><small>${clockTime(segment.start)} · ${fmt.compact(segment.tokensPerMinute)}/min</small></button>`
     }).join('')
     return `<div class="${rhythmDayClasses(date, dateIndex, segments)}">${events}</div>`
   }).join('')
@@ -1615,5 +1624,9 @@ document.addEventListener('keydown', (event) => {
 })
 
 $('#refreshButton').addEventListener('click', refreshData)
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (state.sessions.length) render()
+})
 
 load()
