@@ -334,6 +334,38 @@
     .analysis-chart .area { fill: rgba(var(--ink-rgb),.07); }
     .analysis-chart .line { fill: none; stroke: var(--ink); stroke-width: 2; }
 
+    .token-traffic-card { min-height: 430px; }
+    .token-traffic-card .analysis-card-head { align-items: center; }
+    .token-traffic-card .analysis-card-head .view-toggle { margin-left: 0; }
+    .token-traffic-summary { margin: 0 0 12px; color: var(--graphite); font-family: var(--sans); font-size: 10.5px; line-height: 1.5; }
+    .token-traffic-shell { display: grid; grid-template-columns: 52px minmax(0, 1fr); border: 1px solid var(--line); background: rgba(var(--paper-hi-rgb),.36); }
+    .token-traffic-y-axis { width: 52px; height: 286px; border-right: 1px solid var(--line); overflow: visible; }
+    .token-traffic-y-axis text { fill: var(--graphite); font-family: var(--mono); font-size: 8px; }
+    .token-traffic-scroll { width: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-color: var(--line-dark) transparent; scrollbar-width: thin; }
+    .token-traffic-chart { display: block; height: 286px; max-width: none; }
+    .token-traffic-chart text { fill: var(--graphite); font-family: var(--mono); font-size: 8px; }
+    .token-traffic-chart .traffic-gridline { stroke: var(--line); stroke-width: 1; }
+    .token-traffic-chart .traffic-axis { stroke: var(--line-dark); stroke-width: 1; }
+    .token-traffic-chart .traffic-bar { fill: var(--ink); }
+    .token-traffic-chart .traffic-bar-break rect { fill: var(--paper-hi); }
+    .token-traffic-chart .traffic-bar-break path { fill: none; stroke: var(--ink); stroke-width: 1.15; vector-effect: non-scaling-stroke; }
+    .token-traffic-y-axis .traffic-break-label { fill: var(--accent); font-size: 7px; letter-spacing: .08em; }
+    .token-traffic-y-axis .traffic-y-break { fill: none; stroke: var(--accent); stroke-width: 1.15; }
+    .token-traffic-chart .traffic-axis-label { text-anchor: middle; }
+    .token-traffic-chart .traffic-hover-band { fill: rgba(var(--accent-rgb),.12); }
+    .token-traffic-chart .traffic-crosshair { stroke: var(--accent); stroke-width: 1; vector-effect: non-scaling-stroke; }
+    .token-traffic-chart .traffic-hit-field { fill: transparent; cursor: crosshair; }
+    .daily-token-card { min-height: 330px; }
+    .daily-token-shell { margin-top: 5px; }
+    .daily-token-y-axis,
+    .daily-token-chart { height: 245px; }
+    .daily-token-chart .traffic-hit-bucket { fill: transparent; cursor: crosshair; }
+    .token-traffic-attribution { display: flex; justify-content: space-between; gap: 18px; margin: 11px 0 0; color: var(--muted); font-family: var(--mono); font-size: 8px; line-height: 1.5; text-transform: uppercase; }
+    .token-traffic-attribution::before { content: "Temporal basis"; flex: 0 0 auto; color: var(--graphite); }
+    .token-traffic-table-wrap { max-height: 344px; overflow: auto; border: 1px solid var(--line-dark); }
+    .token-traffic-table { min-width: 760px; }
+    .token-traffic-table tbody tr { cursor: default; }
+
     .composition-list { display: flex; flex-direction: column; gap: 14px; }
     .composition-row { display: grid; grid-template-columns: 11px minmax(90px, 1fr) auto; align-items: center; gap: 10px; }
     .composition-row > i { width: 10px; height: 10px; background: var(--series); }
@@ -2048,6 +2080,11 @@
       .view-switch { justify-content: flex-end; }
       .section-head { flex-wrap: wrap; }
       .section-head .view-toggle { margin-left: auto; }
+      .token-traffic-card .analysis-card-head { flex-wrap: wrap; }
+      .token-traffic-card .analysis-card-head span { order: 3; width: 100%; margin-left: 0; }
+      .token-traffic-card .analysis-card-head .view-toggle { margin-left: auto; }
+      .token-traffic-attribution { display: block; }
+      .token-traffic-attribution::before { display: block; margin-bottom: 3px; }
       .concentration-content { grid-template-columns: 1fr; }
       .rhythm-head { grid-template-columns: 1fr; gap: 14px; padding-top: 16px; padding-bottom: 16px; }
       .rhythm-head-tools { grid-template-columns: 1fr; justify-items: stretch; }
@@ -2387,7 +2424,46 @@
       </header>
       <div class="analysis-kpis" id="tokenKpis"></div>
       <div class="analysis-grid">
-        <section class="analysis-card wide"><div class="analysis-card-head"><h2>Token volume over time</h2><span>Daily / all token types</span></div><svg class="analysis-chart" id="tokenTrend" viewBox="0 0 760 245" role="img" aria-label="Daily token volume over time"></svg></section>
+        <section class="analysis-card full token-traffic-card">
+          <div class="analysis-card-head">
+            <h2>Token traffic</h2>
+            <span id="tokenTrafficMeta">Hourly bins / completion time</span>
+            <div class="view-toggle" role="tablist" aria-label="Token traffic view">
+              <button class="active" role="tab" aria-selected="true" data-token-traffic-view="chart">Bars</button>
+              <button role="tab" aria-selected="false" data-token-traffic-view="table">Table</button>
+            </div>
+          </div>
+          <p class="token-traffic-summary" id="tokenTrafficSummary"></p>
+          <div id="tokenTrafficChartView">
+            <div class="token-traffic-shell">
+              <svg class="token-traffic-y-axis" id="tokenTrafficYAxis" viewBox="0 0 52 286" aria-hidden="true"></svg>
+              <div class="token-traffic-scroll">
+                <svg class="token-traffic-chart" id="tokenTrafficChart" viewBox="0 0 760 286" role="img" aria-labelledby="tokenTrafficTitle tokenTrafficDescription">
+                  <title id="tokenTrafficTitle">Token traffic through the selected period</title>
+                  <desc id="tokenTrafficDescription">Dense bars show recorded token volume at turn completion times, with session completion as a fallback when turn detail is unavailable.</desc>
+                </svg>
+              </div>
+            </div>
+          </div>
+          <div id="tokenTrafficTableView" hidden>
+            <div class="token-traffic-table-wrap">
+              <table class="analysis-table token-traffic-table">
+                <thead><tr><th>Interval start</th><th class="numeric">Total</th><th class="numeric">Input</th><th class="numeric">Output</th><th class="numeric">Cache write</th><th class="numeric">Cache read</th><th class="numeric">Events</th></tr></thead>
+                <tbody id="tokenTrafficTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <p class="token-traffic-attribution" id="tokenTrafficAttribution"></p>
+        </section>
+        <section class="analysis-card wide daily-token-card">
+          <div class="analysis-card-head"><h2>Daily token volume</h2><span id="dailyTokenMeta">Daily / all token types</span></div>
+          <div class="token-traffic-shell daily-token-shell">
+            <svg class="token-traffic-y-axis daily-token-y-axis" id="dailyTokenYAxis" viewBox="0 0 52 245" aria-hidden="true"></svg>
+            <div class="token-traffic-scroll daily-token-scroll">
+              <svg class="token-traffic-chart daily-token-chart" id="tokenTrend" viewBox="0 0 760 245" role="img" aria-labelledby="dailyTokenTitle dailyTokenDescription"></svg>
+            </div>
+          </div>
+        </section>
         <section class="analysis-card narrow"><div class="analysis-card-head"><h2>Token mix</h2><span>Composition</span></div><div class="composition-list" id="tokenComposition"></div></section>
         <section class="analysis-card"><div class="analysis-card-head"><h2>Tokens by project</h2><span>Click for detail</span></div><div class="analysis-bars" id="tokenProjects"></div></section>
         <section class="analysis-card"><div class="analysis-card-head"><h2>Cache hit by day</h2><span>Cache-read share</span></div><div class="analysis-bars" id="cacheDays"></div></section>
