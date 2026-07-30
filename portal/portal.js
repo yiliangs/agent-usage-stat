@@ -1,3 +1,5 @@
+import { buildTokenTraffic, robustTokenTrafficScale } from './token-traffic.js'
+
 const DAY = 86_400_000
 const RANGE_DAYS = { '07D': 7, '14D': 14, '30D': 30, '90D': 90 }
 const state = {
@@ -8,6 +10,8 @@ const state = {
   view: 'overview',
   spendView: 'heatmap',
   projectView: 'overview',
+  tokenTrafficView: 'chart',
+  tokenTraffic: null,
   rhythmView: 'week',
   rhythmAnchor: null,
   focusFamily: null,
@@ -58,6 +62,14 @@ const localPartsFormatter = new Intl.DateTimeFormat('en-US', {
   hour: '2-digit',
   minute: '2-digit',
   second: '2-digit',
+  hourCycle: 'h23',
+})
+const trafficTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: LOCAL_TIME_ZONE,
+  month: 'short',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
   hourCycle: 'h23',
 })
 
@@ -570,6 +582,199 @@ function renderLineChart(selector, rows, read, formatValue) {
   svg.innerHTML = `${grid}<line class="axis" x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}"/><path class="area" d="${area}"/><path class="line" d="${line}"/>${values.map((value, index) => `<circle cx="${xFor(index)}" cy="${yFor(value)}" r="3" fill="${styleForFamily(Object.entries(rows[index].families || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other').base}" data-tip="${escapeHtml(rows[index].key)} | ${escapeHtml(formatValue(value))}"></circle>`).join('')}${labels}`
 }
 
+function brokenBarLayout(values, top, bottom) {
+  const scale = robustTokenTrafficScale(values)
+  const plotHeight = bottom - top
+  const breakBand = scale.broken ? 18 : 0
+  const usableHeight = plotHeight - breakBand
+  const breakY = top + breakBand
+  return {
+    scale,
+    plotHeight,
+    usableHeight,
+    breakY,
+    yFor: (value) => bottom - usableHeight * value / scale.max,
+  }
+}
+
+function brokenBarMarker(x, breakY, width = 6) {
+  const half = width / 2
+  const unit = width / 3
+  return `<g class="traffic-bar-break"><rect x="${x - half}" y="${breakY - 4}" width="${width}" height="8"/><path d="M${x - half} ${breakY + 2}l${unit} -4l${unit} 4l${unit} -4l${unit} 4"/></g>`
+}
+
+function renderTokenTraffic(sessions, period) {
+  const traffic = buildTokenTraffic(sessions, period.start, period.end)
+  const buckets = traffic.buckets
+  const peak = buckets.reduce((best, bucket) => bucket.totalTokens > best.totalTokens ? bucket : best, buckets[0])
+  const active = buckets.filter((bucket) => bucket.totalTokens > 0)
+  const slot = 4
+  const width = Math.max(760, buckets.length * slot)
+  const top = 18
+  const bottom = 232
+  const { scale, plotHeight, usableHeight, breakY, yFor } = brokenBarLayout(buckets.map((bucket) => bucket.totalTokens), top, bottom)
+  const outliers = scale.broken ? buckets.map((bucket, index) => ({ bucket, index })).filter(({ bucket }) => bucket.totalTokens > scale.max) : []
+  const intervalLabel = traffic.intervalMinutes === 15 ? '15-minute bins' : 'Hourly bins'
+  const grid = Array.from({ length: 5 }, (_, index) => {
+    const y = breakY + usableHeight * index / 4
+    return `<line class="traffic-gridline" x1="0" y1="${y}" x2="${width}" y2="${y}"/>`
+  }).join('')
+  const bars = buckets.map((bucket, index) => {
+    if (!bucket.totalTokens) return ''
+    const y = bucket.totalTokens > scale.max ? top : yFor(bucket.totalTokens)
+    return `<rect class="traffic-bar" x="${index * slot + 1}" y="${y}" width="2" height="${Math.max(1, bottom - y)}" rx="1"/>`
+  }).join('')
+  const breakMarkers = outliers.map(({ index }) => brokenBarMarker(index * slot + 2, breakY)).join('')
+  const labelEvery = Math.max(1, Math.ceil(176 / slot))
+  const labels = buckets.map((bucket, index) => index % labelEvery === 0 || index === buckets.length - 1
+    ? `<text class="traffic-axis-label" x="${index * slot + 1}" y="270" text-anchor="${index === 0 ? 'start' : index === buckets.length - 1 ? 'end' : 'middle'}">${escapeHtml(trafficTimeFormatter.format(new Date(bucket.start)).toUpperCase())}</text>`
+    : '').join('')
+  const yLabels = Array.from({ length: 5 }, (_, index) => {
+    const value = scale.max * (4 - index) / 4
+    const y = breakY + usableHeight * index / 4
+    return `<text x="48" y="${y + 3}" text-anchor="end">${escapeHtml(fmt.compact(value))}</text>`
+  }).join('')
+  const yBreak = scale.broken
+    ? `<text class="traffic-break-label" x="48" y="10" text-anchor="end">BREAK</text><path class="traffic-y-break" d="M42 ${breakY - 4}l3 3l3 -3l3 3 M42 ${breakY + 1}l3 3l3 -3l3 3"/>`
+    : ''
+  const turnCount = sum(buckets, (bucket) => bucket.turns)
+  const sessionCount = sum(buckets, (bucket) => bucket.sessions)
+  const breakNote = scale.broken ? ` ${scale.outlierCount} outlier interval${scale.outlierCount === 1 ? '' : 's'} cut above ${fmt.compact(scale.max)}.` : ''
+
+  state.tokenTraffic = { ...traffic, slot, width, top, bottom, scale }
+  $('#tokenTrafficMeta').textContent = scale.broken
+    ? `${intervalLabel} / axis break at ${fmt.compact(scale.max)}`
+    : `${intervalLabel} / completion time`
+  $('#tokenTrafficSummary').textContent = active.length
+    ? `${fmt.compact(sum(buckets, (bucket) => bucket.totalTokens))} tokens across ${active.length.toLocaleString('en-US')} active intervals. Peak: ${fmt.compact(peak.totalTokens)} at ${trafficTimeFormatter.format(new Date(peak.start)).toUpperCase()}.${breakNote}`
+    : 'No recorded token traffic in this period.'
+  $('#tokenTrafficYAxis').innerHTML = `${yLabels}${yBreak}`
+  const svg = $('#tokenTrafficChart')
+  svg.setAttribute('viewBox', `0 0 ${width} 286`)
+  svg.style.width = `${width}px`
+  const description = scale.broken
+    ? `Dense bars show recorded token volume with ${scale.outlierCount} outlier interval${scale.outlierCount === 1 ? '' : 's'} cut above ${fmt.compact(scale.max)} tokens. Hover and the table retain actual values.`
+    : 'Dense bars show recorded token volume at turn completion times, with session completion as a fallback when turn detail is unavailable.'
+  const clip = scale.broken ? `<defs><clipPath id="tokenTrafficClip"><rect x="0" y="${breakY}" width="${width}" height="${usableHeight + 1}"/></clipPath></defs>` : ''
+  const barGroup = scale.broken ? `<g clip-path="url(#tokenTrafficClip)">${bars}</g>` : bars
+  svg.innerHTML = `<title id="tokenTrafficTitle">Token traffic through the selected period</title><desc id="tokenTrafficDescription">${escapeHtml(description)}</desc>${clip}${grid}${barGroup}${breakMarkers}<line class="traffic-axis" x1="0" y1="${bottom}" x2="${width}" y2="${bottom}"/>${labels}<rect class="traffic-hover-band" id="tokenTrafficHoverBand" x="0" y="${top}" width="${slot}" height="${plotHeight}" hidden/><line class="traffic-crosshair" id="tokenTrafficCrosshair" x1="0" y1="${top}" x2="0" y2="${bottom}" hidden/><rect class="traffic-hit-field" x="0" y="${top}" width="${width}" height="${plotHeight}"/>`
+  $('#tokenTrafficTableBody').innerHTML = active.length ? active.map((bucket) => `
+    <tr>
+      <td>${escapeHtml(trafficTimeFormatter.format(new Date(bucket.start)).toUpperCase())}</td>
+      <td class="numeric">${escapeHtml(fmt.compact(bucket.totalTokens))}</td>
+      <td class="numeric">${escapeHtml(fmt.compact(bucket.input))}</td>
+      <td class="numeric">${escapeHtml(fmt.compact(bucket.output))}</td>
+      <td class="numeric">${escapeHtml(fmt.compact(bucket.cacheCreate))}</td>
+      <td class="numeric">${escapeHtml(fmt.compact(bucket.cacheRead))}</td>
+      <td class="numeric">${bucket.turns || bucket.sessions}</td>
+    </tr>`).join('') : '<tr><td colspan="7">No recorded activity in this period.</td></tr>'
+  $('#tokenTrafficAttribution').textContent = `${turnCount.toLocaleString('en-US')} turn completions; ${sessionCount.toLocaleString('en-US')} session-level fallbacks. Completion-time attribution preserves the selected sessions’ recorded totals.`
+  applyTokenTrafficView()
+  bindTokenTrafficHover()
+  const scroller = $('.token-traffic-scroll')
+  requestAnimationFrame(() => { scroller.scrollLeft = scroller.scrollWidth })
+}
+
+function renderDailyTokenBars(rows) {
+  const values = rows.map((row) => row.tokens)
+  const count = Math.max(1, rows.length)
+  const slot = Math.max(4, Math.floor(760 / count))
+  const width = Math.max(760, count * slot)
+  const barWidth = Math.max(2, Math.min(12, slot * .55))
+  const top = 18
+  const bottom = 190
+  const { scale, plotHeight, usableHeight, breakY, yFor } = brokenBarLayout(values, top, bottom)
+  const outliers = scale.broken ? rows.map((row, index) => ({ row, index })).filter(({ row }) => row.tokens > scale.max) : []
+  const grid = Array.from({ length: 5 }, (_, index) => {
+    const y = breakY + usableHeight * index / 4
+    return `<line class="traffic-gridline" x1="0" y1="${y}" x2="${width}" y2="${y}"/>`
+  }).join('')
+  const bars = rows.map((row, index) => {
+    if (!row.tokens) return ''
+    const y = row.tokens > scale.max ? top : yFor(row.tokens)
+    const x = index * slot + (slot - barWidth) / 2
+    return `<rect class="traffic-bar" x="${x}" y="${y}" width="${barWidth}" height="${Math.max(1, bottom - y)}" rx="1"/>`
+  }).join('')
+  const breakMarkers = outliers.map(({ index }) => brokenBarMarker(index * slot + slot / 2, breakY, Math.max(6, barWidth))).join('')
+  const labelEvery = Math.max(1, Math.ceil(104 / slot))
+  const labels = rows.map((row, index) => index % labelEvery === 0 || index === rows.length - 1
+    ? `<text class="traffic-axis-label" x="${index * slot + slot / 2}" y="226">${escapeHtml(fmt.date(new Date(`${row.key}T12:00:00Z`)))}</text>`
+    : '').join('')
+  const yLabels = Array.from({ length: 5 }, (_, index) => {
+    const value = scale.max * (4 - index) / 4
+    const y = breakY + usableHeight * index / 4
+    return `<text x="48" y="${y + 3}" text-anchor="end">${escapeHtml(fmt.compact(value))}</text>`
+  }).join('')
+  const yBreak = scale.broken
+    ? `<text class="traffic-break-label" x="48" y="10" text-anchor="end">BREAK</text><path class="traffic-y-break" d="M42 ${breakY - 4}l3 3l3 -3l3 3 M42 ${breakY + 1}l3 3l3 -3l3 3"/>`
+    : ''
+  const hitBuckets = rows.map((row, index) => {
+    const date = fmt.date(new Date(`${row.key}T12:00:00Z`))
+    const tip = `${date}\nTOTAL ${fmt.compact(row.tokens)}\nINPUT ${fmt.compact(row.input)} · OUTPUT ${fmt.compact(row.output)}\nCACHE WRITE ${fmt.compact(row.cacheCreate)} · CACHE READ ${fmt.compact(row.cacheRead)}`
+    return `<rect class="traffic-hit-bucket multiline-tip" x="${index * slot}" y="${top}" width="${slot}" height="${plotHeight}" data-tip="${escapeHtml(tip)}"/>`
+  }).join('')
+  const description = scale.broken
+    ? `Daily token volume shown as bars with ${scale.outlierCount} outlier day${scale.outlierCount === 1 ? '' : 's'} cut above ${fmt.compact(scale.max)} tokens. Hover retains actual values.`
+    : 'Daily token volume shown as monochrome bars on a linear scale.'
+  const clip = scale.broken ? `<defs><clipPath id="dailyTokenClip"><rect x="0" y="${breakY}" width="${width}" height="${usableHeight + 1}"/></clipPath></defs>` : ''
+  const barGroup = scale.broken ? `<g clip-path="url(#dailyTokenClip)">${bars}</g>` : bars
+  const svg = $('#tokenTrend')
+  svg.setAttribute('viewBox', `0 0 ${width} 245`)
+  svg.style.width = `${width}px`
+  svg.innerHTML = `<title id="dailyTokenTitle">Daily token volume</title><desc id="dailyTokenDescription">${escapeHtml(description)}</desc>${clip}${grid}${barGroup}${breakMarkers}<line class="traffic-axis" x1="0" y1="${bottom}" x2="${width}" y2="${bottom}"/>${labels}${hitBuckets}`
+  $('#dailyTokenYAxis').innerHTML = `${yLabels}${yBreak}`
+  $('#dailyTokenMeta').textContent = scale.broken
+    ? `Daily bars / axis break at ${fmt.compact(scale.max)}`
+    : 'Daily bars / all token types'
+  const scroller = $('.daily-token-scroll')
+  requestAnimationFrame(() => { scroller.scrollLeft = scroller.scrollWidth })
+}
+
+function applyTokenTrafficView() {
+  const chart = $('#tokenTrafficChartView')
+  const table = $('#tokenTrafficTableView')
+  chart.hidden = state.tokenTrafficView !== 'chart'
+  table.hidden = state.tokenTrafficView !== 'table'
+  $$('[data-token-traffic-view]').forEach((button) => {
+    const active = button.dataset.tokenTrafficView === state.tokenTrafficView
+    button.classList.toggle('active', active)
+    button.setAttribute('aria-selected', String(active))
+  })
+}
+
+function bindTokenTrafficHover() {
+  const svg = $('#tokenTrafficChart')
+  const hitField = $('.traffic-hit-field', svg)
+  const band = $('#tokenTrafficHoverBand')
+  const crosshair = $('#tokenTrafficCrosshair')
+  const tooltip = $('#tooltip')
+  const traffic = state.tokenTraffic
+  if (!hitField || !traffic) return
+
+  hitField.onmousemove = (event) => {
+    const bounds = svg.getBoundingClientRect()
+    const x = (event.clientX - bounds.left) / bounds.width * traffic.width
+    const index = clamp(Math.floor(x / traffic.slot), 0, traffic.buckets.length - 1)
+    const bucket = traffic.buckets[index]
+    const barX = index * traffic.slot
+    band.hidden = false
+    crosshair.hidden = false
+    band.setAttribute('x', String(barX))
+    crosshair.setAttribute('x1', String(barX + traffic.slot / 2))
+    crosshair.setAttribute('x2', String(barX + traffic.slot / 2))
+    tooltip.textContent = `${trafficTimeFormatter.format(new Date(bucket.start)).toUpperCase()} – ${trafficTimeFormatter.format(new Date(bucket.end)).toUpperCase()}\nTOTAL ${fmt.compact(bucket.totalTokens)} · ${bucket.turns || bucket.sessions} COMPLETIONS\nINPUT ${fmt.compact(bucket.input)} · OUTPUT ${fmt.compact(bucket.output)}\nCACHE WRITE ${fmt.compact(bucket.cacheCreate)} · CACHE READ ${fmt.compact(bucket.cacheRead)}`
+    tooltip.classList.add('multiline')
+    tooltip.style.display = 'block'
+    positionTooltip(tooltip, event)
+  }
+  hitField.onmouseleave = () => {
+    band.hidden = true
+    crosshair.hidden = true
+    tooltip.style.display = 'none'
+    tooltip.classList.remove('multiline')
+  }
+}
+
 function renderAnalysisBars(selector, rows, options = {}) {
   const max = Math.max(1, ...rows.map((row) => row.value))
   $(selector).innerHTML = rows.length ? rows.map((row) => {
@@ -618,8 +823,9 @@ function renderTokenAnalysis(current, previous, period) {
     { label: 'Cache read', value: fmt.compact(value.cacheRead), note: fmt.pct(value.cacheRatio) + ' cache hit' },
     { label: 'Tokens / dollar', value: fmt.compact(tokensPerDollar), note: 'Recorded volume per API-equivalent dollar' },
   ])
+  renderTokenTraffic(current, period)
   const days = dailyUsageRows(current, period)
-  renderLineChart('#tokenTrend', days, (row) => row.tokens, fmt.compact)
+  renderDailyTokenBars(days)
   const composition = [
     { key: 'Input', value: value.input, color: 'var(--token-mid)' },
     { key: 'Output', value: value.output, color: 'var(--token-dark)' },
@@ -1503,24 +1709,26 @@ function bindPageInteractions() {
   })
 }
 
+function positionTooltip(tooltip, event) {
+  const bounds = tooltip.getBoundingClientRect()
+  const margin = 12
+  let left = event.clientX + 16
+  let top = event.clientY + 16
+  if (left + bounds.width > window.innerWidth - margin) left = event.clientX - bounds.width - 16
+  if (top + bounds.height > window.innerHeight - margin) top = Math.max(margin, event.clientY - bounds.height - 16)
+  tooltip.style.left = `${Math.max(margin, left)}px`
+  tooltip.style.top = `${top}px`
+}
+
 function bindTooltips() {
   const tooltip = $('#tooltip')
   $$('[data-tip]').forEach((element) => {
     element.onmouseenter = () => {
       tooltip.textContent = element.dataset.tip
-      tooltip.classList.toggle('multiline', element.classList.contains('rhythm-density-band'))
+      tooltip.classList.toggle('multiline', element.classList.contains('rhythm-density-band') || element.classList.contains('multiline-tip'))
       tooltip.style.display = 'block'
     }
-    element.onmousemove = (event) => {
-      const bounds = tooltip.getBoundingClientRect()
-      const margin = 12
-      let left = event.clientX + 16
-      let top = event.clientY + 16
-      if (left + bounds.width > window.innerWidth - margin) left = event.clientX - bounds.width - 16
-      if (top + bounds.height > window.innerHeight - margin) top = Math.max(margin, event.clientY - bounds.height - 16)
-      tooltip.style.left = `${Math.max(margin, left)}px`
-      tooltip.style.top = `${top}px`
-    }
+    element.onmousemove = (event) => positionTooltip(tooltip, event)
     element.onmouseleave = () => { tooltip.style.display = 'none' }
   })
 }
@@ -1597,6 +1805,11 @@ $$('[data-spend-view]').forEach((button) => button.addEventListener('click', () 
   state.spendView = button.dataset.spendView
   renderSpendField(state.current, currentWindow())
   bindPageInteractions()
+}))
+
+$$('[data-token-traffic-view]').forEach((button) => button.addEventListener('click', () => {
+  state.tokenTrafficView = button.dataset.tokenTrafficView
+  applyTokenTrafficView()
 }))
 
 $$('[data-project-view]').forEach((button) => button.addEventListener('click', () => {
