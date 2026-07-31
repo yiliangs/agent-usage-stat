@@ -276,12 +276,12 @@ function renderHeader(window, current) {
   if (metaValues[1]) metaValues[1].textContent = fmt.dateYear(generated)
   if (metaValues[2]) metaValues[2].textContent = `LIVE / ${fmt.time(generated)}`
 
-  $('.period-range strong').textContent = state.range
   $('.period-range span').innerHTML = `${fmt.dateYear(new Date(window.start))}<br>${fmt.dateYear(new Date(window.end))}`
   $('.folio .index').textContent = `${String(current.length).padStart(2, '0')} / ${String(state.sessions.length).padStart(2, '0')}`
 }
 
 function renderSummary(current, previous) {
+  $('.period-range strong').textContent = fmt.compact(current.tokens)
   $('.hero-number .value').textContent = fmt.usd(current.cost)
   const delta = $('.hero-number .delta')
   delta.innerHTML = `<i class="delta-mark"></i>${deltaText(current.cost, previous.cost, true)}`
