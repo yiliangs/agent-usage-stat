@@ -6,16 +6,40 @@ import { ConfigManager } from "../core/config-manager.js";
 import { LogbookWriter, type LogbookRecord } from "../core/logbook-writer.js";
 import { allProviders } from "../providers/registry.js";
 import { resolveUsageRoot } from "../utils/usage-root.js";
-import type { ProviderName } from "../types/provider.js";
+import type {
+  FoundSession,
+  ProviderName,
+  SessionProvider,
+} from "../types/provider.js";
+
+const PREFLIGHT_CONCURRENCY = 8;
 
 export interface SyncOptions {
   quiet?: boolean;
+}
+
+export interface SyncCommandDependencies {
+  providers?: SessionProvider[];
+}
+
+interface SyncCandidate {
+  found: FoundSession;
+  sourceFingerprint: string;
+}
+
+interface SyncPreflightFailure {
+  failure: string;
 }
 
 /** Reconcile every provider transcript into idempotent per-session shards. */
 export class SyncCommand {
   private configManager = new ConfigManager();
   private writer = new LogbookWriter();
+  private providers: SessionProvider[];
+
+  constructor(dependencies: SyncCommandDependencies = {}) {
+    this.providers = dependencies.providers ?? allProviders();
+  }
 
   async execute(options: SyncOptions = {}): Promise<number> {
     const spinner = ora({
@@ -27,26 +51,46 @@ export class SyncCommand {
     let updated = 0;
     const failures: string[] = [];
 
-    for (const provider of allProviders()) {
+    for (const provider of this.providers) {
       const sessions = await provider.findAllSessions();
-      for (const found of sessions) {
-        try {
-          const shardPath = join(
-            root,
-            LogbookWriter.SHARD_DIR,
-            `${found.sessionId}.json`,
-          );
-          const sourceFingerprint = await provider.fingerprintSession(found);
-          if (
-            !(await this.needsSync(
-              sourceFingerprint,
-              shardPath,
-              provider.name,
-            ))
-          ) {
-            continue;
+      const preflight = await mapConcurrent(
+        sessions,
+        PREFLIGHT_CONCURRENCY,
+        async (found): Promise<SyncCandidate | SyncPreflightFailure | null> => {
+          try {
+            const shardPath = join(
+              root,
+              LogbookWriter.SHARD_DIR,
+              `${found.sessionId}.json`,
+            );
+            const sourceFingerprint = await provider.fingerprintSession(found);
+            if (
+              !(await this.needsSync(
+                sourceFingerprint,
+                shardPath,
+                provider.name,
+              ))
+            ) {
+              return null;
+            }
+            return { found, sourceFingerprint };
+          } catch (error) {
+            return {
+              failure: this.formatFailure(provider, found, error),
+            };
           }
+        },
+      );
 
+      for (const result of preflight) {
+        if (!result) continue;
+        if ("failure" in result) {
+          failures.push(result.failure);
+          continue;
+        }
+
+        const { found, sourceFingerprint } = result;
+        try {
           const sessionData = await provider.calculateUsage(
             found.transcriptPath,
             found.sessionId,
@@ -65,9 +109,7 @@ export class SyncCommand {
           await this.writer.append(root, { sessionData, transcriptData });
           updated++;
         } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          failures.push(`${provider.name}:${found.sessionId}: ${message}`);
+          failures.push(this.formatFailure(provider, found, error));
         }
       }
     }
@@ -83,6 +125,15 @@ export class SyncCommand {
         : "Agent records are current.",
     );
     return updated;
+  }
+
+  private formatFailure(
+    provider: SessionProvider,
+    found: FoundSession,
+    error: unknown,
+  ): string {
+    const message = error instanceof Error ? error.message : String(error);
+    return `${provider.name}:${found.sessionId}: ${message}`;
   }
 
   private async needsSync(
@@ -102,4 +153,28 @@ export class SyncCommand {
       return true;
     }
   }
+}
+
+async function mapConcurrent<T, R>(
+  items: T[],
+  concurrency: number,
+  map: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await map(items[index]);
+    }
+  }
+
+  await Promise.all(
+    Array.from(
+      { length: Math.min(concurrency, items.length) },
+      () => worker(),
+    ),
+  );
+  return results;
 }
