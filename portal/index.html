@@ -34,6 +34,10 @@
       --model-terra: #a27b18;
       --model-luna: #aa4778;
       --model-codex: #007f9a;
+      --project-1: #2a78d6;
+      --project-2: #eda100;
+      --project-3: #e87ba4;
+      --project-4: #008300;
       --status-good: #35765f;
       --status-error: #a3483a;
       --cache-read: #8e8b83;
@@ -1529,9 +1533,9 @@
     }
     .rhythm-key-label,
     .rhythm-key-note { color: var(--muted); }
-    .rhythm-family-key,
+    .rhythm-series-key,
     .rhythm-density-key { display: inline-flex; align-items: center; gap: 6px; }
-    .rhythm-family-key i {
+    .rhythm-series-key i {
       width: 10px;
       height: 9px;
       border: 1px solid rgba(var(--ink-rgb),.24);
@@ -1977,6 +1981,10 @@
         --model-terra: #c7a34f;
         --model-luna: #d276a1;
         --model-codex: #43a9c1;
+        --project-1: #3987e5;
+        --project-2: #c98500;
+        --project-3: #d55181;
+        --project-4: #008300;
         --status-good: #75b79a;
         --status-error: #dc7866;
         --cache-read: #aaa393;
@@ -2389,6 +2397,7 @@
                 <button id="rhythmToday">Today</button>
                 <button id="rhythmNext" aria-label="Next period">→</button>
               </div>
+              <div class="view-toggle rhythm-color-toggle" id="rhythmColorToggle" aria-label="Session timeline color coding"><button class="active" data-rhythm-color="model" aria-pressed="true">Model</button><button data-rhythm-color="project" aria-pressed="false">Project</button></div>
               <div class="view-toggle rhythm-toggle" aria-label="Session timeline view"><button class="active" data-rhythm-view="week">Week</button><button data-rhythm-view="month">Month</button></div>
             </div>
           </div>
