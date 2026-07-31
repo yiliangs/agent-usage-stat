@@ -1,4 +1,5 @@
 import { buildTokenTraffic, robustTokenTrafficScale } from './token-traffic.js'
+import { buildProjectColorIndex, projectSeriesFor } from './timeline-colors.js'
 
 const DAY = 86_400_000
 const RANGE_DAYS = { '07D': 7, '14D': 14, '30D': 30, '90D': 90 }
@@ -13,6 +14,8 @@ const state = {
   tokenTrafficView: 'chart',
   tokenTraffic: null,
   rhythmView: 'week',
+  rhythmColor: 'model',
+  rhythmProjectColors: null,
   rhythmAnchor: null,
   focusFamily: null,
   projectSort: { key: 'cost', direction: -1 },
@@ -118,6 +121,15 @@ function styleForFamily(family) {
   const style = MODEL_STYLES[(family || 'other').toLowerCase()] || MODEL_STYLES.other
   const base = cssColor(style.variable, style.fallback)
   return { base, color: tintColor(base, .78) }
+}
+
+function rhythmSeriesFor(session, projectColors) {
+  if (state.rhythmColor === 'project') {
+    const series = projectSeriesFor(session.project, projectColors)
+    return { label: series.label, base: cssColor(series.variable, series.fallback) }
+  }
+  const label = familyOf(session.primaryModel)
+  return { label, base: styleForFamily(label).base }
 }
 
 function tintColor(hex, strength) {
@@ -1170,6 +1182,8 @@ function renderWorkRhythm(sessions, window) {
   })
   const segmentsByDate = new Map(dateKeys.map((date) => [date, []]))
   const densityFor = densityScale(visibleSessions)
+  state.rhythmProjectColors ||= buildProjectColorIndex(state.sessions, visibleSessions)
+  const projectColors = state.rhythmProjectColors
 
   for (const session of visibleSessions) {
     const { start, end } = sessionTimes(session)
@@ -1201,19 +1215,25 @@ function renderWorkRhythm(sessions, window) {
   field.style.minWidth = monthView ? `${Math.max(1080, 76 + dateKeys.length * 34)}px` : '1020px'
   field.innerHTML = monthView
     ? renderMonthRhythm(dateKeys, segmentsByDate, observedThrough)
-    : renderWeekRhythm(dateKeys, segmentsByDate)
-  renderRhythmKey(visibleSessions, monthView)
+    : renderWeekRhythm(dateKeys, segmentsByDate, projectColors)
+  renderRhythmKey(visibleSessions, monthView, projectColors)
   renderRhythmTable(dateKeys, segmentsByDate, monthView ? observedThrough : null)
 
   $('.rhythm-scroll').scrollLeft = 0
   $$('.rhythm-toggle button').forEach((button) => button.classList.toggle('active', button.dataset.rhythmView === state.rhythmView))
+  $$('.rhythm-color-toggle button').forEach((button) => {
+    const active = button.dataset.rhythmColor === state.rhythmColor
+    button.classList.toggle('active', active)
+    button.setAttribute('aria-pressed', String(active))
+  })
+  $('#rhythmColorToggle').hidden = monthView
   const monthLabel = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${lastDate}T12:00:00Z`))
   $('#rhythmWindow').textContent = monthView ? monthLabel : `${firstDate.slice(5)} – ${lastDate.slice(5)}`
   $('#rhythmCoverage').textContent = `${visibleSessions.length} session${visibleSessions.length === 1 ? '' : 's'}`
   $('#rhythmViewNote').textContent = monthView ? 'Daily columns · 24-hour field' : '24-hour schedule'
   $('#rhythmDescription').textContent = monthView
     ? 'Each date is a vertical 24-hour heatmap. Cool blue marks chill intervals, warm brick red marks the busiest combined token velocity, and neutral bands sit between.'
-    : 'A precise wall-clock view of each recorded session. Blocks use the shared model-family colors; darker shading indicates higher token velocity.'
+    : `A precise wall-clock view of each recorded session. Blocks use ${state.rhythmColor === 'project' ? 'stable project colors' : 'the shared model-family colors'}; darker shading indicates higher token velocity.`
   updateRhythmNavigation(window, dateKeys)
 }
 
@@ -1252,21 +1272,22 @@ function daySessions(segments) {
   return [...new Map(segments.map((segment) => [segment.session._i, segment.session])).values()]
 }
 
-function renderRhythmKey(sessions, monthView) {
+function renderRhythmKey(sessions, monthView, projectColors) {
   const key = $('#rhythmKey')
   if (monthView) {
     key.innerHTML = '<span class="rhythm-density-key"><span>Chill</span><i></i><span>Busy</span></span>'
     return
   }
-  const families = [...new Set(sessions.map((session) => familyOf(session.primaryModel)))]
-  if (!families.length) {
-    key.innerHTML = '<span class="rhythm-key-note">No model activity in view</span>'
+  const series = [...new Map(sessions.map((session) => {
+    const value = rhythmSeriesFor(session, projectColors)
+    return [value.label, value]
+  })).values()]
+  if (!series.length) {
+    key.innerHTML = '<span class="rhythm-key-note">No session activity in view</span>'
     return
   }
-  key.innerHTML = `<span class="rhythm-key-label">Model family</span>${families.map((family) => {
-    const series = styleForFamily(family).base
-    return `<span class="rhythm-family-key"><i style="--series:${series};--fill:${tintColor(series, .46)}"></i>${escapeHtml(family)}</span>`
-  }).join('')}<span class="rhythm-key-note">Shade = velocity</span>`
+  const label = state.rhythmColor === 'project' ? 'Project' : 'Model family'
+  key.innerHTML = `<span class="rhythm-key-label">${label}</span>${series.map((value) => `<span class="rhythm-series-key"><i style="--series:${value.base};--fill:${tintColor(value.base, .46)}"></i>${escapeHtml(value.label)}</span>`).join('')}<span class="rhythm-key-note">Shade = velocity</span>`
 }
 
 function minuteLabel(minute) {
@@ -1290,7 +1311,7 @@ function rhythmDayClasses(date, index, segments = []) {
   return `rhythm-day ${rhythmDayFlags(date, index, segments)}`
 }
 
-function renderWeekRhythm(dateKeys, segmentsByDate) {
+function renderWeekRhythm(dateKeys, segmentsByDate, projectColors) {
   const columns = `repeat(${dateKeys.length}, minmax(126px, 1fr))`
   const dateHead = dateKeys.map((date, index) => {
     const value = new Date(`${date}T12:00:00Z`)
@@ -1305,11 +1326,11 @@ function renderWeekRhythm(dateKeys, segmentsByDate) {
     const position = hour / 24 * WEEK_TIMELINE_HEIGHT
     return `<span class="rhythm-hour${hour === 24 ? ' end' : ''}" style="top:${position}px">${String(hour).padStart(2, '0')}:00</span>`
   }).join('')
-  const days = renderWeekRhythmDays(dateKeys, segmentsByDate)
+  const days = renderWeekRhythmDays(dateKeys, segmentsByDate, projectColors)
   return `<div class="rhythm-calendar-corner"><span>Local</span><b>Chicago</b></div><div class="rhythm-date-head" style="grid-template-columns:${columns}">${dateHead}</div><div class="rhythm-time-axis">${timeAxis}</div><div class="rhythm-days" style="grid-template-columns:${columns}">${days}</div>`
 }
 
-function renderWeekRhythmDays(dateKeys, segmentsByDate) {
+function renderWeekRhythmDays(dateKeys, segmentsByDate, projectColors) {
   return dateKeys.map((date, dateIndex) => {
     const segments = segmentsByDate.get(date)
     const events = layoutConcurrent(segments).map((segment) => {
@@ -1319,7 +1340,7 @@ function renderWeekRhythmDays(dateKeys, segmentsByDate) {
       const width = 100 / segment.laneCount
       const compact = height < 19 ? ' compact' : height < 38 ? ' brief' : ''
       const family = familyOf(segment.session.primaryModel)
-      const seriesColor = styleForFamily(family).base
+      const seriesColor = rhythmSeriesFor(segment.session, projectColors).base
       const fillColor = tintColor(seriesColor, .34 + segment.normalized * .18)
       const durationMinutes = Math.max(1, (segment.end - segment.start) / 60_000)
       const tip = `${segment.session.project} | ${family} | ${clockTime(segment.start)}–${clockTime(segment.end)} | ${Math.round(durationMinutes)} min | ${fmt.compact(segment.session.totalTokens || 0)} tokens | ${fmt.compact(segment.tokensPerMinute)} tokens/min`
@@ -1769,6 +1790,7 @@ async function load() {
       fetch('./data/meta.json', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null),
     ])
     state.sessions = sessions.map(normalize).filter((session) => Number.isFinite(session.t))
+    state.rhythmProjectColors = null
     state.meta = meta
     const requestedView = window.location.hash.slice(1)
     if (['overview', 'spend', 'tokens', 'projects', 'sessions'].includes(requestedView)) state.view = requestedView
@@ -1815,6 +1837,12 @@ $$('[data-token-traffic-view]').forEach((button) => button.addEventListener('cli
 $$('[data-project-view]').forEach((button) => button.addEventListener('click', () => {
   state.projectView = button.dataset.projectView
   applyProjectView()
+  bindPageInteractions()
+}))
+
+$$('[data-rhythm-color]').forEach((button) => button.addEventListener('click', () => {
+  state.rhythmColor = button.dataset.rhythmColor
+  renderWorkRhythm(state.sessions, currentWindow())
   bindPageInteractions()
 }))
 
