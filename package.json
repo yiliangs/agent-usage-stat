@@ -1,6 +1,6 @@
 {
   "name": "agent-usage-stat",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "A local usage analytics portal for Claude Code and Codex",
   "license": "MIT",
   "author": "Yiliang Shao <github.com/yiliangs>",
@@ -30,7 +30,8 @@
     "portal/Agent-Usage-Stat.command",
     "Initialize-Agent-Usage-Stat.bat",
     "Initialize-Agent-Usage-Stat.command",
-    "screenshot.png"
+    "screenshot.png",
+    "screenshot-timeline.png"
   ],
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json && npm run build:portal",
