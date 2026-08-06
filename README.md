@@ -65,6 +65,16 @@ it starts a foreground server.
 - Cache read and write efficiency
 - Searchable session details
 
+## Weekly and monthly usage map
+
+The **Session timeline** maps every recorded session onto local wall-clock time. Week view keeps the full 24-hour schedule readable, including concurrent sessions. Month view compresses the same data into daily columns, blending overlaps without losing their combined token volume.
+
+Switch between model and project colors to see who did the work or where it happened. Darker blocks indicate higher token velocity, and the period controls move backward or forward without changing the active analytics filter.
+
+The image pairs a dense illustrative week with an anonymized real monthly snapshot. Month view omits session names and shows the combined temporal pattern directly.
+
+![Weekly and monthly session usage maps](screenshot-timeline.png)
+
 Costs are API-equivalent list-price estimates. They are not charges added to a ChatGPT or Claude subscription.
 
 Each completed session becomes one JSON file under `<your-folder>/logbook.d/`. You can use a synced folder to combine several Windows and macOS machines.
