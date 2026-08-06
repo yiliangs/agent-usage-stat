@@ -430,6 +430,15 @@ test("the package exposes the short aus terminal command", async () => {
   assert.equal(manifest.bin["agent-usage-stat"], manifest.bin.aus);
 });
 
+test("the CLI version follows the package manifest", async () => {
+  const manifest = JSON.parse(
+    await readFile(join(process.cwd(), "package.json"), "utf8"),
+  );
+  const result = await runCli(["--version"], process.cwd());
+  assert.equal(result.code, 0, result.output);
+  assert.equal(result.output.trim(), manifest.version);
+});
+
 test("one-click portal launchers preserve the persistent server when available", async () => {
   for (const launcher of [
     "portal/Agent-Usage-Stat.bat",

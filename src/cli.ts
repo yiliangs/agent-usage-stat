@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 
+import { readFileSync } from "node:fs";
 import { Command } from "commander";
+
+const packageVersion = (
+  JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  ) as { version: string }
+).version;
 
 // Commands are loaded lazily. The hook path must reach the detach shim without
 // loading provider parsers, the portal server, or any other worker code.
@@ -10,7 +17,7 @@ program.enablePositionalOptions();
 program
   .name("agent-usage-stat")
   .description("Explore Claude Code and Codex usage in a local portal")
-  .version("2.1.0");
+  .version(packageVersion);
 
 program
   .command("capture")
