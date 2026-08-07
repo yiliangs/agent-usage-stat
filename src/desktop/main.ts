@@ -3,7 +3,6 @@ import {
   BrowserWindow,
   dialog,
   Menu,
-  protocol,
   shell,
   type MenuItemConstructorOptions,
 } from "electron";
@@ -11,49 +10,32 @@ import { updateElectronApp } from "update-electron-app";
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync } from "node:fs";
 import {
-  mkdir,
-  readFile,
   rename,
   rm,
-  stat,
   writeFile,
 } from "node:fs/promises";
-import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, join, resolve } from "node:path";
 import { resolveUsageRootFromDisk } from "../utils/usage-root.js";
 import {
   desktopSetupStatePath,
   installedHelperPath,
 } from "../core/application-paths.js";
 import { HelperRuntime } from "./helper-runtime.js";
-
-const APP_SCHEME = "aus";
-const APP_HOST = "app";
-const MIME_TYPES: Record<string, string> = {
-  ".css": "text/css; charset=utf-8",
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml",
-};
+import {
+  PORTAL_ORIGIN,
+  PORTAL_URL,
+  PortalRuntime,
+  registerPortalScheme,
+} from "./portal-runtime.js";
 
 traceStartup("module-loaded");
 
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: APP_SCHEME,
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-    },
-  },
-]);
+registerPortalScheme();
 traceStartup("scheme-registered");
 
 let mainWindow: BrowserWindow | null = null;
-let refreshPromise: Promise<PortalRefreshResult> | null = null;
 const helperRuntime = new HelperRuntime();
+const portalRuntime = new PortalRuntime(helperRuntime);
 
 const squirrelEvent = handleSquirrelEvent();
 const isSmokeTest = process.argv.includes("--desktop-smoke-test");
@@ -82,19 +64,6 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-interface PortalRefreshResult {
-  updated: number;
-  generatedAt: string;
-  sessions: number;
-  totalCost: number;
-}
-
-interface PortalMeta {
-  generatedAt?: string;
-  sessions?: number;
-  totalCost?: number;
-}
-
 async function start(): Promise<void> {
   traceStartup("ready");
   app.setAppUserModelId("com.yiliang.agent-usage-stat");
@@ -102,7 +71,7 @@ async function start(): Promise<void> {
     updateElectronApp({ updateInterval: "1 hour", notifyUser: true });
   }
   await helperRuntime.syncInstallation();
-  await registerApplicationProtocol();
+  await portalRuntime.registerProtocol();
   installApplicationMenu();
   traceStartup("protocol-ready");
 
@@ -113,7 +82,7 @@ async function start(): Promise<void> {
   }
 
   await ensureDesktopSetup(true);
-  await refreshPortalData();
+  await portalRuntime.refresh();
   await createWindow();
 }
 
@@ -140,7 +109,7 @@ async function createWindow(show = true): Promise<BrowserWindow> {
     return { action: "deny" };
   });
   window.webContents.on("will-navigate", (event, url) => {
-    if (url.startsWith(`${APP_SCHEME}://${APP_HOST}/`)) return;
+    if (url.startsWith(`${PORTAL_ORIGIN}/`)) return;
     event.preventDefault();
   });
   if (show) window.once("ready-to-show", () => window.show());
@@ -149,7 +118,7 @@ async function createWindow(show = true): Promise<BrowserWindow> {
   });
 
   mainWindow = window;
-  await window.loadURL(`${APP_SCHEME}://${APP_HOST}/index.html`);
+  await window.loadURL(PORTAL_URL);
   return window;
 }
 
@@ -211,7 +180,7 @@ function installApplicationMenu(): void {
 
 async function refreshAndReload(): Promise<void> {
   try {
-    await refreshPortalData();
+    await portalRuntime.refresh();
     await mainWindow?.webContents.reload();
   } catch (error) {
     await showOperationError("Refresh failed", error);
@@ -302,99 +271,6 @@ function showMessageBox(
     : dialog.showMessageBox(options);
 }
 
-async function registerApplicationProtocol(): Promise<void> {
-  await protocol.handle(APP_SCHEME, async (request) => {
-    const url = new URL(request.url);
-    if (url.host !== APP_HOST) return new Response("Not found", { status: 404 });
-
-    if (url.pathname === "/api/refresh") {
-      if (request.method !== "POST") {
-        return new Response("Method not allowed", {
-          status: 405,
-          headers: { Allow: "POST" },
-        });
-      }
-      try {
-        return jsonResponse(await refreshPortalData());
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return jsonResponse({ error: message }, 500);
-      }
-    }
-
-    const fromData = url.pathname.startsWith("/data/");
-    const root = fromData ? portalDataRoot() : portalAssetsRoot();
-    const requestedPath = fromData
-      ? url.pathname.slice("/data/".length)
-      : url.pathname === "/" || url.pathname === "/index.html"
-        ? "index.html"
-        : url.pathname.slice(1);
-    let path = resolve(root, decodeURIComponent(requestedPath));
-
-    if (!isPathInside(root, path)) {
-      return new Response("Forbidden", { status: 403 });
-    }
-    if (!fromData && !(await isFile(path))) {
-      path = resolve(root, "index.html");
-    }
-
-    try {
-      const content = await readFile(path);
-      const extension = extname(path).toLowerCase();
-      return new Response(content, {
-        status: 200,
-        headers: {
-          "Content-Type": MIME_TYPES[extension] || "application/octet-stream",
-          "Cache-Control": fromData || extension === ".html"
-            ? "no-store"
-            : "public, max-age=3600",
-        },
-      });
-    } catch {
-      return new Response("Not found", { status: 404 });
-    }
-  });
-}
-
-function refreshPortalData(): Promise<PortalRefreshResult> {
-  if (!refreshPromise) {
-    refreshPromise = performRefresh().finally(() => {
-      refreshPromise = null;
-    });
-  }
-  return refreshPromise;
-}
-
-async function performRefresh(): Promise<PortalRefreshResult> {
-  const usageRoot = resolveUsageRootFromDisk().root;
-  await mkdir(join(usageRoot, "logbook.d"), { recursive: true });
-  const helper = await helperRuntime.run(["sync", "--quiet"]);
-  if (helper.code !== 0) {
-    throw new Error(helper.stderr.trim() || "Usage synchronization failed.");
-  }
-
-  const builderPath = join(
-    app.getAppPath(),
-    "portal",
-    "scripts",
-    "build-data.mjs",
-  );
-  const builder = await import(pathToFileURL(builderPath).href) as {
-    buildPortalData(options: { root: string; outDir: string }): Promise<PortalMeta>;
-  };
-  const meta = await builder.buildPortalData({
-    root: usageRoot,
-    outDir: portalDataRoot(),
-  });
-
-  return {
-    updated: helper.updated,
-    generatedAt: meta.generatedAt || new Date().toISOString(),
-    sessions: meta.sessions ?? 0,
-    totalCost: meta.totalCost ?? 0,
-  };
-}
-
 async function ensureDesktopSetup(interactive: boolean): Promise<void> {
   const setup = await helperRuntime.ensureSetup();
   if (!setup.configured) {
@@ -418,37 +294,6 @@ async function ensureDesktopSetup(interactive: boolean): Promise<void> {
   }
 }
 
-function portalAssetsRoot(): string {
-  return join(app.getAppPath(), "dist", "portal");
-}
-
-function portalDataRoot(): string {
-  return join(app.getPath("userData"), "portal-data");
-}
-
-function isPathInside(root: string, path: string): boolean {
-  const fromRoot = relative(resolve(root), resolve(path));
-  return !fromRoot.startsWith("..") && !isAbsolute(fromRoot);
-}
-
-async function isFile(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function jsonResponse(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value), {
-    status,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "no-store",
-    },
-  });
-}
-
 async function runSmokeTestIfRequested(): Promise<boolean> {
   const flag = "--desktop-smoke-test";
   const index = process.argv.indexOf(flag);
@@ -462,7 +307,7 @@ async function runSmokeTestIfRequested(): Promise<boolean> {
   traceStartup("smoke-helper-complete");
   await ensureDesktopSetup(false);
   traceStartup("smoke-setup-complete");
-  const refresh = await refreshPortalData();
+  const refresh = await portalRuntime.refresh();
   traceStartup("smoke-refresh-complete");
   const window = await createWindow(false);
   traceStartup("smoke-window-complete");
@@ -476,7 +321,7 @@ async function runSmokeTestIfRequested(): Promise<boolean> {
       application: app.getName(),
       version: app.getVersion(),
       packaged: app.isPackaged,
-      assets: existsSync(join(portalAssetsRoot(), "index.html")),
+      assets: existsSync(join(portalRuntime.assetsRoot(), "index.html")),
       helper: JSON.parse(helper.stdout),
       setup: existsSync(desktopSetupStatePath()),
       refresh,
