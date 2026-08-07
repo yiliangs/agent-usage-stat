@@ -27,11 +27,18 @@ import {
   PortalRuntime,
   registerPortalScheme,
 } from "./portal-runtime.js";
+import { squirrelLifecycleEvent } from "./squirrel-events.js";
+import { startupMode } from "./startup-policy.js";
+import { STARTUP_URL, updateStartupScreen } from "./startup-screen.js";
+
+const WINDOWS_APP_ID = "com.squirrel.AgentUsageStat.AgentUsageStat";
+const WINDOW_ICON = join(app.getAppPath(), "assets", "logo.png");
 
 traceStartup("module-loaded");
 
 registerPortalScheme();
 traceStartup("scheme-registered");
+if (process.platform === "win32") app.setAppUserModelId(WINDOWS_APP_ID);
 
 let mainWindow: BrowserWindow | null = null;
 const helperRuntime = new HelperRuntime();
@@ -57,7 +64,9 @@ if (squirrelEvent || !hasSingleInstanceLock) {
 }
 
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+  if (BrowserWindow.getAllWindows().length === 0) {
+    void openApplicationWindow().catch(failStartup);
+  }
 });
 
 app.on("window-all-closed", () => {
@@ -66,29 +75,110 @@ app.on("window-all-closed", () => {
 
 async function start(): Promise<void> {
   traceStartup("ready");
-  app.setAppUserModelId("com.yiliang.agent-usage-stat");
-  if (app.isPackaged && !isSmokeTest) {
+  const isSquirrelFirstRun = process.argv.includes("--squirrel-firstrun");
+  if (app.isPackaged && !isSmokeTest && !isSquirrelFirstRun) {
     updateElectronApp({ updateInterval: "1 hour", notifyUser: true });
   }
-  await helperRuntime.syncInstallation();
   await portalRuntime.registerProtocol();
   installApplicationMenu();
   traceStartup("protocol-ready");
 
+  if (isSmokeTest) {
+    await helperRuntime.syncInstallation();
+  }
   if (await runSmokeTestIfRequested()) {
     traceStartup("smoke-complete");
     app.quit();
     return;
   }
 
-  await ensureDesktopSetup(true);
-  await portalRuntime.refresh();
-  await createWindow();
+  await openApplicationWindow();
 }
 
-async function createWindow(show = true): Promise<BrowserWindow> {
+async function openApplicationWindow(): Promise<void> {
+  const mode = startupMode(await portalRuntime.hasSnapshot());
+  if (mode === "cached") {
+    const window = await createWindow(PORTAL_URL);
+    traceStartup("cached-window-ready");
+    void synchronizeCachedWindow(window);
+    return;
+  }
+
+  await openFirstRunWindow();
+}
+
+async function openFirstRunWindow(): Promise<void> {
+  const window = await createWindow(STARTUP_URL);
+  try {
+    traceStartup("startup-window-ready");
+    await updateStartupScreen(
+      window,
+      "Connecting the local helper",
+      "Preparing the background capture process. This keeps recording sessions even when the window is closed.",
+    );
+    await helperRuntime.syncInstallation();
+    await updateStartupScreen(
+      window,
+      "Checking agent connections",
+      "Connecting Claude Code, Codex, and Copilot CLI where they are installed.",
+    );
+    await ensureDesktopSetup(true);
+    await updateStartupScreen(
+      window,
+      "Reconciling recent sessions",
+      "Building the local dashboard from your usage ledger.",
+    );
+    await portalRuntime.refresh();
+    await window.loadURL(PORTAL_URL);
+    traceStartup("first-run-complete");
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    await updateStartupScreen(
+      window,
+      "The workspace could not start",
+      detail,
+      true,
+    );
+    await showOperationError("Startup failed", error);
+  }
+}
+
+async function synchronizeCachedWindow(window: BrowserWindow): Promise<void> {
+  try {
+    await setPortalSyncState(window, "syncing", "SYNCING");
+    await helperRuntime.syncInstallation();
+    await ensureDesktopSetup(true);
+    const result = await portalRuntime.refresh();
+    const detail = result.updated > 0
+      ? `${result.updated} SESSION${result.updated === 1 ? "" : "S"} UPDATED`
+      : "UP TO DATE";
+    await setPortalSyncState(window, "complete", detail);
+    traceStartup("background-sync-complete");
+  } catch (error) {
+    await setPortalSyncState(window, "error", "SYNC FAILED").catch(() => undefined);
+    traceStartup("background-sync-failed");
+    console.error(error);
+  }
+}
+
+async function setPortalSyncState(
+  window: BrowserWindow,
+  status: "syncing" | "complete" | "error",
+  detail: string,
+): Promise<void> {
+  if (window.isDestroyed()) return;
+  await window.webContents.executeJavaScript(
+    `window.agentUsageStatSetSyncState?.(${JSON.stringify(status)}, ${JSON.stringify(detail)})`,
+  );
+}
+
+async function createWindow(
+  initialUrl = PORTAL_URL,
+  show = true,
+): Promise<BrowserWindow> {
   const window = new BrowserWindow({
     title: "Agent Usage Stat",
+    icon: WINDOW_ICON,
     width: 1440,
     height: 960,
     minWidth: 1040,
@@ -109,7 +199,7 @@ async function createWindow(show = true): Promise<BrowserWindow> {
     return { action: "deny" };
   });
   window.webContents.on("will-navigate", (event, url) => {
-    if (url.startsWith(`${PORTAL_ORIGIN}/`)) return;
+    if (url.startsWith(`${PORTAL_ORIGIN}/`) || url.startsWith("data:text/html")) return;
     event.preventDefault();
   });
   if (show) window.once("ready-to-show", () => window.show());
@@ -118,7 +208,7 @@ async function createWindow(show = true): Promise<BrowserWindow> {
   });
 
   mainWindow = window;
-  await window.loadURL(PORTAL_URL);
+  await window.loadURL(initialUrl);
   return window;
 }
 
@@ -309,19 +399,31 @@ async function runSmokeTestIfRequested(): Promise<boolean> {
   traceStartup("smoke-setup-complete");
   const refresh = await portalRuntime.refresh();
   traceStartup("smoke-refresh-complete");
-  const window = await createWindow(false);
+  const window = await createWindow(PORTAL_URL, false);
   traceStartup("smoke-window-complete");
   const renderer = await window.webContents.executeJavaScript(`({
     title: document.title,
     hasTimeline: !!document.querySelector('[data-portal-view="sessions"]'),
+    favicon: document.querySelector('link[rel="icon"]')?.href ?? null,
+    logoLoaded: (() => {
+      const logo = document.querySelector('.mark img');
+      return logo instanceof HTMLImageElement && logo.complete && logo.naturalWidth > 0;
+    })(),
     protocol: location.protocol
-  })`) as { title: string; hasTimeline: boolean; protocol: string };
+  })`) as {
+    title: string;
+    hasTimeline: boolean;
+    favicon: string | null;
+    logoLoaded: boolean;
+    protocol: string;
+  };
   traceStartup("smoke-renderer-complete");
   const smokeJson = JSON.stringify({
       application: app.getName(),
       version: app.getVersion(),
       packaged: app.isPackaged,
       assets: existsSync(join(portalRuntime.assetsRoot(), "index.html")),
+      runtimeIcon: existsSync(WINDOW_ICON),
       helper: JSON.parse(helper.stdout),
       setup: existsSync(desktopSetupStatePath()),
       refresh,
@@ -342,9 +444,8 @@ function failStartup(error: unknown): void {
 }
 
 function handleSquirrelEvent(): boolean {
-  if (process.platform !== "win32") return false;
-  const event = process.argv[1];
-  if (!event?.startsWith("--squirrel-")) return false;
+  const event = squirrelLifecycleEvent(process.platform, process.argv);
+  if (!event) return false;
 
   void performSquirrelEvent(event)
     .catch(() => undefined)

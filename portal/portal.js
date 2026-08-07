@@ -1742,29 +1742,60 @@ function bindTooltips() {
   })
 }
 
-async function refreshData() {
+let syncResetTimer = null
+
+async function setSyncState(status, detail = '') {
   const button = $('#refreshButton')
   const message = $('#refreshMessage')
+  if (syncResetTimer) window.clearTimeout(syncResetTimer)
+
+  if (status === 'syncing') {
+    button.disabled = true
+    button.className = 'refresh-button running'
+    message.textContent = detail || 'SYNCING'
+    return
+  }
+
+  if (status === 'complete') {
+    await load()
+    button.disabled = false
+    button.className = 'refresh-button success'
+    message.textContent = detail || 'UP TO DATE'
+  } else if (status === 'error') {
+    button.disabled = false
+    button.className = 'refresh-button error'
+    message.textContent = detail || 'SYNC FAILED'
+  } else {
+    button.disabled = false
+    button.className = 'refresh-button'
+    message.textContent = ''
+    return
+  }
+
+  syncResetTimer = window.setTimeout(() => {
+    button.className = 'refresh-button'
+    message.textContent = ''
+    syncResetTimer = null
+  }, 3500)
+}
+
+window.agentUsageStatSetSyncState = setSyncState
+
+async function refreshData() {
+  const button = $('#refreshButton')
   if (button.disabled) return
-  button.disabled = true
-  button.className = 'refresh-button running'
-  message.textContent = 'Scanning sessions'
+  await setSyncState('syncing', 'SYNCING')
   try {
     const response = await fetch('./api/refresh', { method: 'POST' })
     const result = await response.json().catch(() => null)
     if (!response.ok) throw new Error(result?.error || `Refresh failed (${response.status})`)
-    await load()
-    button.className = 'refresh-button success'
-    message.textContent = result?.updated ? `${result.updated} sessions updated` : 'Already current'
+    await setSyncState(
+      'complete',
+      result?.updated ? `${result.updated} SESSIONS UPDATED` : 'UP TO DATE',
+    )
   } catch (error) {
-    button.className = 'refresh-button error'
-    message.textContent = error.message || String(error)
-  } finally {
-    button.disabled = false
-    window.setTimeout(() => {
-      button.className = 'refresh-button'
-      message.textContent = ''
-    }, 3500)
+    await setSyncState('error', 'SYNC FAILED')
+    console.error(error.stack || error)
   }
 }
 

@@ -134,6 +134,155 @@ test("a new empty data folder produces a usable portal snapshot", async () => {
   }
 });
 
+test("an unchanged shard is reused from the portal snapshot cache", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-usage-stat-cache-"));
+  const outDir = join(root, "portal");
+  const shardDir = join(root, "logbook.d");
+  await mkdir(shardDir);
+  await writeFile(
+    join(shardDir, "cached-session.json"),
+    JSON.stringify({
+      session_id: "cached-session",
+      provider: "codex",
+      start_time: "2026-08-01T12:00:00.000Z",
+      end_time: "2026-08-01T12:05:00.000Z",
+      project: "cache-test",
+      machine: "test-machine",
+      total_tokens: 1200,
+      total_cost_usd: 0.12,
+      models: ["gpt-5.6-sol"],
+    }),
+  );
+
+  try {
+    const first = await buildPortalData({ root, outDir });
+    const second = await buildPortalData({ root, outDir });
+    const sessions = JSON.parse(
+      await readFile(join(outDir, "sessions.json"), "utf8"),
+    );
+
+    assert.equal(first.parsedShards, 1);
+    assert.equal(first.reusedShards, 0);
+    assert.equal(second.parsedShards, 0);
+    assert.equal(second.reusedShards, 1);
+    assert.deepEqual(
+      sessions.map((session) => [session.sid, session.cost]),
+      [["cached-session", 0.12]],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a changed shard replaces its cached normalized session", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-usage-stat-cache-change-"));
+  const outDir = join(root, "portal");
+  const shardDir = join(root, "logbook.d");
+  const shard = join(shardDir, "changed-session.json");
+  await mkdir(shardDir);
+  const record = {
+    session_id: "changed-session",
+    provider: "claude",
+    start_time: "2026-08-02T12:00:00.000Z",
+    end_time: "2026-08-02T12:05:00.000Z",
+    project: "cache-test",
+    machine: "test-machine",
+    total_tokens: 1200,
+    total_cost_usd: 0.12,
+    models: ["claude-opus-5"],
+  };
+  await writeFile(shard, JSON.stringify(record));
+
+  try {
+    await buildPortalData({ root, outDir });
+    await writeFile(shard, JSON.stringify({ ...record, total_cost_usd: 0.24 }));
+    const future = new Date(Date.now() + 5000);
+    await utimes(shard, future, future);
+
+    const changed = await buildPortalData({ root, outDir });
+    const sessions = JSON.parse(
+      await readFile(join(outDir, "sessions.json"), "utf8"),
+    );
+
+    assert.equal(changed.parsedShards, 1);
+    assert.equal(changed.reusedShards, 0);
+    assert.equal(sessions[0].cost, 0.24);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a deleted shard is removed from the cached portal snapshot", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-usage-stat-cache-delete-"));
+  const outDir = join(root, "portal");
+  const shardDir = join(root, "logbook.d");
+  const shard = join(shardDir, "deleted-session.json");
+  await mkdir(shardDir);
+  await writeFile(
+    shard,
+    JSON.stringify({
+      session_id: "deleted-session",
+      provider: "copilot",
+      start_time: "2026-08-03T12:00:00.000Z",
+      total_tokens: 800,
+      total_cost_usd: 0.08,
+      models: ["gpt-5.4"],
+    }),
+  );
+
+  try {
+    await buildPortalData({ root, outDir });
+    await rm(shard);
+
+    const deleted = await buildPortalData({ root, outDir });
+    const sessions = JSON.parse(
+      await readFile(join(outDir, "sessions.json"), "utf8"),
+    );
+
+    assert.equal(deleted.sessions, 0);
+    assert.deepEqual(sessions, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a temporarily unreadable changed shard preserves its last valid result", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-usage-stat-cache-recovery-"));
+  const outDir = join(root, "portal");
+  const shardDir = join(root, "logbook.d");
+  const shard = join(shardDir, "recoverable-session.json");
+  await mkdir(shardDir);
+  await writeFile(
+    shard,
+    JSON.stringify({
+      session_id: "recoverable-session",
+      provider: "codex",
+      start_time: "2026-08-04T12:00:00.000Z",
+      total_tokens: 900,
+      total_cost_usd: 0.09,
+      models: ["gpt-5.6-sol"],
+    }),
+  );
+
+  try {
+    await buildPortalData({ root, outDir });
+    await writeFile(shard, "{not-json");
+    const future = new Date(Date.now() + 5000);
+    await utimes(shard, future, future);
+
+    const recovered = await buildPortalData({ root, outDir });
+    const sessions = JSON.parse(
+      await readFile(join(outDir, "sessions.json"), "utf8"),
+    );
+
+    assert.equal(recovered.sessions, 1);
+    assert.equal(sessions[0].sid, "recoverable-session");
+    assert.equal(sessions[0].cost, 0.09);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("portal data preserves turn-scoped usage slices", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-usage-stat-turn-data-"));
   const outDir = join(root, "portal");

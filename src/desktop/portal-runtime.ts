@@ -12,6 +12,7 @@ const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
   ".svg": "image/svg+xml",
 };
 
@@ -61,6 +62,15 @@ export class PortalRuntime {
       });
     }
     return this.refreshPromise;
+  }
+
+  async hasSnapshot(): Promise<boolean> {
+    const root = this.dataRoot();
+    const [sessions, meta] = await Promise.all([
+      isFile(join(root, "sessions.json")),
+      isFile(join(root, "meta.json")),
+    ]);
+    return sessions && meta;
   }
 
   assetsRoot(): string {

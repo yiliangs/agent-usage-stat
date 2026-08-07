@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'">
   <title>Agent Usage Stat</title>
+  <link rel="icon" type="image/png" href="../assets/logo.png">
   <style>
     :root {
       color-scheme: light;
@@ -98,25 +99,11 @@
       border-right: 1px solid var(--ink);
     }
 
-    .mark-grid {
-      width: 31px;
-      height: 31px;
-      display: grid;
-      grid-template-columns: repeat(5, 5px);
-      grid-template-rows: repeat(5, 5px);
-      gap: 1.5px;
-    }
-
-    .mark-grid i {
+    .mark img {
       display: block;
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: transparent;
+      width: 42px;
+      height: 42px;
     }
-
-    .mark-grid i.on { background: var(--ink); }
-    .mark-grid i.hot { background: var(--accent); }
 
     .identity {
       display: flex;
@@ -2148,13 +2135,7 @@
   <main class="page">
     <header class="topbar">
       <div class="mark" aria-label="Agent Usage Stat mark">
-        <span class="mark-grid" aria-hidden="true">
-          <i></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i>
-          <i class="on"></i><i></i><i class="on"></i><i></i><i class="on"></i>
-          <i class="on"></i><i class="on"></i><i class="hot"></i><i class="on"></i><i class="on"></i>
-          <i class="on"></i><i></i><i class="on"></i><i></i><i class="on"></i>
-          <i></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i>
-        </span>
+        <img src="../assets/logo.png" alt="">
       </div>
       <div class="identity">
         <strong>AGENT USAGE STAT</strong>

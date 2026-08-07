@@ -18,11 +18,12 @@ Agent Usage Stat does not read general ChatGPT or Claude.ai chats. All usage dat
 Download the current installer from [GitHub Releases](https://github.com/yiliangs/agent-usage-stat/releases):
 
 - Windows: `Agent-Usage-Stat-Setup.exe`
+- Windows portable: `Agent Usage Stat-win32-x64-*.zip`
 - macOS: `Agent-Usage-Stat.dmg`
 
 No separate Node.js or npm installation is required.
 
-On first launch, Agent Usage Stat detects installed agents, preserves an existing v2 data location when present, installs its capture hooks, reconciles existing sessions, and opens the desktop dashboard. New installations use `~/.agent-usage-stat/data` unless an existing shared usage root is detected.
+The Windows installer shows installation activity, creates Start menu and desktop shortcuts, and opens the application when installation completes. On first launch, Agent Usage Stat detects installed agents, preserves an existing v2 data location when present, installs its capture hooks, reconciles existing sessions, and opens the desktop dashboard. New installations use `~/.agent-usage-stat/data` unless an existing shared usage root is detected.
 
 Codex requires one security confirmation after its hook is first installed. Open `/hooks` in Codex and trust the Agent Usage Stat hook when prompted.
 

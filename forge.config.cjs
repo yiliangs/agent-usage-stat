@@ -39,6 +39,7 @@ module.exports = {
       const included =
         /^\/(dist|node_modules)(\/|$)/.test(file) ||
         /^\/package\.json$/.test(file) ||
+        /^\/assets(?:$|\/logo\.png$)/.test(file) ||
         /^\/portal(?:$|\/scripts(?:\/|$))/.test(file);
       return !included;
     },
@@ -48,9 +49,11 @@ module.exports = {
     {
       name: "@electron-forge/maker-squirrel",
       config: {
-        name: "agent_usage_stat",
+        name: "AgentUsageStat",
+        exe: "Agent Usage Stat.exe",
         setupExe: "Agent-Usage-Stat-Setup.exe",
         setupIcon: path.join(__dirname, "assets", "icon.ico"),
+        loadingGif: path.join(__dirname, "assets", "install-loading.gif"),
         ...(windowsCertificateFile
           ? {
             certificateFile: windowsCertificateFile,
@@ -61,7 +64,7 @@ module.exports = {
     },
     {
       name: "@electron-forge/maker-zip",
-      platforms: ["darwin"],
+      platforms: ["win32", "darwin"],
     },
     {
       name: "@electron-forge/maker-dmg",

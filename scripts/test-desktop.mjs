@@ -47,6 +47,7 @@ const codexHome = join(home, ".codex");
 const copilotHome = join(home, ".copilot");
 const smokeOutput = join(home, "desktop-smoke.json");
 const startupTrace = join(home, "desktop-startup.log");
+const cachedStartupTrace = join(home, "desktop-cached-startup.log");
 
 try {
   await Promise.all([
@@ -61,16 +62,19 @@ try {
     "utf8",
   );
 
+  const desktopEnvironment = {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    CLAUDE_CONFIG_DIR: claudeHome,
+    CODEX_HOME: codexHome,
+    COPILOT_HOME: copilotHome,
+  };
   const launch = await run(
     executable,
     [`--user-data-dir=${home}`, "--desktop-smoke-test", smokeOutput],
     {
-      ...process.env,
-      HOME: home,
-      USERPROFILE: home,
-      CLAUDE_CONFIG_DIR: claudeHome,
-      CODEX_HOME: codexHome,
-      COPILOT_HOME: copilotHome,
+      ...desktopEnvironment,
       AGENT_USAGE_STAT_STARTUP_TRACE: startupTrace,
     },
   );
@@ -84,10 +88,13 @@ try {
   const smoke = JSON.parse(smokeJson);
   assert.equal(smoke.packaged, true);
   assert.equal(smoke.assets, true);
+  assert.equal(smoke.runtimeIcon, true);
   assert.equal(smoke.helper.runtime, "standalone");
   assert.equal(smoke.setup, true);
   assert.equal(smoke.renderer.title, "Agent Usage Stat");
   assert.equal(smoke.renderer.hasTimeline, true);
+  assert.equal(smoke.renderer.logoLoaded, true);
+  assert.match(smoke.renderer.favicon, /^aus:\/\/app\/assets\/logo-/);
   assert.equal(smoke.renderer.protocol, "aus:");
   assert.equal(smoke.refresh.sessions, 0);
 
@@ -111,11 +118,93 @@ try {
   assert.match(copilotHooks, /agent-usage-stat-helper/);
   assert.doesNotMatch(copilotHooks, /node .*agent-usage-stat-helper/);
 
+  const cachedTrace = await launchUntilTrace(
+    executable,
+    [`--user-data-dir=${home}`],
+    {
+      ...desktopEnvironment,
+      AGENT_USAGE_STAT_STARTUP_TRACE: cachedStartupTrace,
+    },
+    cachedStartupTrace,
+    "cached-window-ready",
+  );
+  assert.doesNotMatch(cachedTrace, /startup-window-ready/);
+  const moduleLoadedAt = traceTime(cachedTrace, "module-loaded");
+  const cachedWindowAt = traceTime(cachedTrace, "cached-window-ready");
+  assert.ok(
+    cachedWindowAt - moduleLoadedAt < 2000,
+    `Cached dashboard took ${cachedWindowAt - moduleLoadedAt} ms to open.\n${cachedTrace}`,
+  );
+
   process.stdout.write(
     `desktop smoke ok: ${process.platform}/${process.arch} -> ${outRelative}\n`,
   );
 } finally {
   await rm(home, { recursive: true, force: true });
+}
+
+function launchUntilTrace(
+  command,
+  args,
+  environment,
+  tracePath,
+  expected,
+  timeoutMs = 10_000,
+) {
+  return new Promise((resolveLaunch, reject) => {
+    const child = spawn(command, args, {
+      cwd: root,
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    let stderr = "";
+    let settled = false;
+    let poll;
+    let timeout;
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+
+    const finish = async (error, trace = "") => {
+      if (settled) return;
+      settled = true;
+      clearInterval(poll);
+      clearTimeout(timeout);
+      if (child.exitCode === null) {
+        child.kill();
+        await new Promise((resolveExit) => {
+          child.once("exit", resolveExit);
+          setTimeout(resolveExit, 1000);
+        });
+      }
+      if (error) reject(error);
+      else resolveLaunch(trace);
+    };
+    poll = setInterval(async () => {
+      const trace = await readFile(tracePath, "utf8").catch(() => "");
+      if (trace.includes(expected)) {
+        void finish(null, trace);
+      }
+    }, 25);
+    timeout = setTimeout(() => {
+      void finish(new Error(
+        `Packaged app did not reach ${expected} within ${timeoutMs} ms.\n${stderr}`,
+      ));
+    }, timeoutMs);
+    child.once("error", (error) => void finish(error));
+    child.once("exit", (code) => {
+      if (!settled) {
+        void finish(new Error(
+          `Packaged app exited with code ${code} before ${expected}.\n${stderr}`,
+        ));
+      }
+    });
+  });
+}
+
+function traceTime(trace, event) {
+  const line = trace.split(/\r?\n/).find((entry) => entry.endsWith(` ${event}`));
+  assert.ok(line, `Missing startup trace event: ${event}`);
+  return Date.parse(line.slice(0, line.indexOf(" ")));
 }
 
 function run(command, args, environment) {
