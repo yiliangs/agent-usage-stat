@@ -1,12 +1,11 @@
 import { mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
-import { hookExecutablePaths } from "./hook-command.js";
+import { captureHookCommands } from "./hook-command.js";
 
 /** Install an isolated user-level hook without rewriting Copilot settings. */
 export async function installCopilotHook(hooksPath: string): Promise<void> {
   await mkdir(join(hooksPath, ".."), { recursive: true });
-  const { unixWrapper, windowsBin, windowsUsesNode } = hookExecutablePaths();
-  const args = "capture --detach --quiet";
+  const commands = captureHookCommands();
   const config = {
     version: 1,
     hooks: {
@@ -14,10 +13,8 @@ export async function installCopilotHook(hooksPath: string): Promise<void> {
       SessionEnd: [
         {
           type: "command",
-          bash: `"${unixWrapper}" ${args}`,
-          powershell: windowsUsesNode
-            ? `node "${windowsBin}" ${args}`
-            : `& "${windowsBin}" ${args}`,
+          bash: commands.unix,
+          powershell: commands.powershell,
           timeoutSec: 30,
         },
       ],

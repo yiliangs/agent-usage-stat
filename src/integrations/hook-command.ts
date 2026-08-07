@@ -7,6 +7,25 @@ export interface HookExecutablePaths {
   windowsUsesNode: boolean;
 }
 
+export interface CaptureHookCommands {
+  unix: string;
+  windows: string;
+  powershell: string;
+}
+
+export function captureHookCommands(): CaptureHookCommands {
+  const { unixWrapper, windowsBin, windowsUsesNode } = hookExecutablePaths();
+  const args = "capture --detach --quiet";
+  const windows = windowsUsesNode
+    ? `node "${windowsBin}" ${args}`
+    : `"${windowsBin}" ${args}`;
+  return {
+    unix: `"${unixWrapper}" ${args}`,
+    windows,
+    powershell: windowsUsesNode ? windows : `& ${windows}`,
+  };
+}
+
 export function hookExecutablePaths(): HookExecutablePaths {
   if (process.env.AGENT_USAGE_STAT_STANDALONE === "1") {
     return {
