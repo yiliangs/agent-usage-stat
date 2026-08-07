@@ -11,8 +11,6 @@ import { updateElectronApp } from "update-electron-app";
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync } from "node:fs";
 import {
-  chmod,
-  copyFile,
   mkdir,
   readFile,
   rename,
@@ -26,8 +24,8 @@ import { resolveUsageRootFromDisk } from "../utils/usage-root.js";
 import {
   desktopSetupStatePath,
   installedHelperPath,
-  installedHelperStatePath,
 } from "../core/application-paths.js";
+import { HelperRuntime } from "./helper-runtime.js";
 
 const APP_SCHEME = "aus";
 const APP_HOST = "app";
@@ -55,6 +53,7 @@ traceStartup("scheme-registered");
 
 let mainWindow: BrowserWindow | null = null;
 let refreshPromise: Promise<PortalRefreshResult> | null = null;
+const helperRuntime = new HelperRuntime();
 
 const squirrelEvent = handleSquirrelEvent();
 const isSmokeTest = process.argv.includes("--desktop-smoke-test");
@@ -102,7 +101,7 @@ async function start(): Promise<void> {
   if (app.isPackaged && !isSmokeTest) {
     updateElectronApp({ updateInterval: "1 hour", notifyUser: true });
   }
-  await syncHelperInstallation();
+  await helperRuntime.syncInstallation();
   await registerApplicationProtocol();
   installApplicationMenu();
   traceStartup("protocol-ready");
@@ -231,7 +230,11 @@ async function chooseDataFolder(): Promise<void> {
   const selected = result.filePaths[0];
   if (result.canceled || !selected) return;
 
-  const configured = await runHelper(["config", "--set", `dataRoot=${selected}`]);
+  const configured = await helperRuntime.run([
+    "config",
+    "--set",
+    `dataRoot=${selected}`,
+  ]);
   if (configured.code !== 0) {
     await showOperationError(
       "Data folder was not changed",
@@ -239,14 +242,14 @@ async function chooseDataFolder(): Promise<void> {
     );
     return;
   }
-  await rm(desktopSetupStatePath(), { force: true });
+  await helperRuntime.resetSetup();
   await ensureDesktopSetup(true);
   await refreshAndReload();
 }
 
 async function repairAgentConnections(): Promise<void> {
   try {
-    await rm(desktopSetupStatePath(), { force: true });
+    await helperRuntime.resetSetup();
     await ensureDesktopSetup(true);
     await showMessageBox({
       type: "info",
@@ -270,7 +273,7 @@ async function removeAgentConnections(): Promise<void> {
   });
   if (confirmation.response !== 1) return;
 
-  const removed = await runHelper(["setup", "--uninstall"]);
+  const removed = await helperRuntime.run(["setup", "--uninstall"]);
   if (removed.code !== 0) {
     await showOperationError(
       "Agent connections were not removed",
@@ -278,7 +281,7 @@ async function removeAgentConnections(): Promise<void> {
     );
     return;
   }
-  await rm(desktopSetupStatePath(), { force: true });
+  await helperRuntime.resetSetup();
 }
 
 async function showOperationError(title: string, error: unknown): Promise<void> {
@@ -365,7 +368,7 @@ function refreshPortalData(): Promise<PortalRefreshResult> {
 async function performRefresh(): Promise<PortalRefreshResult> {
   const usageRoot = resolveUsageRootFromDisk().root;
   await mkdir(join(usageRoot, "logbook.d"), { recursive: true });
-  const helper = await runHelper(["sync", "--quiet"]);
+  const helper = await helperRuntime.run(["sync", "--quiet"]);
   if (helper.code !== 0) {
     throw new Error(helper.stderr.trim() || "Usage synchronization failed.");
   }
@@ -392,155 +395,20 @@ async function performRefresh(): Promise<PortalRefreshResult> {
   };
 }
 
-async function runHelper(args: string[]): Promise<{
-  code: number;
-  stdout: string;
-  stderr: string;
-  updated: number;
-}> {
-  const executable = helperExecutablePath();
-  if (!existsSync(executable)) {
-    throw new Error(`Application helper is missing: ${executable}`);
-  }
-
-  return new Promise((resolveRun, reject) => {
-    const child = spawn(executable, args, {
-      cwd: app.getPath("userData"),
-      env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => (stdout += chunk));
-    child.stderr.on("data", (chunk) => (stderr += chunk));
-    child.once("error", reject);
-    child.once("exit", (code) => {
-      const updated = Number(/Reconciled (\d+)/.exec(stdout + stderr)?.[1] || 0);
-      resolveRun({ code: code ?? 1, stdout, stderr, updated });
-    });
-  });
-}
-
-function helperExecutablePath(): string {
-  return installedHelperPath();
-}
-
-function bundledHelperPath(): string {
-  const name = process.platform === "win32"
-    ? "agent-usage-stat-helper.exe"
-    : "agent-usage-stat-helper";
-  return app.isPackaged
-    ? join(process.resourcesPath, name)
-    : join(app.getAppPath(), "build", "helper", name);
-}
-
-async function syncHelperInstallation(): Promise<void> {
-  const source = bundledHelperPath();
-  const destination = helperExecutablePath();
-  const versionState = installedHelperStatePath();
-  if (!existsSync(source)) {
-    throw new Error(`Bundled application helper is missing: ${source}`);
-  }
-
-  await mkdir(join(destination, ".."), { recursive: true });
-  if (app.isPackaged && existsSync(destination)) {
-    try {
-      const state = JSON.parse(await readFile(versionState, "utf8")) as {
-        version?: string;
-      };
-      if (state.version === app.getVersion()) return;
-    } catch {
-      // Missing or invalid state requires reinstalling the helper.
-    }
-  }
-  if (await filesEqual(source, destination)) {
-    await writeFile(
-      versionState,
-      JSON.stringify({ version: app.getVersion() }, null, 2),
-      "utf8",
-    );
-    return;
-  }
-
-  const staged = `${destination}.${process.pid}.new`;
-  const previous = `${destination}.previous`;
-  await copyFile(source, staged);
-  if (process.platform !== "win32") await chmod(staged, 0o755);
-
-  try {
-    await rm(previous, { force: true });
-    if (existsSync(destination)) await rename(destination, previous);
-    await rename(staged, destination);
-    await rm(previous, { force: true });
-    await writeFile(
-      versionState,
-      JSON.stringify({ version: app.getVersion() }, null, 2),
-      "utf8",
-    );
-  } catch (error) {
-    await rm(staged, { force: true }).catch(() => undefined);
-    if (!existsSync(destination) && existsSync(previous)) {
-      await rename(previous, destination).catch(() => undefined);
-    }
-    throw error;
-  }
-}
-
-async function filesEqual(left: string, right: string): Promise<boolean> {
-  try {
-    const [leftStat, rightStat] = await Promise.all([stat(left), stat(right)]);
-    if (leftStat.size !== rightStat.size) return false;
-    const [leftData, rightData] = await Promise.all([
-      readFile(left),
-      readFile(right),
-    ]);
-    return leftData.equals(rightData);
-  } catch {
-    return false;
-  }
-}
-
 async function ensureDesktopSetup(interactive: boolean): Promise<void> {
-  const statePath = desktopSetupStatePath();
-  if (existsSync(statePath)) return;
-
-  const usageRoot = resolveUsageRootFromDisk().root;
-  const setup = await runHelper([
-    "setup",
-    "--data-root",
-    usageRoot,
-    "--skip-terminal-config",
-    "--migrate-terminal-wrappers",
-  ]);
-  if (setup.code !== 0) {
-    const detail = setup.stderr.trim() || setup.stdout.trim();
-    if (!interactive) throw new Error(detail || "Desktop setup failed.");
+  const setup = await helperRuntime.ensureSetup();
+  if (!setup.configured) {
+    if (!interactive) throw new Error(setup.detail || "Desktop setup failed.");
     await dialog.showMessageBox({
       type: "warning",
       title: "Agent Usage Stat Setup",
       message: "The application opened, but agent capture could not be connected.",
-      detail,
+      detail: setup.detail,
     });
     return;
   }
 
-  await mkdir(join(statePath, ".."), { recursive: true });
-  await writeFile(
-    statePath,
-    JSON.stringify({
-      version: app.getVersion(),
-      configuredAt: new Date().toISOString(),
-      dataRoot: usageRoot,
-      helper: helperExecutablePath(),
-    }, null, 2),
-    "utf8",
-  );
-
-  if (
-    interactive &&
-    (setup.stdout + setup.stderr).includes("one final action")
-  ) {
+  if (interactive && setup.codexNeedsTrust) {
     await dialog.showMessageBox({
       type: "info",
       title: "Trust the Codex hook",
@@ -589,7 +457,7 @@ async function runSmokeTestIfRequested(): Promise<boolean> {
   const output = process.argv[index + 1];
   if (!output) throw new Error(`${flag} requires an output path.`);
   traceStartup("smoke-helper-begin");
-  const helper = await runHelper(["probe"]);
+  const helper = await helperRuntime.run(["probe"]);
   if (helper.code !== 0) throw new Error(helper.stderr || "Helper probe failed.");
   traceStartup("smoke-helper-complete");
   await ensureDesktopSetup(false);
