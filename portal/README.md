@@ -1,20 +1,16 @@
-# Portal development
+# Renderer development
 
-The portal is a Vite and React app over the normalized session artifacts produced by `scripts/build-data.mjs`.
+The portal is the packaged renderer for the Agent Usage Stat desktop application.
 
 ```bash
 npm install
 npm run dev
 ```
 
-`npm run dev` refreshes `public/data/` from the configured data root and starts Vite on port 4179.
-
-Production assets contain no user data. Vite writes them to the root package's `dist/portal/`, and the CLI generates the current session artifacts at runtime.
+Development uses Vite on port 4179. Production assets are built into `dist/portal/` and loaded through the desktop application's `aus://` protocol. Production does not start a localhost server.
 
 Key files:
 
-- `src/App.tsx`: shell, navigation, search, and global filters
-- `src/agg.ts`: client-side aggregation
-- `src/charts.tsx`: SVG charts
-- `src/drill.tsx`: session detail drawer
-- `scripts/build-data.mjs`: shard normalization
+- `index.html`: application layout and visual system
+- `portal.js`: aggregation, navigation, charts, tables, and detail interactions
+- `scripts/build-data.mjs`: shard normalization for renderer data

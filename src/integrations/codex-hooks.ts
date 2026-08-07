@@ -2,7 +2,7 @@ import { existsSync } from "fs";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import {
-  hookExecutablePaths,
+  captureHookCommands,
   isAgentUsageStatCommand,
 } from "./hook-command.js";
 
@@ -42,12 +42,11 @@ export async function installCodexHooks(hooksPath: string): Promise<boolean> {
   }
 
   config.hooks ||= {};
-  const { unixWrapper, windowsBin } = hookExecutablePaths();
-  const args = "capture --detach --quiet";
+  const commands = captureHookCommands();
   const handler: CommandHook = {
     type: "command",
-    command: `"${unixWrapper}" ${args}`,
-    commandWindows: `node "${windowsBin}" ${args}`,
+    command: commands.unix,
+    commandWindows: commands.windows,
     timeout: 30,
     statusMessage: "Recording Codex usage",
   };

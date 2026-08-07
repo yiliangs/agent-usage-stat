@@ -1,0 +1,233 @@
+#!/usr/bin/env node
+
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const outRelative = `out/desktop-smoke-${process.pid}`;
+const out = join(root, outRelative);
+const forgeCli = join(
+  root,
+  "node_modules",
+  "@electron-forge",
+  "cli",
+  "dist",
+  "electron-forge.js",
+);
+
+await run(process.execPath, [forgeCli, "package"], {
+  ...process.env,
+  AGENT_USAGE_STAT_FORGE_OUT: outRelative,
+});
+
+const packageDir = join(
+  out,
+  `Agent Usage Stat-${process.platform}-${process.arch}`,
+);
+const executable = process.platform === "win32"
+  ? join(packageDir, "Agent Usage Stat.exe")
+  : join(packageDir, "Agent Usage Stat.app", "Contents", "MacOS", "Agent Usage Stat");
+assert.equal(existsSync(executable), true, `Missing packaged executable: ${executable}`);
+
+const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-desktop-"));
+const usageRoot = join(home, "usage");
+const claudeHome = join(home, ".claude");
+const codexHome = join(home, ".codex");
+const copilotHome = join(home, ".copilot");
+const smokeOutput = join(home, "desktop-smoke.json");
+const startupTrace = join(home, "desktop-startup.log");
+const cachedStartupTrace = join(home, "desktop-cached-startup.log");
+
+try {
+  await Promise.all([
+    mkdir(join(usageRoot, "logbook.d"), { recursive: true }),
+    mkdir(claudeHome, { recursive: true }),
+    mkdir(codexHome, { recursive: true }),
+    mkdir(copilotHome, { recursive: true }),
+  ]);
+  await writeFile(
+    join(home, ".agent-usage-stat.config.json"),
+    JSON.stringify({ version: "3.0.0", dataRoot: usageRoot }),
+    "utf8",
+  );
+
+  const desktopEnvironment = {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    CLAUDE_CONFIG_DIR: claudeHome,
+    CODEX_HOME: codexHome,
+    COPILOT_HOME: copilotHome,
+  };
+  const launch = await run(
+    executable,
+    [`--user-data-dir=${home}`, "--desktop-smoke-test", smokeOutput],
+    {
+      ...desktopEnvironment,
+      AGENT_USAGE_STAT_STARTUP_TRACE: startupTrace,
+    },
+  );
+
+  const trace = await readFile(startupTrace, "utf8").catch(() => "no startup trace");
+  const smokeJson = await readFile(smokeOutput, "utf8").catch(() => "");
+  assert.ok(
+    smokeJson.trim(),
+    `Packaged app produced an empty smoke result.\n${launch.stdout}\n${launch.stderr}\n${trace}`,
+  );
+  const smoke = JSON.parse(smokeJson);
+  assert.equal(smoke.packaged, true);
+  assert.equal(smoke.assets, true);
+  assert.equal(smoke.runtimeIcon, true);
+  assert.equal(smoke.helper.runtime, "standalone");
+  assert.equal(smoke.setup, true);
+  assert.equal(smoke.renderer.title, "Agent Usage Stat");
+  assert.equal(smoke.renderer.hasTimeline, true);
+  assert.equal(smoke.renderer.logoLoaded, true);
+  assert.match(smoke.renderer.favicon, /^aus:\/\/app\/assets\/logo-/);
+  assert.equal(smoke.renderer.protocol, "aus:");
+  assert.equal(smoke.refresh.sessions, 0);
+
+  const installedHelper = process.platform === "win32"
+    ? join(home, ".agent-usage-stat", "bin", "agent-usage-stat-helper.exe")
+    : join(home, ".agent-usage-stat", "bin", "agent-usage-stat-helper");
+  assert.equal(existsSync(installedHelper), true);
+
+  const claudeSettings = await readFile(
+    join(claudeHome, "settings.json"),
+    "utf8",
+  );
+  const codexHooks = await readFile(join(codexHome, "hooks.json"), "utf8");
+  const copilotHooks = await readFile(
+    join(copilotHome, "hooks", "agent-usage-stat.json"),
+    "utf8",
+  );
+  assert.match(claudeSettings, /agent-usage-stat-helper/);
+  assert.match(codexHooks, /agent-usage-stat-helper/);
+  assert.doesNotMatch(codexHooks, /node .*agent-usage-stat-helper/);
+  assert.match(copilotHooks, /agent-usage-stat-helper/);
+  assert.doesNotMatch(copilotHooks, /node .*agent-usage-stat-helper/);
+
+  const cachedTrace = await launchUntilTrace(
+    executable,
+    [`--user-data-dir=${home}`],
+    {
+      ...desktopEnvironment,
+      AGENT_USAGE_STAT_STARTUP_TRACE: cachedStartupTrace,
+    },
+    cachedStartupTrace,
+    "cached-window-ready",
+  );
+  assert.doesNotMatch(cachedTrace, /startup-window-ready/);
+  const moduleLoadedAt = traceTime(cachedTrace, "module-loaded");
+  const cachedWindowAt = traceTime(cachedTrace, "cached-window-ready");
+  assert.ok(
+    cachedWindowAt - moduleLoadedAt < 2000,
+    `Cached dashboard took ${cachedWindowAt - moduleLoadedAt} ms to open.\n${cachedTrace}`,
+  );
+
+  process.stdout.write(
+    `desktop smoke ok: ${process.platform}/${process.arch} -> ${outRelative}\n`,
+  );
+} finally {
+  await rm(home, { recursive: true, force: true });
+}
+
+function launchUntilTrace(
+  command,
+  args,
+  environment,
+  tracePath,
+  expected,
+  timeoutMs = 10_000,
+) {
+  return new Promise((resolveLaunch, reject) => {
+    const child = spawn(command, args, {
+      cwd: root,
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    let stderr = "";
+    let settled = false;
+    let poll;
+    let timeout;
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+
+    const finish = async (error, trace = "") => {
+      if (settled) return;
+      settled = true;
+      clearInterval(poll);
+      clearTimeout(timeout);
+      if (child.exitCode === null) {
+        child.kill();
+        await new Promise((resolveExit) => {
+          child.once("exit", resolveExit);
+          setTimeout(resolveExit, 1000);
+        });
+      }
+      if (error) reject(error);
+      else resolveLaunch(trace);
+    };
+    poll = setInterval(async () => {
+      const trace = await readFile(tracePath, "utf8").catch(() => "");
+      if (trace.includes(expected)) {
+        void finish(null, trace);
+      }
+    }, 25);
+    timeout = setTimeout(() => {
+      void finish(new Error(
+        `Packaged app did not reach ${expected} within ${timeoutMs} ms.\n${stderr}`,
+      ));
+    }, timeoutMs);
+    child.once("error", (error) => void finish(error));
+    child.once("exit", (code) => {
+      if (!settled) {
+        void finish(new Error(
+          `Packaged app exited with code ${code} before ${expected}.\n${stderr}`,
+        ));
+      }
+    });
+  });
+}
+
+function traceTime(trace, event) {
+  const line = trace.split(/\r?\n/).find((entry) => entry.endsWith(` ${event}`));
+  assert.ok(line, `Missing startup trace event: ${event}`);
+  return Date.parse(line.slice(0, line.indexOf(" ")));
+}
+
+function run(command, args, environment) {
+  return new Promise((resolveRun, reject) => {
+    const child = spawn(command, args, {
+      cwd: root,
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) {
+        resolveRun({ stdout, stderr });
+        return;
+      }
+      reject(new Error(
+        `${command} exited with code ${code}\n${stdout}\n${stderr}`,
+      ));
+    });
+  });
+}

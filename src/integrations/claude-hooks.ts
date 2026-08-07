@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import chalk from "chalk";
 import {
-  hookExecutablePaths,
+  captureHookCommands,
   isAgentUsageStatCommand,
 } from "./hook-command.js";
 
@@ -40,8 +40,7 @@ export async function installClaudeHook(settingsPath: string): Promise<void> {
   settings.hooks ||= {};
   settings.hooks.SessionEnd ||= [];
 
-  const { unixWrapper } = hookExecutablePaths();
-  const hookCommand = `"${unixWrapper}" capture --detach --quiet`;
+  const hookCommand = captureHookCommands().unix;
   const existingHook = settings.hooks.SessionEnd.find((group) =>
     group.hooks.some((hook) => isAgentUsageStatCommand(hook.command)),
   );

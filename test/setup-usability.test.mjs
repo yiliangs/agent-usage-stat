@@ -14,22 +14,23 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import { detectInstalledAgents } from "../dist/commands/setup.js";
-import { portalTaskScript } from "../dist/commands/portal-autostart.js";
 import { buildPortalData } from "../portal/scripts/build-data.mjs";
-import { detectProvider } from "../dist/index.js";
+import { detectProvider } from "../dist/providers/registry.js";
 
 test("installed agents are inferred without a provider setting", async () => {
   const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-detect-"));
   const claudeHome = join(home, "custom-claude-home");
+  const copilotHome = join(home, "custom-copilot-home");
   await mkdir(claudeHome);
+  await mkdir(copilotHome);
 
   try {
     const agents = detectInstalledAgents(
       home,
       (command) => command === "codex",
-      { CLAUDE_CONFIG_DIR: claudeHome },
+      { CLAUDE_CONFIG_DIR: claudeHome, COPILOT_HOME: copilotHome },
     );
-    assert.deepEqual(agents, ["claude", "codex"]);
+    assert.deepEqual(agents, ["claude", "codex", "copilot"]);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -56,6 +57,7 @@ test(
     const dataRoot = join(home, "usage");
     await mkdir(join(home, ".claude"));
     await mkdir(join(home, ".codex"));
+    await mkdir(join(home, ".copilot"));
 
     try {
       const first = await runCli(
@@ -71,8 +73,17 @@ test(
         join(home, ".codex", "hooks.json"),
         "utf8",
       );
+      const copilotHooks = JSON.parse(
+        await readFile(
+          join(home, ".copilot", "hooks", "agent-usage-stat.json"),
+          "utf8",
+        ),
+      );
       assert.equal(config.dataRoot, dataRoot);
       assert.equal(codexHooks.includes("--provider"), false);
+      assert.equal(copilotHooks.version, 1);
+      assert.equal(copilotHooks.hooks.SessionEnd.length, 1);
+      assert.match(copilotHooks.hooks.SessionEnd[0].powershell, /capture --detach --quiet/);
       await readFile(join(home, ".claude", "settings.json"), "utf8");
       const shellProfile = await readFile(
         join(home, "shell-profile.ps1"),
@@ -81,6 +92,7 @@ test(
       assert.match(shellProfile, /function global:claude/);
       assert.match(shellProfile, /function global:codex/);
       assert.match(shellProfile, /function global:claudex/);
+      assert.match(shellProfile, /function global:copilot/);
 
       const second = await runCli(["setup"], home);
       assert.equal(second.code, 0, second.output);
@@ -117,6 +129,155 @@ test("a new empty data folder produces a usable portal snapshot", async () => {
     assert.deepEqual(sessions, []);
     assert.equal(meta.sessions, 0);
     assert.deepEqual(meta.span, { from: null, to: null });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an unchanged shard is reused from the portal snapshot cache", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-usage-stat-cache-"));
+  const outDir = join(root, "portal");
+  const shardDir = join(root, "logbook.d");
+  await mkdir(shardDir);
+  await writeFile(
+    join(shardDir, "cached-session.json"),
+    JSON.stringify({
+      session_id: "cached-session",
+      provider: "codex",
+      start_time: "2026-08-01T12:00:00.000Z",
+      end_time: "2026-08-01T12:05:00.000Z",
+      project: "cache-test",
+      machine: "test-machine",
+      total_tokens: 1200,
+      total_cost_usd: 0.12,
+      models: ["gpt-5.6-sol"],
+    }),
+  );
+
+  try {
+    const first = await buildPortalData({ root, outDir });
+    const second = await buildPortalData({ root, outDir });
+    const sessions = JSON.parse(
+      await readFile(join(outDir, "sessions.json"), "utf8"),
+    );
+
+    assert.equal(first.parsedShards, 1);
+    assert.equal(first.reusedShards, 0);
+    assert.equal(second.parsedShards, 0);
+    assert.equal(second.reusedShards, 1);
+    assert.deepEqual(
+      sessions.map((session) => [session.sid, session.cost]),
+      [["cached-session", 0.12]],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a changed shard replaces its cached normalized session", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-usage-stat-cache-change-"));
+  const outDir = join(root, "portal");
+  const shardDir = join(root, "logbook.d");
+  const shard = join(shardDir, "changed-session.json");
+  await mkdir(shardDir);
+  const record = {
+    session_id: "changed-session",
+    provider: "claude",
+    start_time: "2026-08-02T12:00:00.000Z",
+    end_time: "2026-08-02T12:05:00.000Z",
+    project: "cache-test",
+    machine: "test-machine",
+    total_tokens: 1200,
+    total_cost_usd: 0.12,
+    models: ["claude-opus-5"],
+  };
+  await writeFile(shard, JSON.stringify(record));
+
+  try {
+    await buildPortalData({ root, outDir });
+    await writeFile(shard, JSON.stringify({ ...record, total_cost_usd: 0.24 }));
+    const future = new Date(Date.now() + 5000);
+    await utimes(shard, future, future);
+
+    const changed = await buildPortalData({ root, outDir });
+    const sessions = JSON.parse(
+      await readFile(join(outDir, "sessions.json"), "utf8"),
+    );
+
+    assert.equal(changed.parsedShards, 1);
+    assert.equal(changed.reusedShards, 0);
+    assert.equal(sessions[0].cost, 0.24);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a deleted shard is removed from the cached portal snapshot", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-usage-stat-cache-delete-"));
+  const outDir = join(root, "portal");
+  const shardDir = join(root, "logbook.d");
+  const shard = join(shardDir, "deleted-session.json");
+  await mkdir(shardDir);
+  await writeFile(
+    shard,
+    JSON.stringify({
+      session_id: "deleted-session",
+      provider: "copilot",
+      start_time: "2026-08-03T12:00:00.000Z",
+      total_tokens: 800,
+      total_cost_usd: 0.08,
+      models: ["gpt-5.4"],
+    }),
+  );
+
+  try {
+    await buildPortalData({ root, outDir });
+    await rm(shard);
+
+    const deleted = await buildPortalData({ root, outDir });
+    const sessions = JSON.parse(
+      await readFile(join(outDir, "sessions.json"), "utf8"),
+    );
+
+    assert.equal(deleted.sessions, 0);
+    assert.deepEqual(sessions, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a temporarily unreadable changed shard preserves its last valid result", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-usage-stat-cache-recovery-"));
+  const outDir = join(root, "portal");
+  const shardDir = join(root, "logbook.d");
+  const shard = join(shardDir, "recoverable-session.json");
+  await mkdir(shardDir);
+  await writeFile(
+    shard,
+    JSON.stringify({
+      session_id: "recoverable-session",
+      provider: "codex",
+      start_time: "2026-08-04T12:00:00.000Z",
+      total_tokens: 900,
+      total_cost_usd: 0.09,
+      models: ["gpt-5.6-sol"],
+    }),
+  );
+
+  try {
+    await buildPortalData({ root, outDir });
+    await writeFile(shard, "{not-json");
+    const future = new Date(Date.now() + 5000);
+    await utimes(shard, future, future);
+
+    const recovered = await buildPortalData({ root, outDir });
+    const sessions = JSON.parse(
+      await readFile(join(outDir, "sessions.json"), "utf8"),
+    );
+
+    assert.equal(recovered.sessions, 1);
+    assert.equal(sessions[0].sid, "recoverable-session");
+    assert.equal(sessions[0].cost, 0.09);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -349,7 +510,7 @@ test("sync backfills Claude sessions and fingerprints recursive subagent usage",
     assert.equal(second.code, 0, second.output);
     const repriced = JSON.parse(await readFile(shard, "utf8"));
     assert.equal(repriced.total_cost_usd, 0.012);
-    assert.match(repriced.source_fingerprint, /^claude-usage-v3:/);
+    assert.match(repriced.source_fingerprint, /^claude-usage-v4:/);
 
     const beforeThirdSync = await stat(shard);
     const third = await runCli(["sync", "--quiet"], home);
@@ -422,15 +583,18 @@ test("health check validates each shard against its provider pricing", async () 
   }
 });
 
-test("the package exposes the short aus terminal command", async () => {
+test("the root manifest is a private desktop application", async () => {
   const manifest = JSON.parse(
     await readFile(join(process.cwd(), "package.json"), "utf8"),
   );
-  assert.equal(manifest.bin.aus, "bin/agent-usage-stat.js");
-  assert.equal(manifest.bin["agent-usage-stat"], manifest.bin.aus);
+  assert.equal(manifest.private, true);
+  assert.equal(manifest.productName, "Agent Usage Stat");
+  assert.equal(manifest.main, "./dist/desktop/main.js");
+  assert.equal(manifest.bin, undefined);
+  assert.equal(manifest.types, undefined);
 });
 
-test("the CLI version follows the package manifest", async () => {
+test("the internal helper version follows the application manifest", async () => {
   const manifest = JSON.parse(
     await readFile(join(process.cwd(), "package.json"), "utf8"),
   );
@@ -439,36 +603,11 @@ test("the CLI version follows the package manifest", async () => {
   assert.equal(result.output.trim(), manifest.version);
 });
 
-test("one-click portal launchers preserve the persistent server when available", async () => {
-  for (const launcher of [
-    "portal/Agent-Usage-Stat.bat",
-    "portal/Agent-Usage-Stat.command",
-  ]) {
-    const content = await readFile(join(process.cwd(), launcher), "utf8");
-    assert.match(content, /bin[\\/]agent-usage-stat\.js["']? portal/);
-    assert.match(content, /127\.0\.0\.1:4179/);
-    assert.doesNotMatch(content, /npm run data|npx vite|taskkill|kill \$pids/);
-  }
-});
-
-test("portal autostart runs a hidden restartable login task", () => {
-  const task = portalTaskScript(
-    "C:\\Program Files\\nodejs\\node.exe",
-    "C:\\tools\\agent-usage-stat\\bin\\agent-usage-stat.js",
-  );
-  assert.match(task, /New-ScheduledTaskAction/);
-  assert.match(task, /agent-usage-stat\.js" portal --no-open --port 4179/);
-  assert.match(task, /New-ScheduledTaskTrigger -AtLogOn/);
-  assert.match(task, /ExecutionTimeLimit \(\[TimeSpan\]::Zero\)/);
-  assert.match(task, /RestartCount 3/);
-  assert.match(task, /Start-ScheduledTask/);
-});
-
 function runCli(args, home) {
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      [join(process.cwd(), "bin", "agent-usage-stat.js"), ...args],
+      [join(process.cwd(), "dist", "helper.js"), ...args],
       {
         cwd: process.cwd(),
         env: {

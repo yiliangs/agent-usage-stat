@@ -23,6 +23,10 @@ export interface CodexRolloutRecord {
     model_provider?: string;
     turn_id?: string;
     message?: string;
+    thread_settings?: {
+      model?: string;
+      service_tier?: string;
+    };
     git?: {
       branch?: string;
     };

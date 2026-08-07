@@ -1,64 +1,40 @@
-import { existsSync } from "fs";
 import { mkdir } from "fs/promises";
-import { spawnSync } from "child_process";
 import { join, resolve } from "path";
 import chalk from "chalk";
 import prompts from "prompts";
 import ora from "ora";
 import { ConfigManager } from "../core/config-manager.js";
-import { expandHome, homeDir } from "../utils/paths.js";
+import { expandHome } from "../utils/paths.js";
 import { resolveUsageRoot } from "../utils/usage-root.js";
 import {
   detectShellProfile,
   installTerminalWrappers,
+  hasTerminalWrappers,
   removeTerminalWrappers,
 } from "../core/terminal-wrappers.js";
 import {
-  installClaudeHook,
-  removeClaudeHook,
-} from "../integrations/claude-hooks.js";
-import {
-  installCodexHooks,
-  removeCodexHooks,
-} from "../integrations/codex-hooks.js";
+  createAgentIntegrations,
+  type AgentIntegration,
+} from "../integrations/agent-integrations.js";
 import { hookExecutablePaths } from "../integrations/hook-command.js";
 import type { AppConfig } from "../types/config.js";
-import type { ProviderName } from "../types/provider.js";
+
+export { detectInstalledAgents } from "../integrations/agent-integrations.js";
 
 export interface SetupOptions {
   uninstall?: boolean;
   dataRoot?: string;
   terminalMessage?: boolean;
-}
-
-export function detectInstalledAgents(
-  home = homeDir(),
-  commandExists: (command: string) => boolean = hasCommand,
-  environment: NodeJS.ProcessEnv = process.env,
-): ProviderName[] {
-  const agents: ProviderName[] = [];
-  const claudeHome = environment.CLAUDE_CONFIG_DIR || join(home, ".claude");
-  const codexHome = environment.CODEX_HOME || join(home, ".codex");
-  if (existsSync(claudeHome) || commandExists("claude")) {
-    agents.push("claude");
-  }
-  if (existsSync(codexHome) || commandExists("codex")) {
-    agents.push("codex");
-  }
-  return agents;
+  configureTerminal?: boolean;
+  migrateTerminal?: boolean;
 }
 
 export class SetupCommand {
   private configManager = new ConfigManager();
-  private settingsPath: string;
-  private codexHooksPath: string;
+  private integrations: AgentIntegration[];
 
-  constructor() {
-    const claudeHome =
-      process.env.CLAUDE_CONFIG_DIR || join(homeDir(), ".claude");
-    const codexHome = process.env.CODEX_HOME || join(homeDir(), ".codex");
-    this.settingsPath = join(claudeHome, "settings.json");
-    this.codexHooksPath = join(codexHome, "hooks.json");
+  constructor(integrations = createAgentIntegrations()) {
+    this.integrations = integrations;
   }
 
   async execute(options: SetupOptions): Promise<void> {
@@ -69,7 +45,12 @@ export class SetupCommand {
       if (options.uninstall) {
         await this.uninstall();
       } else {
-        await this.install(options.dataRoot, options.terminalMessage !== false);
+        await this.install(
+          options.dataRoot,
+          options.terminalMessage !== false,
+          options.configureTerminal !== false,
+          options.migrateTerminal === true,
+        );
       }
     } catch (error) {
       if (error instanceof Error) {
@@ -85,11 +66,15 @@ export class SetupCommand {
   private async install(
     dataRootOption?: string,
     terminalMessage = true,
+    configureTerminal = true,
+    migrateTerminal = false,
   ): Promise<void> {
-    const agents = detectInstalledAgents();
+    const agents = this.integrations.filter((integration) =>
+      integration.isInstalled()
+    );
     if (agents.length === 0) {
       throw new Error(
-        "No supported agent was found. Install Claude Code or Codex, run it once, then initialize again.",
+        "No supported agent was found. Install Claude Code, Codex, or Copilot CLI, run it once, then initialize again.",
       );
     }
 
@@ -114,7 +99,7 @@ export class SetupCommand {
     }
 
     const dataRoot = resolve(expandHome(String(answers.dataRoot).trim()));
-    const labels = agents.map(this.agentLabel).join(", ");
+    const labels = agents.map((agent) => agent.label).join(", ");
     console.log(chalk.gray(`Detected: ${labels}`));
 
     const spinner = ora("Connecting installed agents...").start();
@@ -132,26 +117,27 @@ export class SetupCommand {
       await this.configManager.saveConfig(config);
       spinner.text = "Usage folder ready...";
 
-      if (agents.includes("claude")) {
-        await installClaudeHook(this.settingsPath);
-      }
-      if (agents.includes("codex")) {
-        codexNeedsTrust = await installCodexHooks(this.codexHooksPath);
+      for (const agent of agents) {
+        const result = await agent.install();
+        if (agent.provider === "codex") {
+          codexNeedsTrust = result.needsTrust;
+        }
       }
       spinner.text = "Agent hooks installed...";
 
-      const terminal = await this.configureTerminalMessage(terminalMessage);
+      const terminal = configureTerminal
+        ? await this.configureTerminalMessage(terminalMessage)
+        : migrateTerminal
+          ? await this.migrateTerminalMessage()
+          : {};
       terminalProfile = terminal.profile;
       terminalWarning = terminal.warning;
 
       spinner.succeed("Initialization complete");
 
-      if (agents.includes("claude")) {
-        console.log(chalk.green("\nClaude Code connected"));
-      }
-      if (agents.includes("codex")) {
-        console.log(chalk.green("\nCodex connected"));
-        if (codexNeedsTrust) {
+      for (const agent of agents) {
+        console.log(chalk.green(`\n${agent.label} connected`));
+        if (agent.provider === "codex" && codexNeedsTrust) {
           console.log(
             chalk.yellow(
               "Codex security requires one final action: open /hooks and trust the new hook.",
@@ -178,13 +164,14 @@ export class SetupCommand {
     }
   }
 
-  /** Remove this package's hooks from both supported agents. */
+  /** Remove this package's hooks from every supported agent. */
   private async uninstall(): Promise<void> {
     const spinner = ora("Removing agent hooks...").start();
 
     try {
-      await removeClaudeHook(this.settingsPath);
-      await removeCodexHooks(this.codexHooksPath);
+      for (const integration of this.integrations) {
+        await integration.remove();
+      }
       const terminal = await this.configureTerminalMessage(false);
       spinner.succeed("Agent hooks removed");
 
@@ -219,8 +206,8 @@ export class SetupCommand {
 
     try {
       if (enabled) {
-        const { windowsBin } = hookExecutablePaths();
-        await installTerminalWrappers(profile, windowsBin);
+        const { windowsBin, windowsUsesNode } = hookExecutablePaths();
+        await installTerminalWrappers(profile, windowsBin, windowsUsesNode);
       } else {
         await removeTerminalWrappers(profile);
       }
@@ -237,16 +224,12 @@ export class SetupCommand {
     }
   }
 
-  private agentLabel(agent: ProviderName): string {
-    return agent === "claude" ? "Claude Code" : "Codex";
+  private async migrateTerminalMessage(): Promise<{
+    profile?: string;
+    warning?: string;
+  }> {
+    const profile = detectShellProfile();
+    if (!profile || !(await hasTerminalWrappers(profile))) return {};
+    return this.configureTerminalMessage(true);
   }
-}
-
-function hasCommand(command: string): boolean {
-  const locator = process.platform === "win32" ? "where.exe" : "which";
-  return spawnSync(locator, [command], {
-    stdio: "ignore",
-    timeout: 1500,
-    windowsHide: true,
-  }).status === 0;
 }

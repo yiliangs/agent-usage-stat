@@ -1,6 +1,7 @@
 import { open } from "fs/promises";
 import { ClaudeProvider } from "./claude/provider.js";
 import { CodexProvider } from "./codex/provider.js";
+import { CopilotProvider } from "./copilot/provider.js";
 import type {
   FoundSession,
   ProviderName,
@@ -26,6 +27,12 @@ const PROVIDERS: readonly ProviderRegistration[] = [
     create: () => new CodexProvider(),
     transcriptRecordTypes: ["session_meta", "turn_context"],
     homePathSegment: "/.codex/",
+  },
+  {
+    name: "copilot",
+    create: () => new CopilotProvider(),
+    transcriptRecordTypes: ["session.start"],
+    homePathSegment: "/.copilot/",
   },
 ];
 
@@ -89,7 +96,7 @@ export async function detectProvider(
   throw new Error(`Could not detect transcript provider: ${transcriptPath}`);
 }
 
-/** Find the newest matching session across both provider stores. */
+/** Find the newest matching session across every provider store. */
 export async function findSession(
   query?: string,
 ): Promise<ResolvedSession> {
@@ -106,8 +113,8 @@ export async function findSession(
   if (matches.length === 0) {
     throw new Error(
       query
-        ? `No Claude Code or Codex session matching "${query}".`
-        : "No Claude Code or Codex sessions found.",
+        ? `No Claude Code, Codex, or Copilot session matching "${query}".`
+        : "No Claude Code, Codex, or Copilot sessions found.",
     );
   }
   matches.sort((a, b) => b.found.mtimeMs - a.found.mtimeMs);

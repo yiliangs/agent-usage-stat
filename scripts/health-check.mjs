@@ -36,6 +36,7 @@ const HOOK_LOG = join(HOME, ".agent-usage-stat", "hook.log");
 const pricing = {
   claude: (await import("../dist/providers/claude/pricing.js")).priceFor,
   codex: (await import("../dist/providers/codex/pricing.js")).priceFor,
+  copilot: (await import("../dist/providers/copilot/pricing.js")).priceFor,
 };
 
 const modelsArePriced = (provider, models) => {

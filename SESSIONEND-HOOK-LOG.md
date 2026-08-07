@@ -19,9 +19,9 @@ The hook log is `~/.agent-usage-stat/hook.log`.
 ## Checks
 
 ```bash
-time (printf '' | node bin/agent-usage-stat.js capture --detach)
+time (printf '' | node dist/helper.js capture --detach)
 time (printf '' | bash bin/run-hook.sh capture --detach --quiet)
-time node bin/agent-usage-stat.js --version
+time node dist/helper.js --version
 ```
 
 Manual checks validate startup and wiring. Only a real Claude Code `/exit` validates survival during host teardown.

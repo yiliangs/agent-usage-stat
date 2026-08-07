@@ -3,7 +3,7 @@
 // way out: renderers and the logbook writer never branch on the provider.
 
 /** Which host tool produced the session. */
-export type ProviderName = "claude" | "codex";
+export type ProviderName = "claude" | "codex" | "copilot";
 
 export interface ModelBreakdown {
   /** Normalized model id — aggregation key, logbook `models` entry. */

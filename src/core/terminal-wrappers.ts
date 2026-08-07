@@ -10,7 +10,7 @@ const BLOCK_PATTERN = new RegExp(
   `(?:\\r?\\n)?${escapeRegExp(BLOCK_START)}[\\s\\S]*?${escapeRegExp(BLOCK_END)}(?:\\r?\\n)?`,
   "g",
 );
-const COMMANDS = ["claude", "codex", "claudex"] as const;
+const COMMANDS = ["claude", "codex", "copilot", "claudex"] as const;
 
 export type ShellProfileKind = "powershell" | "zsh" | "bash";
 
@@ -51,13 +51,14 @@ export function detectShellProfile(
 export async function installTerminalWrappers(
   profile: ShellProfile,
   cliPath: string,
+  usesNode = true,
 ): Promise<ProfileUpdate> {
   const existing = await readOptional(profile.path);
   const eol = existing.includes("\r\n") ? "\r\n" : "\n";
   const withoutBlock = existing.replace(BLOCK_PATTERN, "");
   const separator = withoutBlock && !withoutBlock.endsWith(eol) ? eol : "";
   const blankLine = withoutBlock.trim() ? eol : "";
-  const block = renderBlock(profile.kind, cliPath, eol);
+  const block = renderBlock(profile.kind, cliPath, usesNode, eol);
   const next = `${withoutBlock}${separator}${blankLine}${block}${eol}`;
 
   if (next === existing) return { profile, changed: false };
@@ -78,6 +79,12 @@ export async function removeTerminalWrappers(
   await createBackup(profile.path);
   await writeFile(profile.path, next, "utf-8");
   return { profile, changed: true };
+}
+
+export async function hasTerminalWrappers(
+  profile: ShellProfile,
+): Promise<boolean> {
+  return (await readOptional(profile.path)).includes(BLOCK_START);
 }
 
 function detectPowerShellProfile(
@@ -125,12 +132,13 @@ function commandExists(
 function renderBlock(
   kind: ShellProfileKind,
   cliPath: string,
+  usesNode: boolean,
   eol: string,
 ): string {
   const functions = COMMANDS.map((command) =>
     kind === "powershell"
-      ? renderPowerShellFunction(command, cliPath, eol)
-      : renderPosixFunction(command, cliPath, eol),
+      ? renderPowerShellFunction(command, cliPath, usesNode, eol)
+      : renderPosixFunction(command, cliPath, usesNode, eol),
   ).join(eol + eol);
   return `${BLOCK_START}${eol}${functions}${eol}${BLOCK_END}`;
 }
@@ -138,12 +146,16 @@ function renderBlock(
 function renderPowerShellFunction(
   command: (typeof COMMANDS)[number],
   cliPath: string,
+  usesNode: boolean,
   eol: string,
 ): string {
   const quotedPath = cliPath.replace(/'/g, "''");
+  const invocation = usesNode
+    ? `& node '${quotedPath}' run ${command} -- @args`
+    : `& '${quotedPath}' run ${command} -- @args`;
   const lines = [
     `function global:${command} {`,
-    `  & node '${quotedPath}' run ${command} -- @args`,
+    `  ${invocation}`,
     "}",
   ];
   if (command !== "claudex") return lines.join(eol);
@@ -158,12 +170,16 @@ function renderPowerShellFunction(
 function renderPosixFunction(
   command: (typeof COMMANDS)[number],
   cliPath: string,
+  usesNode: boolean,
   eol: string,
 ): string {
   const quotedPath = cliPath.replace(/'/g, `'"'"'`);
+  const invocation = usesNode
+    ? `node '${quotedPath}' run ${command} -- "$@"`
+    : `'${quotedPath}' run ${command} -- "$@"`;
   const lines = [
     `${command}() {`,
-    `  node '${quotedPath}' run ${command} -- "$@"`,
+    `  ${invocation}`,
     "}",
   ];
   if (command !== "claudex") return lines.join(eol);

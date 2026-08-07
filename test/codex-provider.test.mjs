@@ -13,7 +13,8 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
-import { CodexProvider, detectProvider } from "../dist/index.js";
+import { CodexProvider } from "../dist/providers/codex/provider.js";
+import { detectProvider } from "../dist/providers/registry.js";
 import { LogbookWriter } from "../dist/core/logbook-writer.js";
 import {
   createAgentRun,
@@ -260,6 +261,117 @@ test("Codex prices the GPT-5.6 alias as Sol", async () => {
     assert.deepEqual(provider.getUnknownModels(), []);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex applies Fast pricing only to turns recorded at the priority tier", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-fast-tier-"));
+  const path = join(dir, "rollout-fast-tier.jsonl");
+  const oneTurn = {
+    input_tokens: 1000,
+    cached_input_tokens: 0,
+    output_tokens: 100,
+    total_tokens: 1100,
+  };
+
+  await writeFile(
+    path,
+    [
+      line("event_msg", {
+        type: "thread_settings_applied",
+        thread_settings: {
+          model: "gpt-5.6-sol",
+          service_tier: "default",
+        },
+      }),
+      line("turn_context", { turn_id: "standard", model: "gpt-5.6-sol" }),
+      line("event_msg", {
+        type: "token_count",
+        info: {
+          total_token_usage: oneTurn,
+          last_token_usage: oneTurn,
+        },
+      }),
+      line("event_msg", {
+        type: "thread_settings_applied",
+        thread_settings: {
+          model: "gpt-5.6-sol",
+          service_tier: "priority",
+        },
+      }),
+      line("turn_context", { turn_id: "fast", model: "gpt-5.6-sol" }),
+      line("event_msg", {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: 2000,
+            cached_input_tokens: 0,
+            output_tokens: 200,
+            total_tokens: 2200,
+          },
+          last_token_usage: oneTurn,
+        },
+      }),
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    const provider = new CodexProvider();
+    const usage = await provider.calculateUsage(path, "fallback");
+
+    assert.equal(usage.turns.length, 2);
+    assert.equal(Number(usage.turns[0].totalCost.toFixed(6)), 0.008);
+    assert.equal(Number(usage.turns[1].totalCost.toFixed(6)), 0.02);
+    assert.equal(Number(usage.totalCost.toFixed(6)), 0.028);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex uses the documented Fast multiplier for each supported model", async () => {
+  const cases = [
+    { model: "gpt-5.6-sol", expected: 0.02 },
+    { model: "gpt-5.5", expected: 0.02 },
+    { model: "gpt-5.4", expected: 0.008 },
+  ];
+
+  for (const { model, expected } of cases) {
+    const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-fast-model-"));
+    const path = join(dir, `rollout-${model}.jsonl`);
+    const tokenUsage = {
+      input_tokens: 1000,
+      cached_input_tokens: 0,
+      output_tokens: 100,
+      total_tokens: 1100,
+    };
+
+    await writeFile(
+      path,
+      [
+        line("event_msg", {
+          type: "thread_settings_applied",
+          thread_settings: { model, service_tier: "priority" },
+        }),
+        line("turn_context", { turn_id: model, model }),
+        line("event_msg", {
+          type: "token_count",
+          info: {
+            total_token_usage: tokenUsage,
+            last_token_usage: tokenUsage,
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    try {
+      const provider = new CodexProvider();
+      const usage = await provider.calculateUsage(path, "fallback");
+      assert.equal(Number(usage.totalCost.toFixed(6)), expected, model);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   }
 });
 
@@ -532,7 +644,7 @@ test("detached Codex hook performs a quiet usage update", async () => {
   try {
     const result = await new Promise((resolve, reject) => {
       const child = spawn(process.execPath, [
-        join(process.cwd(), "bin", "agent-usage-stat.js"),
+        join(process.cwd(), "dist", "helper.js"),
         "capture",
         "--detach",
         "--quiet",

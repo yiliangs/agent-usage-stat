@@ -1,16 +1,21 @@
 #!/usr/bin/env node
 /** Build the portal's compact browser artifacts from per-session shards. */
+import { existsSync } from "node:fs";
 import {
-  readFileSync,
-  writeFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-} from "node:fs";
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const CACHE_FILE = "snapshot-cache.json";
+const CACHE_VERSION = 1;
+const SHARD_CONCURRENCY = 8;
 
 export async function buildPortalData(options = {}) {
   const root = options.root || (await canonicalRoot());
@@ -21,27 +26,64 @@ export async function buildPortalData(options = {}) {
     throw new Error(`Usage data not found: ${shardDir || "unresolved data root"}`);
   }
 
+  const priorCache = await readSnapshotCache(outDir, root);
+  const files = (await readdir(shardDir))
+    .filter((file) => file.toLowerCase().endsWith(".json"))
+    .sort();
+  const entries = await mapConcurrent(
+    files,
+    SHARD_CONCURRENCY,
+    async (file) => {
+      const path = resolve(shardDir, file);
+      const prior = priorCache.entries[file];
+      try {
+        const fileStat = await stat(path);
+        if (
+          prior &&
+          prior.size === fileStat.size &&
+          prior.mtimeMs === fileStat.mtimeMs
+        ) {
+          return { ...prior, file, reused: true };
+        }
+        return {
+          file,
+          size: fileStat.size,
+          mtimeMs: fileStat.mtimeMs,
+          session: normalizeSession(JSON.parse(await readFile(path, "utf8"))),
+          reused: false,
+        };
+      } catch (error) {
+        console.warn(
+          `[build-data] skipping ${file}: ${error instanceof Error ? error.message : error}`,
+        );
+        return { file, error, prior };
+      }
+    },
+  );
+
   const byId = new Map();
   const noId = [];
   let shardCount = 0;
   let badShards = 0;
+  const nextCache = {};
 
-  for (const file of readdirSync(shardDir)) {
-    if (!file.toLowerCase().endsWith(".json")) continue;
-    try {
-      const session = normalizeSession(
-        JSON.parse(readFileSync(resolve(shardDir, file), "utf8")),
-      );
-      if (!session) continue;
-      if (session.sid) byId.set(session.sid, session);
-      else noId.push(session);
-      shardCount++;
-    } catch (error) {
+  for (const entry of entries) {
+    if (entry.error) {
       badShards++;
-      console.warn(
-        `[build-data] skipping ${file}: ${error instanceof Error ? error.message : error}`,
-      );
+      if (!entry.prior) continue;
+      nextCache[entry.file] = entry.prior;
+      addSession(entry.prior.session, byId, noId);
+      shardCount++;
+      continue;
     }
+    nextCache[entry.file] = {
+      size: entry.size,
+      mtimeMs: entry.mtimeMs,
+      session: entry.session,
+    };
+    if (!entry.session) continue;
+    addSession(entry.session, byId, noId);
+    shardCount++;
   }
 
   const sessions = [...byId.values(), ...noId].sort(
@@ -70,6 +112,8 @@ export async function buildPortalData(options = {}) {
     projects: projects.size,
     machines: machines.size,
     totalCost: Math.round(totalCost * 100) / 100,
+    parsedShards: entries.filter((entry) => !entry.reused && !entry.error).length,
+    reusedShards: entries.filter((entry) => entry.reused).length,
     span: sessions.length
       ? {
           from: new Date(minStart).toISOString(),
@@ -78,15 +122,64 @@ export async function buildPortalData(options = {}) {
       : { from: null, to: null },
   };
 
-  mkdirSync(outDir, { recursive: true });
-  writeFileSync(resolve(outDir, "sessions.json"), JSON.stringify(sessions));
-  writeFileSync(resolve(outDir, "meta.json"), JSON.stringify(meta, null, 2));
+  await mkdir(outDir, { recursive: true });
+  await writeJsonAtomic(resolve(outDir, "sessions.json"), sessions);
+  await writeJsonAtomic(resolve(outDir, CACHE_FILE), {
+    version: CACHE_VERSION,
+    source: root,
+    entries: nextCache,
+  });
+  await writeJsonAtomic(resolve(outDir, "meta.json"), meta, 2);
   console.log(
     `[build-data] ${sessions.length} sessions (${shardCount} shards` +
       `${badShards ? `, ${badShards} skipped` : ""}) · ${projects.size} projects · ` +
       `$${meta.totalCost.toLocaleString("en-US")} -> ${outDir}`,
   );
   return meta;
+}
+
+async function readSnapshotCache(outDir, root) {
+  try {
+    const cache = JSON.parse(await readFile(resolve(outDir, CACHE_FILE), "utf8"));
+    if (
+      cache.version === CACHE_VERSION &&
+      cache.source === root &&
+      cache.entries &&
+      typeof cache.entries === "object"
+    ) {
+      return cache;
+    }
+  } catch {
+    // A missing or invalid cache requires a complete rebuild.
+  }
+  return { version: CACHE_VERSION, source: root, entries: {} };
+}
+
+function addSession(session, byId, noId) {
+  if (!session) return;
+  if (session.sid) byId.set(session.sid, session);
+  else noId.push(session);
+}
+
+async function writeJsonAtomic(path, value, space) {
+  const staged = `${path}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
+  await writeFile(staged, JSON.stringify(value, null, space), "utf8");
+  await rename(staged, path);
+}
+
+async function mapConcurrent(items, concurrency, map) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await map(items[index]);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  );
+  return results;
 }
 
 async function canonicalRoot() {

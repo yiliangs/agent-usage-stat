@@ -55,6 +55,72 @@ test("Claude Opus 5 aliases use current Anthropic pricing", async () => {
   }
 });
 
+test("Claude prices each Opus response using its recorded speed", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-claude-fast-"));
+  const sessionId = "66666666-6666-4666-8666-666666666666";
+  const path = join(dir, `${sessionId}.jsonl`);
+  const standardUsage = {
+    input_tokens: 1_000,
+    cache_creation_input_tokens: 2_000,
+    cache_read_input_tokens: 400,
+    output_tokens: 100,
+    speed: "standard",
+  };
+  const fastUsage = { ...standardUsage, speed: "fast" };
+
+  await writeFile(
+    path,
+    [
+      assistant("resp_standard", standardUsage, "claude-opus-5"),
+      assistant("resp_fast", fastUsage, "claude-opus-5"),
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    const calculator = new UsageCalculator();
+    const usage = await calculator.calculate(path, sessionId);
+
+    assert.equal(usage.turns.length, 2);
+    assert.equal(Number(usage.turns[0].totalCost.toFixed(6)), 0.0202);
+    assert.equal(Number(usage.turns[1].totalCost.toFixed(6)), 0.0404);
+    assert.equal(Number(usage.totalCost.toFixed(6)), 0.0606);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Claude preserves historical Fast pricing for earlier supported Opus models", async () => {
+  const cases = [
+    { model: "claude-opus-4-8", expected: 0.015 },
+    { model: "claude-opus-4-7", expected: 0.045 },
+    { model: "claude-opus-4-6", expected: 0.045 },
+  ];
+
+  for (const { model, expected } of cases) {
+    const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-claude-fast-model-"));
+    const sessionId = "88888888-8888-4888-8888-888888888888";
+    const path = join(dir, `${sessionId}.jsonl`);
+    const usage = {
+      input_tokens: 1_000,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 100,
+      speed: "fast",
+    };
+
+    await writeFile(path, assistant(`resp_${model}`, usage, model), "utf8");
+
+    try {
+      const calculator = new UsageCalculator();
+      const result = await calculator.calculate(path, sessionId);
+      assert.equal(Number(result.totalCost.toFixed(6)), expected, model);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("Claude preserves response-scoped usage timestamps across days", async () => {
   const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-claude-turns-"));
   const sessionId = "33333333-3333-3333-3333-333333333333";

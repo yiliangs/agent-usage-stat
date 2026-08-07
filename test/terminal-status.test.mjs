@@ -192,6 +192,12 @@ test("shell wrapper blocks are idempotent and reversible", async () => {
     await removeTerminalWrappers(profile);
     content = await readFile(profile.path, "utf8");
     assert.equal(content, original);
+
+    const helperPath = join(home, "bin", "agent-usage-stat-helper.exe");
+    await installTerminalWrappers(profile, helperPath, false);
+    content = await readFile(profile.path, "utf8");
+    assert.match(content, /agent-usage-stat-helper\.exe' run claude/);
+    assert.doesNotMatch(content, /& node .*agent-usage-stat-helper/);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -342,7 +348,7 @@ function runCli(args, environment) {
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      [join(root, "bin", "agent-usage-stat.js"), ...args],
+      [join(root, "dist", "helper.js"), ...args],
       {
         cwd: root,
         env: environment,
