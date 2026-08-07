@@ -21,6 +21,8 @@ import type { HookData } from "../types/session-hook.js";
  */
 export interface DetachShimOptions {
   quiet?: boolean;
+  /** Arguments placed before the worker command when re-launching this runtime. */
+  workerArgsPrefix?: string[];
 }
 
 /**
@@ -101,7 +103,12 @@ export function runDetachShim(options: DetachShimOptions): void {
     }
   }
 
-  const args = [process.argv[1], "capture", "--input-file", tmpFile];
+  const args = [
+    ...(options.workerArgsPrefix ?? [process.argv[1]]),
+    "capture",
+    "--input-file",
+    tmpFile,
+  ];
   if (options.quiet) {
     args.push("--quiet");
   }

@@ -20,6 +20,7 @@ const DISPLAY_NAMES: Record<string, string> = {
   "gpt-5.4-mini": "GPT-5.4 Mini",
   "gpt-5.4-nano": "GPT-5.4 Nano",
   "gpt-5.4-pro": "GPT-5.4 Pro",
+  "gpt-5-mini": "GPT-5 Mini",
   "gpt-5.3-codex": "GPT-5.3 Codex",
 
   // Current Claude generation (July 2026)

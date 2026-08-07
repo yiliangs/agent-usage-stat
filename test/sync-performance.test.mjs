@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { SyncCommand } from "../dist/index.js";
+import { SyncCommand } from "../dist/commands/sync.js";
 
 const SESSION_COUNT = 12;
 

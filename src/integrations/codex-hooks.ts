@@ -42,12 +42,14 @@ export async function installCodexHooks(hooksPath: string): Promise<boolean> {
   }
 
   config.hooks ||= {};
-  const { unixWrapper, windowsBin } = hookExecutablePaths();
+  const { unixWrapper, windowsBin, windowsUsesNode } = hookExecutablePaths();
   const args = "capture --detach --quiet";
   const handler: CommandHook = {
     type: "command",
     command: `"${unixWrapper}" ${args}`,
-    commandWindows: `node "${windowsBin}" ${args}`,
+    commandWindows: windowsUsesNode
+      ? `node "${windowsBin}" ${args}`
+      : `"${windowsBin}" ${args}`,
     timeout: 30,
     statusMessage: "Recording Codex usage",
   };

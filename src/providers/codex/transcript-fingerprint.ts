@@ -5,7 +5,7 @@ import { pricingFingerprintSource } from "./pricing.js";
 const TAIL_BYTES = 64 * 1024;
 // Bump only for usage-parser semantic changes. Pricing-table changes are
 // included automatically through pricingFingerprintSource().
-const USAGE_ALGORITHM_VERSION = "codex-usage-v3";
+const USAGE_ALGORITHM_VERSION = "codex-usage-v4";
 const SNAPSHOT_VERSION = createHash("sha256")
   .update(USAGE_ALGORITHM_VERSION)
   .update(pricingFingerprintSource())

@@ -1,108 +1,85 @@
 # Agent Usage Stat
 
-A private, local portal for understanding how your coding agents use tokens, time, and API-equivalent cost.
+A private desktop application for understanding how Claude Code, OpenAI Codex, and GitHub Copilot CLI use tokens, time, and API-equivalent cost.
 
-![Agent Usage Stat portal](screenshot.png)
+![Agent Usage Stat](screenshot.png)
 
 ## Supported
-
-Agent Usage Stat supports:
 
 - Windows and macOS
 - Claude Code
 - OpenAI Codex, including Codex sessions used through ChatGPT
+- GitHub Copilot CLI
 
-It does not read general ChatGPT chats, Claude.ai chats, Linux sessions, or API-account usage. All data stays on your machine or in the folder you choose.
+Agent Usage Stat does not read general ChatGPT or Claude.ai chats. All usage data stays on the local machine or in the folder already selected by the user.
 
-## Start
+## Install
 
-Node.js 20 or newer is required.
+Download the current installer from [GitHub Releases](https://github.com/yiliangs/agent-usage-stat/releases):
 
-1. [Download or clone this repository](https://github.com/yiliangs/agent-usage-stat).
-2. On Windows, double-click `Initialize-Agent-Usage-Stat.bat`. On macOS, double-click `Initialize-Agent-Usage-Stat.command`.
-3. Choose the folder where usage data should be stored.
+- Windows: `Agent-Usage-Stat-Setup.exe`
+- macOS: `Agent-Usage-Stat.dmg`
 
-That folder is the only setting. The initializer detects the operating system and installed agents, installs a private runtime under your user profile, connects Claude Code and Codex automatically, and opens the portal.
+No separate Node.js or npm installation is required.
 
-Codex requires one security confirmation before it can run a new hook. If Codex asks, open `/hooks` and trust the Agent Usage Stat hook. This confirmation cannot be completed by the initializer.
+On first launch, Agent Usage Stat detects installed agents, preserves an existing v2 data location when present, installs its capture hooks, reconciles existing sessions, and opens the desktop dashboard. New installations use `~/.agent-usage-stat/data` unless an existing shared usage root is detected.
 
-Open a new terminal after setup. The normal `claude`, `codex`, and `claudex`
-commands then print one verified status line after the agent exits:
+Codex requires one security confirmation after its hook is first installed. Open `/hooks` in Codex and trust the Agent Usage Stat hook when prompted.
 
-```text
-[Agent Usage Stat] Usage recorded: Claude, 18.6M tokens, $42.68, my-project
-```
+Closing the desktop window does not disable capture. A small bundled helper records completed sessions without opening the application.
 
-The line appears in the same terminal, not in a popup. It is printed only after
-the detached capture worker has completed its shard write and read-back check.
-Use `agent-usage-stat setup --no-terminal-message` to keep silent capture without
-shell command wrappers. The explicit fallback is
-`agent-usage-stat run claude -- <arguments>`, with `codex` or `claudex` accepted
-in place of `claude`.
-
-The portal runs at `http://127.0.0.1:4179`. Its **Refresh data** button scans
-local Claude and Codex transcripts, reconciles changed sessions into the configured
-`logbook.d/`, rebuilds the browser snapshot, and reloads the updated view.
-
-On Windows, keep the portal available after login with:
-
-```bash
-aus portal enable
-```
-
-Use `aus portal status` or `aus portal disable` to inspect or disable login
-startup. Disabling startup leaves the currently running portal available until it
-is stopped or the user logs out. The dedicated launchers remain safe fallbacks:
-`portal/Agent-Usage-Stat.bat` on Windows and `portal/Agent-Usage-Stat.command`
-on macOS. If the server is already running, the launcher only opens it; otherwise,
-it starts a foreground server.
-
-## What you get
+## What it shows
 
 - Spend and token trends
-- Claude Code and Codex comparisons
-- Model, project, machine, and session breakdowns
+- Claude Code, Codex, and Copilot comparisons
+- Model-vendor, project, machine, and session breakdowns
 - Cache read and write efficiency
 - Searchable session details
+- Weekly and monthly session timelines
 
-## Weekly and monthly usage map
+Costs are API-equivalent list-price estimates. They are not charges added to a ChatGPT, Claude, or Copilot subscription.
 
-The **Session timeline** maps every recorded session onto local wall-clock time. Week view keeps the full 24-hour schedule readable, including concurrent sessions. Month view compresses the same data into daily columns, blending overlaps without losing their combined token volume.
+Each completed session becomes one JSON file under `<data-root>/logbook.d/`. A synced data folder can combine several Windows and macOS machines.
 
-Switch between model and project colors to see who did the work or where it happened. Darker blocks indicate higher token velocity, and the period controls move backward or forward without changing the active analytics filter.
+## Application architecture
 
-The image pairs a dense illustrative week with an anonymized real monthly snapshot. Month view omits session names and shows the combined temporal pattern directly.
+```text
+Claude / Codex / Copilot hooks
+  -> installed standalone helper
+  -> provider-specific transcript parser and pricing
+  -> logbook.d/<session-id>.json
 
-![Weekly and monthly session usage maps](screenshot-timeline.png)
-
-Costs are API-equivalent list-price estimates. They are not charges added to a ChatGPT or Claude subscription.
-
-Each completed session becomes one JSON file under `<your-folder>/logbook.d/`. You can use a synced folder to combine several Windows and macOS machines.
-
-## Terminal alternative
-
-From a source checkout, link the short `aus` command once:
-
-```bash
-npm link
-aus setup
-aus
+Agent Usage Stat desktop application
+  -> Electron main process
+  -> aus:// packaged renderer
+  -> generated local analytics snapshot
 ```
 
-`aus` and `aus portal` both open the portal. The full `agent-usage-stat` command
-remains available for scripts and compatibility. `setup` asks for the data folder
-only. To change it later:
-
-```bash
-aus config --set dataRoot="<new-folder>"
-```
+The production application opens no localhost server. The renderer is sandboxed and reads packaged assets and generated data through the application protocol.
 
 ## Development
+
+Node.js 20 or newer is required for development only.
 
 ```bash
 npm install
 npm install --prefix portal
 npm test
+npm run test:desktop
+npm start
+npm run make
 ```
+
+- `npm test` runs the core and portal regression suite.
+- `npm run test:desktop` packages the application and exercises the standalone helper, first-run hook installation, custom protocol, refresh, and renderer.
+- `npm start` builds and launches the development desktop application.
+- `npm run make` creates platform installers under `out/desktop/make/`.
+
+Tagged releases are built for Windows and macOS by `.github/workflows/desktop-release.yml`. The workflow requires signing credentials before it will publish anything:
+
+- Windows: `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD`
+- macOS: `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`
+
+Local `npm run make` artifacts are unsigned development builds. Published releases are signed, and macOS releases are notarized. The root npm project is private and exposes no supported JavaScript library API or end-user CLI package.
 
 Licensed under MIT.

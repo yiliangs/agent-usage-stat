@@ -56,9 +56,11 @@ const fmt = {
   pct: (value) => Math.round(value * 100) + '%',
 }
 
-const LOCAL_TIME_ZONE = 'America/Chicago'
+const LOCAL_TIME_ZONE = resolveLocalTimeZone()
+const LOCAL_LOCATION = locationLabelForTimeZone(LOCAL_TIME_ZONE)
+const localTimeZoneOptions = LOCAL_TIME_ZONE ? { timeZone: LOCAL_TIME_ZONE } : {}
 const localPartsFormatter = new Intl.DateTimeFormat('en-US', {
-  timeZone: LOCAL_TIME_ZONE,
+  ...localTimeZoneOptions,
   year: 'numeric',
   month: '2-digit',
   day: '2-digit',
@@ -68,13 +70,27 @@ const localPartsFormatter = new Intl.DateTimeFormat('en-US', {
   hourCycle: 'h23',
 })
 const trafficTimeFormatter = new Intl.DateTimeFormat('en-US', {
-  timeZone: LOCAL_TIME_ZONE,
+  ...localTimeZoneOptions,
   month: 'short',
   day: '2-digit',
   hour: '2-digit',
   minute: '2-digit',
   hourCycle: 'h23',
 })
+
+function resolveLocalTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null
+  } catch {
+    return null
+  }
+}
+
+function locationLabelForTimeZone(timeZone) {
+  if (!timeZone || !timeZone.includes('/') || timeZone.startsWith('Etc/')) return 'N/A'
+  const parts = timeZone.split('/')
+  return parts[parts.length - 1].replaceAll('_', ' ').toUpperCase() || 'N/A'
+}
 
 function localParts(value) {
   return Object.fromEntries(localPartsFormatter.formatToParts(value).filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]))
@@ -1300,7 +1316,7 @@ function renderWeekRhythm(dateKeys, segmentsByDate, projectColors) {
     return `<span class="rhythm-hour${hour === 24 ? ' end' : ''}" style="top:${position}px">${String(hour).padStart(2, '0')}:00</span>`
   }).join('')
   const days = renderWeekRhythmDays(dateKeys, segmentsByDate, projectColors)
-  return `<div class="rhythm-calendar-corner"><span>Local</span><b>Chicago</b></div><div class="rhythm-date-head" style="grid-template-columns:${columns}">${dateHead}</div><div class="rhythm-time-axis">${timeAxis}</div><div class="rhythm-days" style="grid-template-columns:${columns}">${days}</div>`
+  return `<div class="rhythm-calendar-corner"><span>Local</span><b>${LOCAL_LOCATION}</b></div><div class="rhythm-date-head" style="grid-template-columns:${columns}">${dateHead}</div><div class="rhythm-time-axis">${timeAxis}</div><div class="rhythm-days" style="grid-template-columns:${columns}">${days}</div>`
 }
 
 function renderWeekRhythmDays(dateKeys, segmentsByDate, projectColors) {
@@ -1360,7 +1376,7 @@ function renderMonthRhythm(dateKeys, segmentsByDate, observedThrough, projectCol
     return `<span class="rhythm-hour" style="top:${hour / 24 * MONTH_TIMELINE_HEIGHT}px">${String(hour).padStart(2, '0')}:00</span>`
   }).join('')
   const days = renderMonthRhythmDays(dateKeys, segmentsByDate, bandsByDate, projectColors, observedThrough)
-  return `<div class="rhythm-calendar-corner"><span>Local</span><b>Chicago</b></div><div class="rhythm-date-head" style="grid-template-columns:${columns}">${dateHead}</div><div class="rhythm-time-axis">${timeAxis}</div><div class="rhythm-days" style="grid-template-columns:${columns}">${days}</div>`
+  return `<div class="rhythm-calendar-corner"><span>Local</span><b>${LOCAL_LOCATION}</b></div><div class="rhythm-date-head" style="grid-template-columns:${columns}">${dateHead}</div><div class="rhythm-time-axis">${timeAxis}</div><div class="rhythm-days" style="grid-template-columns:${columns}">${days}</div>`
 }
 
 function renderMonthRhythmDays(dateKeys, segmentsByDate, bandsByDate, projectColors, observedThrough) {

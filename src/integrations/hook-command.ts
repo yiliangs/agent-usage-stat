@@ -1,14 +1,22 @@
-import { resolve } from "path";
-import { fileURLToPath } from "url";
+import { dirname, resolve } from "path";
 import { homeDir } from "../utils/paths.js";
 
 export interface HookExecutablePaths {
   unixWrapper: string;
   windowsBin: string;
+  windowsUsesNode: boolean;
 }
 
 export function hookExecutablePaths(): HookExecutablePaths {
-  const packageRoot = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+  if (process.env.AGENT_USAGE_STAT_STANDALONE === "1") {
+    return {
+      unixWrapper: process.execPath,
+      windowsBin: process.execPath,
+      windowsUsesNode: false,
+    };
+  }
+
+  const packageRoot = resolve(dirname(process.argv[1] || process.cwd()), "..");
   const wrapperPath = resolve(packageRoot, "bin", "run-hook.sh");
   const binPath = resolve(packageRoot, "bin", "agent-usage-stat.js");
   const home = homeDir().replace(/\\/g, "/");
@@ -17,7 +25,7 @@ export function hookExecutablePaths(): HookExecutablePaths {
     home && normalized.toLowerCase().startsWith(home.toLowerCase())
       ? "$HOME" + normalized.slice(home.length)
       : normalized;
-  return { unixWrapper, windowsBin: binPath };
+  return { unixWrapper, windowsBin: binPath, windowsUsesNode: true };
 }
 
 /** Recognize both the current package hook and hooks from its old name. */

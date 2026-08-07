@@ -1,6 +1,10 @@
 import { readFile } from "fs/promises";
 import { existsSync } from "fs";
-import { priceForRequest, normalizeModelId } from "./pricing.js";
+import {
+  priceForRequest,
+  normalizeModelId,
+  priceMultiplierForSpeed,
+} from "./pricing.js";
 import { displayModelName } from "./model-names.js";
 import { findSessionTranscriptFiles } from "./session-files.js";
 import {
@@ -199,13 +203,15 @@ export class UsageCalculator {
       );
       if (!pricing) this.unknownModels.add(model);
 
-      const cost = pricing
+      const standardCost = pricing
         ? (inputTokens * pricing.input +
             outputTokens * pricing.output +
             cacheCreationTokens * pricing.cacheWrite +
             cacheReadTokens * pricing.cacheRead) /
           1_000_000
         : 0;
+      const cost =
+        standardCost * priceMultiplierForSpeed(model, u.speed);
       const breakdown: ModelBreakdown = {
         modelName: model,
         displayName: displayModelName(model),

@@ -38,9 +38,6 @@ export interface ModelPricing {
 const PRICING: Record<string, ModelPricing> = {
   // Current generation (July 2026)
   // Fable 5 is the top tier above Opus at $10/$50 per MTok.
-  // Opus 5 fast mode uses the same model ID at 2x rates. Claude transcripts do
-  // not currently expose a speed discriminator here, so this table uses the
-  // standard rate rather than guessing which requests were accelerated.
   "claude-fable-5":     { input: 10, output: 50, cacheWrite: 12.50, cacheRead: 1.00 },
   "claude-opus-5":      { input: 5,  output: 25, cacheWrite: 6.25, cacheRead: 0.50 },
   "claude-opus-4-8":    { input: 5,  output: 25, cacheWrite: 6.25, cacheRead: 0.50 },
@@ -69,11 +66,21 @@ const PRICING: Record<string, ModelPricing> = {
   "claude-3-haiku":     { input: 0.25, output: 1.25, cacheWrite: 0.30,  cacheRead: 0.03 },
 };
 
+/** Fast-mode premium by model; usage.speed is authoritative per response. */
+const FAST_MODE_MULTIPLIERS: Record<string, number> = {
+  "claude-opus-5": 2,
+  "claude-opus-4-8": 2,
+  // Historical Fast requests retain the rate that applied while supported.
+  "claude-opus-4-7": 6,
+  "claude-opus-4-6": 6,
+};
+
 /** Stable input for transcript fingerprints; changes automatically with rates. */
 export function pricingFingerprintSource(): string {
   return JSON.stringify({
     longContextThreshold: LONG_CONTEXT_THRESHOLD,
     anthropic: PRICING,
+    fastModeMultipliers: FAST_MODE_MULTIPLIERS,
     openAi: openAiPricingFingerprintSource(),
   });
 }
@@ -118,6 +125,11 @@ export function priceFor(model: string): ModelPricing | null {
     longCacheWrite: openAi.longCacheWrite ?? openAi.longInput,
     longCacheRead: openAi.longCachedInput,
   };
+}
+
+export function priceMultiplierForSpeed(model: string, speed?: string): number {
+  if (speed !== "fast") return 1;
+  return FAST_MODE_MULTIPLIERS[normalizeModelId(model)] ?? 1;
 }
 
 /** Apply OpenAI's full-request long-context premium when the model has one. */

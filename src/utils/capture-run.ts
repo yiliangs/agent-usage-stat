@@ -19,7 +19,7 @@ const RUNS_DIR = "runs";
 const PENDING_DIR = "pending";
 const RESULTS_DIR = "results";
 
-export type AgentCommandName = "claude" | "codex" | "claudex";
+export type AgentCommandName = "claude" | "codex" | "copilot" | "claudex";
 
 export interface AgentRunManifest {
   schema_version: 1;

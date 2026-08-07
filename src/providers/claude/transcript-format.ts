@@ -18,6 +18,7 @@ export interface TranscriptMessage {
       output_tokens: number;
       cache_creation_input_tokens?: number;
       cache_read_input_tokens?: number;
+      speed?: "fast" | "standard" | string;
     };
   };
   // Anthropic request id (e.g. "req_…"). GPT-routed Claude Code responses

@@ -22,6 +22,7 @@ import {
   LONG_CONTEXT_THRESHOLD,
   normalizeModelId,
   priceFor,
+  priceMultiplierForTier,
   type ModelPricing,
 } from "./pricing.js";
 import {
@@ -60,6 +61,7 @@ interface StoredSnapshot {
   sessionId: string;
   hasSessionIdentity: boolean;
   currentModel: string;
+  currentServiceTier: string;
   currentTurnId?: string;
   totalsByModel: Record<string, ModelTotals>;
   turns: Record<string, StoredTurn>;
@@ -206,6 +208,7 @@ function newState(
     sessionId: fallbackSessionId,
     hasSessionIdentity: false,
     currentModel: "unknown",
+    currentServiceTier: "default",
     totalsByModel: {},
     turns: {},
     seenCumulativeUsage: [],
@@ -294,6 +297,15 @@ function applyLines(state: StoredSnapshot, content: string): void {
       continue;
     }
 
+    if (
+      record.type === "event_msg" &&
+      record.payload?.type === "thread_settings_applied" &&
+      typeof record.payload.thread_settings?.service_tier === "string"
+    ) {
+      state.currentServiceTier = record.payload.thread_settings.service_tier;
+      continue;
+    }
+
     if (record.type === "turn_context") {
       if (record.payload?.model) {
         state.currentModel = normalizeModelId(record.payload.model);
@@ -351,7 +363,16 @@ function applyLines(state: StoredSnapshot, content: string): void {
     );
     const uncached = allInput - cached - cacheWrite;
     const output = Math.max(0, usage.output_tokens ?? 0);
-    const cost = costFor(model, uncached, cached, cacheWrite, output, allInput, unknown);
+    const cost = costFor(
+      model,
+      state.currentServiceTier,
+      uncached,
+      cached,
+      cacheWrite,
+      output,
+      allInput,
+      unknown,
+    );
     addUsage(state.totalsByModel, model, uncached, cached, cacheWrite, output, cost);
     addUsage(turn.totalsByModel, model, uncached, cached, cacheWrite, output, cost);
   }
@@ -501,6 +522,7 @@ function toTurnUsage(turn: StoredTurn): TurnUsage {
 
 function costFor(
   model: string,
+  serviceTier: string,
   uncachedInput: number,
   cachedInput: number,
   cacheWriteInput: number,
@@ -514,13 +536,13 @@ function costFor(
     return 0;
   }
   const rates = ratesFor(pricing, allInput);
-  return (
+  const standardCost =
     (uncachedInput * rates.input +
       cachedInput * rates.cachedInput +
       cacheWriteInput * (rates.cacheWrite ?? rates.input) +
       output * rates.output) /
-    1_000_000
-  );
+    1_000_000;
+  return standardCost * priceMultiplierForTier(model, serviceTier);
 }
 
 function ratesFor(pricing: ModelPricing, allInput: number): ModelPricing {

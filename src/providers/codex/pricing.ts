@@ -84,6 +84,7 @@ const PRICING: Record<string, ModelPricing> = {
     longCachedInput: 60,
     longOutput: 270,
   },
+  "gpt-5-mini": { input: 0.25, cachedInput: 0.025, output: 2 },
   "gpt-5.3-codex": { input: 1.75, cachedInput: 0.175, output: 14 },
 };
 
@@ -98,12 +99,25 @@ const FEATURE_LABEL_MODELS: Record<string, string> = {
   "codex-auto-review": "gpt-5.5",
 };
 
+// ChatGPT-authenticated Codex Fast mode is serialized as the internal
+// `priority` service tier. These multipliers represent relative ChatGPT credit
+// consumption; the portal continues to display that consumption as the
+// API-equivalent dollar estimate used for all Codex sessions.
+const FAST_MODE_MULTIPLIERS: Record<string, number> = {
+  "gpt-5.6-sol": 2.5,
+  "gpt-5.6-terra": 2.5,
+  "gpt-5.6-luna": 2.5,
+  "gpt-5.5": 2.5,
+  "gpt-5.4": 2,
+};
+
 /** Stable input for transcript fingerprints; changes automatically with rates. */
 export function pricingFingerprintSource(): string {
   return JSON.stringify({
     longContextThreshold: LONG_CONTEXT_THRESHOLD,
     pricing: PRICING,
     featureLabels: FEATURE_LABEL_MODELS,
+    fastModeMultipliers: FAST_MODE_MULTIPLIERS,
   });
 }
 
@@ -115,4 +129,9 @@ export function normalizeModelId(model: string): string {
 
 export function priceFor(model: string): ModelPricing | null {
   return PRICING[normalizeModelId(model)] ?? null;
+}
+
+export function priceMultiplierForTier(model: string, serviceTier: string): number {
+  if (serviceTier !== "priority" && serviceTier !== "fast") return 1;
+  return FAST_MODE_MULTIPLIERS[normalizeModelId(model)] ?? 1;
 }

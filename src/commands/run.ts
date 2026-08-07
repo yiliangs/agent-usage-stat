@@ -11,7 +11,12 @@ import type {
   SettledRun,
 } from "../utils/capture-run.js";
 
-const AGENTS = new Set<AgentCommandName>(["claude", "codex", "claudex"]);
+const AGENTS = new Set<AgentCommandName>([
+  "claude",
+  "codex",
+  "copilot",
+  "claudex",
+]);
 
 interface AgentExit {
   code: number | null;
@@ -53,7 +58,7 @@ export class RunCommand {
       return value as AgentCommandName;
     }
     throw new Error(
-      `Unsupported agent: ${value}. Choose claude, codex, or claudex.`,
+      `Unsupported agent: ${value}. Choose claude, codex, copilot, or claudex.`,
     );
   }
 

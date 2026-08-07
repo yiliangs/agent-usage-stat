@@ -70,7 +70,7 @@ export class CaptureCommand {
       if (transcriptPath) {
         provider = await detectProvider(transcriptPath);
       } else {
-        const resolved = await findSession(options.session);
+        const resolved = await findSession(options.session ?? sessionId);
         provider = resolved.provider;
         transcriptPath = resolved.found.transcriptPath;
         sessionId = resolved.found.sessionId;

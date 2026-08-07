@@ -1,7 +1,7 @@
 /** Fields shared by Claude Code and Codex command hooks. */
 export interface HookData {
   session_id: string;
-  transcript_path: string | null;
+  transcript_path?: string | null;
   cwd: string;
   permission_mode: string;
   hook_event_name: string;

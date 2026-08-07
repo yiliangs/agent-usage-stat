@@ -35,6 +35,16 @@ test("month timeline shares the week view color controls", async () => {
   );
 });
 
+test("timeline follows the user's time zone without publishing a fixed location", async () => {
+  const script = await readFile(join(portalRoot, "portal.js"), "utf8");
+
+  assert.match(script, /Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/);
+  assert.match(script, /locationLabelForTimeZone\(LOCAL_TIME_ZONE\)/);
+  assert.match(script, /return 'N\/A'/);
+  assert.match(script, /<b>\$\{LOCAL_LOCATION\}<\/b>/);
+  assert.doesNotMatch(script, /America\/Chicago|<b>Chicago<\/b>/);
+});
+
 test("month timeline blends full-width layers while preserving grouped detail", async () => {
   const [html, script] = await Promise.all([
     readFile(join(portalRoot, "index.html"), "utf8"),
