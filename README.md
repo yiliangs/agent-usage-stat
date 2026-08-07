@@ -50,9 +50,9 @@ Claude / Codex / Copilot hooks
   -> logbook.d/<session-id>.json
 
 Agent Usage Stat desktop application
-  -> Electron main process
-  -> aus:// packaged renderer
-  -> generated local analytics snapshot
+  -> Electron lifecycle and user workflows
+  -> HelperRuntime -> stable installed helper
+  -> PortalRuntime -> generated snapshot -> aus:// renderer
 ```
 
 The production application opens no localhost server. The renderer is sandboxed and reads packaged assets and generated data through the application protocol.

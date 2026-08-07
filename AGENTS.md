@@ -1,6 +1,6 @@
 # Agent Usage Stat
 
-Agent Usage Stat is a local analytics portal for Claude Code, Codex, and GitHub Copilot CLI usage.
+Agent Usage Stat is a standalone desktop analytics application for Claude Code, Codex, and GitHub Copilot CLI usage.
 
 ## Commands
 
@@ -34,9 +34,12 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 
 - `src/commands/capture.ts`: session ingestion
 - `src/commands/run.ts`: current-terminal agent wrapper and completion status
-- `src/desktop/main.ts`: desktop lifecycle, application protocol, helper installation, and updates
+- `src/desktop/main.ts`: Electron lifecycle, windows, menus, and user-facing setup flows
+- `src/desktop/helper-runtime.ts`: stable helper installation, execution, and first-run state
+- `src/desktop/portal-runtime.ts`: `aus://` protocol, refresh serialization, and analytics snapshots
 - `src/helper.ts`: standalone headless helper entry
-- `src/commands/setup.ts`: host hook and shell-wrapper installation
+- `src/commands/setup.ts`: setup flow and terminal-wrapper installation
+- `src/integrations/agent-integrations.ts`: the single registry for host detection and hook lifecycle
 - `src/core/logbook-writer.ts`: idempotent per-session shard writer
 - `src/utils/capture-run.ts`: machine-local run and capture-result protocol
 - `src/utils/usage-root.ts`: the only data-root resolver
@@ -67,4 +70,4 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - ESM only
 - Node.js 20 or newer
 - Windows and macOS are first-class
-- `bin/run-hook.sh` resolves Node through PATH, WinGet, Homebrew, then nvm
+- End-user capture runs through a bundled Node single executable application, not system Node.js
