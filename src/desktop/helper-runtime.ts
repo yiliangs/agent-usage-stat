@@ -34,6 +34,10 @@ export interface DesktopSetupResult {
 
 /** Owns the installed helper executable and its first-run setup state. */
 export class HelperRuntime {
+  needsSetup(): boolean {
+    return !existsSync(desktopSetupStatePath());
+  }
+
   async syncInstallation(): Promise<void> {
     const source = this.bundledPath();
     const destination = installedHelperPath();
@@ -140,6 +144,17 @@ export class HelperRuntime {
       configured: true,
       codexNeedsTrust: (setup.stdout + setup.stderr).includes("one final action"),
     };
+  }
+
+  async configureDataRoot(root: string): Promise<void> {
+    const configured = await this.run(["config", "--set", `dataRoot=${root}`]);
+    if (configured.code !== 0) {
+      throw new Error(
+        configured.stderr.trim() ||
+          configured.stdout.trim() ||
+          "Usage ledger location could not be saved.",
+      );
+    }
   }
 
   resetSetup(): Promise<void> {

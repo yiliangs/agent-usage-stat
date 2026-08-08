@@ -6,12 +6,50 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { squirrelLifecycleEvent } from "../dist/desktop/squirrel-events.js";
 import { startupMode } from "../dist/desktop/startup-policy.js";
+import {
+  ledgerLocationPrompt,
+  ledgerMigrationPrompt,
+} from "../dist/desktop/ledger-onboarding.js";
 
 const require = createRequire(import.meta.url);
 
 test("cached launches show the dashboard while first launches block on setup", () => {
   assert.equal(startupMode(true), "cached");
   assert.equal(startupMode(false), "first-run");
+});
+
+test("first-run storage choice explains the local default and shared ledgers", () => {
+  assert.deepEqual(
+    ledgerLocationPrompt({
+      root: "C:\\Users\\Alex\\AppData\\Local\\Agent Usage Stat\\ledger",
+      source: "default",
+    }),
+    {
+      message: "Where should usage history be stored?",
+      detail:
+        "On this computer:\n" +
+        "C:\\Users\\Alex\\AppData\\Local\\Agent Usage Stat\\ledger\n\n" +
+        "Using multiple computers? Choose a folder in Google Drive, OneDrive, Dropbox, or another synchronized drive, then select that same synchronized folder on each computer. Paths may differ by machine.\n\n" +
+        "The ledger contains usage totals, model names, project names, branches, and local project paths. It does not contain prompt or response text.",
+      buttons: ["Use Local Storage", "Choose Another Folder..."],
+    },
+  );
+});
+
+test("changing folders offers migration and preserves the original by default", () => {
+  assert.deepEqual(
+    ledgerMigrationPrompt("C:\\old-ledger", "D:\\new-ledger"),
+    {
+      message: "Migrate existing usage history?",
+      detail:
+        "Existing history will be merged into the new ledger without replacing newer records.\n\n" +
+        "From: C:\\old-ledger\n" +
+        "To: D:\\new-ledger",
+      buttons: ["Continue", "Cancel"],
+      checkboxLabel: "Keep the original ledger as a backup",
+      checkboxChecked: true,
+    },
+  );
 });
 
 test("the dashboard exposes a corner status for background synchronization", async () => {

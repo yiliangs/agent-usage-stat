@@ -30,6 +30,16 @@ import {
 import { squirrelLifecycleEvent } from "./squirrel-events.js";
 import { startupMode } from "./startup-policy.js";
 import { STARTUP_URL, updateStartupScreen } from "./startup-screen.js";
+import {
+  ledgerLocationPrompt,
+  ledgerMigrationPrompt,
+} from "./ledger-onboarding.js";
+import {
+  mergeUsageLedger,
+  removeUsageLedger,
+  sameUsageRoot,
+  usageLedgerHasRecords,
+} from "../core/usage-ledger-migration.js";
 
 const WINDOWS_APP_ID = "com.squirrel.AgentUsageStat.AgentUsageStat";
 const WINDOW_ICON = join(app.getAppPath(), "assets", "logo.png");
@@ -117,6 +127,16 @@ async function openFirstRunWindow(): Promise<void> {
       "Preparing the background capture process. This keeps recording sessions even when the window is closed.",
     );
     await helperRuntime.syncInstallation();
+    if (helperRuntime.needsSetup()) {
+      await updateStartupScreen(
+        window,
+        "Choosing usage storage",
+        "Select where the durable usage ledger should be kept.",
+      );
+      await helperRuntime.configureDataRoot(
+        await chooseFirstRunUsageRoot(window),
+      );
+    }
     await updateStartupScreen(
       window,
       "Checking agent connections",
@@ -140,6 +160,33 @@ async function openFirstRunWindow(): Promise<void> {
       true,
     );
     await showOperationError("Startup failed", error);
+  }
+}
+
+async function chooseFirstRunUsageRoot(window: BrowserWindow): Promise<string> {
+  while (true) {
+    const resolved = resolveUsageRootFromDisk();
+    const prompt = ledgerLocationPrompt(resolved);
+    const choice = await dialog.showMessageBox(window, {
+      type: "question",
+      title: "Usage History Storage",
+      message: prompt.message,
+      detail: prompt.detail,
+      buttons: prompt.buttons,
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (choice.response === 0) return resolved.root;
+
+    const selected = await dialog.showOpenDialog(window, {
+      title: "Choose usage ledger folder",
+      defaultPath: resolved.root,
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (!selected.canceled && selected.filePaths[0]) {
+      return selected.filePaths[0];
+    }
   }
 }
 
@@ -268,19 +315,22 @@ function installApplicationMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-async function refreshAndReload(): Promise<void> {
+async function refreshAndReload(): Promise<boolean> {
   try {
     await portalRuntime.refresh();
     await mainWindow?.webContents.reload();
+    return true;
   } catch (error) {
     await showOperationError("Refresh failed", error);
+    return false;
   }
 }
 
 async function chooseDataFolder(): Promise<void> {
+  const current = resolveUsageRootFromDisk().root;
   const options: Electron.OpenDialogOptions = {
     title: "Choose usage data folder",
-    defaultPath: resolveUsageRootFromDisk().root,
+    defaultPath: current,
     properties: ["openDirectory", "createDirectory"],
   };
   const result = mainWindow
@@ -288,22 +338,42 @@ async function chooseDataFolder(): Promise<void> {
     : await dialog.showOpenDialog(options);
   const selected = result.filePaths[0];
   if (result.canceled || !selected) return;
+  if (sameUsageRoot(current, selected)) return;
 
-  const configured = await helperRuntime.run([
-    "config",
-    "--set",
-    `dataRoot=${selected}`,
-  ]);
-  if (configured.code !== 0) {
-    await showOperationError(
-      "Data folder was not changed",
-      configured.stderr || configured.stdout,
-    );
-    return;
+  let keepOriginal = true;
+  let hasExistingHistory = false;
+  try {
+    hasExistingHistory = await usageLedgerHasRecords(current);
+    if (hasExistingHistory) {
+      const prompt = ledgerMigrationPrompt(current, selected);
+      const migration = await showMessageBox({
+        type: "question",
+        title: "Change Usage Ledger Folder",
+        message: prompt.message,
+        detail: prompt.detail,
+        buttons: prompt.buttons,
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+        checkboxLabel: prompt.checkboxLabel,
+        checkboxChecked: prompt.checkboxChecked,
+      });
+      if (migration.response !== 0) return;
+      keepOriginal = migration.checkboxChecked;
+      await mergeUsageLedger(current, selected);
+    }
+
+    await helperRuntime.configureDataRoot(selected);
+    await helperRuntime.resetSetup();
+    if (!(await ensureDesktopSetup(true))) return;
+    if (!(await refreshAndReload())) return;
+
+    if (hasExistingHistory && !keepOriginal) {
+      await removeUsageLedger(current);
+    }
+  } catch (error) {
+    await showOperationError("Data folder was not changed", error);
   }
-  await helperRuntime.resetSetup();
-  await ensureDesktopSetup(true);
-  await refreshAndReload();
 }
 
 async function repairAgentConnections(): Promise<void> {
@@ -361,7 +431,7 @@ function showMessageBox(
     : dialog.showMessageBox(options);
 }
 
-async function ensureDesktopSetup(interactive: boolean): Promise<void> {
+async function ensureDesktopSetup(interactive: boolean): Promise<boolean> {
   const setup = await helperRuntime.ensureSetup();
   if (!setup.configured) {
     if (!interactive) throw new Error(setup.detail || "Desktop setup failed.");
@@ -371,7 +441,7 @@ async function ensureDesktopSetup(interactive: boolean): Promise<void> {
       message: "The application opened, but agent capture could not be connected.",
       detail: setup.detail,
     });
-    return;
+    return false;
   }
 
   if (interactive && setup.codexNeedsTrust) {
@@ -382,6 +452,7 @@ async function ensureDesktopSetup(interactive: boolean): Promise<void> {
       detail: "Open /hooks in Codex and trust the Agent Usage Stat hook.",
     });
   }
+  return true;
 }
 
 async function runSmokeTestIfRequested(): Promise<boolean> {
