@@ -10,6 +10,7 @@ import {
   ledgerLocationPrompt,
   ledgerMigrationPrompt,
 } from "../dist/desktop/ledger-onboarding.js";
+import { captureModePrompt } from "../dist/desktop/capture-mode.js";
 
 const require = createRequire(import.meta.url);
 
@@ -50,6 +51,16 @@ test("changing folders offers migration and preserves the original by default", 
       checkboxChecked: true,
     },
   );
+});
+
+test("first-run capture choice recommends durable hooks and explains hookless risk", () => {
+  assert.deepEqual(captureModePrompt(), {
+    message: "How should usage be captured?",
+    detail:
+      "Automatic capture (recommended) records completed sessions even while Agent Usage Stat is closed. It installs hooks in detected agents.\n\n" +
+      "Import when the app opens installs no hooks. Sessions deleted by an agent before the next import cannot be recovered.",
+    buttons: ["Use Automatic Capture", "Import When App Opens"],
+  });
 });
 
 test("the dashboard exposes a corner status for background synchronization", async () => {

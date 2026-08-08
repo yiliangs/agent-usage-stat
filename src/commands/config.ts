@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { ConfigManager } from "../core/config-manager.js";
 import { resolveUsageRoot } from "../utils/usage-root.js";
-import type { AppConfig } from "../types/config.js";
+import { resolvedCaptureMode, type AppConfig } from "../types/config.js";
 
 export interface ConfigOptions {
   show?: boolean;
@@ -29,17 +29,29 @@ export class ConfigCommand {
     const { root, source } = resolveUsageRoot(config);
     console.log(chalk.cyan.bold("\nAgent Usage Stat"));
     console.log(chalk.gray(this.configManager.getConfigPath()));
-    console.log(`\n  Data root  ${source === "config" ? root : `${root} (${source})`}\n`);
+    console.log(`\n  Data root     ${source === "config" ? root : `${root} (${source})`}`);
+    console.log(`  Capture mode  ${resolvedCaptureMode(config)}\n`);
   }
 
   private async setConfig(expression: string): Promise<void> {
     const [rawKey, ...parts] = expression.split("=");
     const key = rawKey?.trim() as keyof AppConfig;
     const value = parts.join("=").trim();
-    if (key !== "dataRoot" || !value) {
-      throw new Error('Use --set dataRoot="<path>"');
+    if (!value) {
+      throw new Error(
+        'Use --set dataRoot="<path>" or --set captureMode="automatic|on-open"',
+      );
+    }
+    if (key === "captureMode" && !["automatic", "on-open"].includes(value)) {
+      throw new Error('Capture mode must be "automatic" or "on-open"');
+    }
+    if (key !== "dataRoot" && key !== "captureMode") {
+      throw new Error(
+        'Use --set dataRoot="<path>" or --set captureMode="automatic|on-open"',
+      );
     }
     await this.configManager.updateConfig(key, value);
-    console.log(chalk.green(`Data root updated: ${value}`));
+    const label = key === "dataRoot" ? "Data root" : "Capture mode";
+    console.log(chalk.green(`${label} updated: ${value}`));
   }
 }

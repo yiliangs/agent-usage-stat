@@ -40,6 +40,8 @@ import {
   sameUsageRoot,
   usageLedgerHasRecords,
 } from "../core/usage-ledger-migration.js";
+import { captureModePrompt } from "./capture-mode.js";
+import type { CaptureMode } from "../types/config.js";
 
 const WINDOWS_APP_ID = "com.squirrel.AgentUsageStat.AgentUsageStat";
 const WINDOW_ICON = join(app.getAppPath(), "assets", "logo.png");
@@ -124,7 +126,7 @@ async function openFirstRunWindow(): Promise<void> {
     await updateStartupScreen(
       window,
       "Connecting the local helper",
-      "Preparing the background capture process. This keeps recording sessions even when the window is closed.",
+      "Preparing the local process that imports agent sessions into your usage ledger.",
     );
     await helperRuntime.syncInstallation();
     if (helperRuntime.needsSetup()) {
@@ -136,11 +138,19 @@ async function openFirstRunWindow(): Promise<void> {
       await helperRuntime.configureDataRoot(
         await chooseFirstRunUsageRoot(window),
       );
+      await updateStartupScreen(
+        window,
+        "Choosing capture behavior",
+        "Choose between automatic background capture and import on application launch.",
+      );
+      await helperRuntime.configureCaptureMode(
+        (await chooseCaptureMode(window)) ?? "automatic",
+      );
     }
     await updateStartupScreen(
       window,
       "Checking agent connections",
-      "Connecting Claude Code, Codex, and Copilot CLI where they are installed.",
+      "Applying your capture choice to Claude Code, Codex, and Copilot CLI.",
     );
     await ensureDesktopSetup(true);
     await updateStartupScreen(
@@ -188,6 +198,28 @@ async function chooseFirstRunUsageRoot(window: BrowserWindow): Promise<string> {
       return selected.filePaths[0];
     }
   }
+}
+
+async function chooseCaptureMode(
+  window: BrowserWindow,
+  cancellable = false,
+): Promise<CaptureMode | null> {
+  const prompt = captureModePrompt();
+  const buttons = cancellable
+    ? [...prompt.buttons, "Cancel"]
+    : prompt.buttons;
+  const choice = await dialog.showMessageBox(window, {
+    type: "question",
+    title: "Usage Capture",
+    message: prompt.message,
+    detail: prompt.detail,
+    buttons,
+    defaultId: 0,
+    cancelId: cancellable ? 2 : 0,
+    noLink: true,
+  });
+  if (cancellable && choice.response === 2) return null;
+  return choice.response === 0 ? "automatic" : "on-open";
 }
 
 async function synchronizeCachedWindow(window: BrowserWindow): Promise<void> {
@@ -272,12 +304,12 @@ function installApplicationMenu(): void {
       click: () => void chooseDataFolder(),
     },
     {
-      label: "Repair Agent Connections",
-      click: () => void repairAgentConnections(),
+      label: "Capture Mode...",
+      click: () => void changeCaptureMode(),
     },
     {
-      label: "Remove Agent Connections...",
-      click: () => void removeAgentConnections(),
+      label: "Repair Capture Setup",
+      click: () => void repairCaptureSetup(),
     },
   ];
 
@@ -376,41 +408,45 @@ async function chooseDataFolder(): Promise<void> {
   }
 }
 
-async function repairAgentConnections(): Promise<void> {
+async function repairCaptureSetup(): Promise<void> {
   try {
     await helperRuntime.resetSetup();
-    await ensureDesktopSetup(true);
+    if (!(await ensureDesktopSetup(true))) return;
+    const mode = await helperRuntime.captureMode();
     await showMessageBox({
       type: "info",
       title: "Agent Usage Stat",
-      message: "Agent connections are repaired.",
+      message: mode === "automatic"
+        ? "Automatic capture connections are repaired."
+        : "Import-on-open capture setup is refreshed.",
     });
   } catch (error) {
     await showOperationError("Agent repair failed", error);
   }
 }
 
-async function removeAgentConnections(): Promise<void> {
-  const confirmation = await showMessageBox({
-    type: "warning",
-    title: "Remove Agent Connections",
-    message: "Stop recording new agent sessions?",
-    detail: "Existing usage data will be preserved.",
-    buttons: ["Cancel", "Remove Connections"],
-    defaultId: 0,
-    cancelId: 0,
-  });
-  if (confirmation.response !== 1) return;
+async function changeCaptureMode(): Promise<void> {
+  if (!mainWindow) return;
+  try {
+    const current = await helperRuntime.captureMode();
+    const selected = await chooseCaptureMode(mainWindow, true);
+    if (!selected || selected === current) return;
 
-  const removed = await helperRuntime.run(["setup", "--uninstall"]);
-  if (removed.code !== 0) {
-    await showOperationError(
-      "Agent connections were not removed",
-      removed.stderr || removed.stdout,
-    );
-    return;
+    await helperRuntime.configureCaptureMode(selected);
+    await helperRuntime.resetSetup();
+    if (!(await ensureDesktopSetup(true))) return;
+    if (!(await refreshAndReload())) return;
+
+    await showMessageBox({
+      type: "info",
+      title: "Agent Usage Stat",
+      message: selected === "automatic"
+        ? "Automatic capture is enabled."
+        : "Sessions will be imported when the application opens.",
+    });
+  } catch (error) {
+    await showOperationError("Capture mode was not changed", error);
   }
-  await helperRuntime.resetSetup();
 }
 
 async function showOperationError(title: string, error: unknown): Promise<void> {

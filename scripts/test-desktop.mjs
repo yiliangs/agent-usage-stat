@@ -102,6 +102,11 @@ try {
     ? join(home, ".agent-usage-stat", "bin", "agent-usage-stat-helper.exe")
     : join(home, ".agent-usage-stat", "bin", "agent-usage-stat-helper");
   assert.equal(existsSync(installedHelper), true);
+  const setupState = JSON.parse(await readFile(
+    join(home, ".agent-usage-stat", "desktop-setup.json"),
+    "utf8",
+  ));
+  assert.equal(setupState.captureMode, "automatic");
 
   const claudeSettings = await readFile(
     join(claudeHome, "settings.json"),

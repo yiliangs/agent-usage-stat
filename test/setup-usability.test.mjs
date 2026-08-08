@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import {
   appendFile,
   mkdir,
@@ -109,6 +110,60 @@ test(
         await readFile(join(home, "shell-profile.ps1"), "utf8"),
         /Agent Usage Stat terminal message/,
       );
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "import-on-open setup removes automatic capture connections",
+  { skip: !["win32", "darwin"].includes(process.platform) },
+  async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-hookless-"));
+    const dataRoot = join(home, "usage");
+    const claudeSettings = join(home, ".claude", "settings.json");
+    const codexHooks = join(home, ".codex", "hooks.json");
+    const copilotHook = join(
+      home,
+      ".copilot",
+      "hooks",
+      "agent-usage-stat.json",
+    );
+    const shellProfile = join(home, "shell-profile.ps1");
+    await mkdir(join(home, ".claude"));
+    await mkdir(join(home, ".codex"));
+    await mkdir(join(home, ".copilot"));
+
+    try {
+      const automatic = await runCli(["setup", "--data-root", dataRoot], home);
+      assert.equal(automatic.code, 0, automatic.output);
+      assert.equal(existsSync(copilotHook), true);
+      assert.match(await readFile(shellProfile, "utf8"), /function global:codex/);
+
+      const configured = await runCli(
+        ["config", "--set", "captureMode=on-open"],
+        home,
+      );
+      assert.equal(configured.code, 0, configured.output);
+
+      const hookless = await runCli(["setup", "--data-root", dataRoot], home);
+      assert.equal(hookless.code, 0, hookless.output);
+      assert.doesNotMatch(
+        await readFile(claudeSettings, "utf8"),
+        /agent-usage-stat/,
+      );
+      assert.doesNotMatch(await readFile(codexHooks, "utf8"), /agent-usage-stat/);
+      assert.equal(existsSync(copilotHook), false);
+      assert.doesNotMatch(await readFile(shellProfile, "utf8"), /Agent Usage Stat/);
+
+      await runCli(["config", "--set", "captureMode=automatic"], home);
+      const restored = await runCli(["setup", "--data-root", dataRoot], home);
+      assert.equal(restored.code, 0, restored.output);
+      assert.match(await readFile(claudeSettings, "utf8"), /agent-usage-stat/);
+      assert.match(await readFile(codexHooks, "utf8"), /agent-usage-stat/);
+      assert.equal(existsSync(copilotHook), true);
+      assert.match(await readFile(shellProfile, "utf8"), /Agent Usage Stat/);
     } finally {
       await rm(home, { recursive: true, force: true });
     }

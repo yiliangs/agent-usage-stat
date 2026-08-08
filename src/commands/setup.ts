@@ -17,7 +17,10 @@ import {
   type AgentIntegration,
 } from "../integrations/agent-integrations.js";
 import { hookExecutablePaths } from "../integrations/hook-command.js";
-import type { AppConfig } from "../types/config.js";
+import {
+  resolvedCaptureMode,
+  type AppConfig,
+} from "../types/config.js";
 
 export { detectInstalledAgents } from "../integrations/agent-integrations.js";
 
@@ -62,7 +65,7 @@ export class SetupCommand {
     }
   }
 
-  /** Detect installed agents, choose one data directory, and install hooks. */
+  /** Configure the ledger and apply the selected provider capture mode. */
   private async install(
     dataRootOption?: string,
     terminalMessage = true,
@@ -79,6 +82,7 @@ export class SetupCommand {
     }
 
     const existing = await this.configManager.loadConfig();
+    const captureMode = resolvedCaptureMode(existing);
     const suggestedRoot = resolveUsageRoot(existing).root;
     const answers = dataRootOption
       ? { dataRoot: dataRootOption }
@@ -117,27 +121,43 @@ export class SetupCommand {
       await this.configManager.saveConfig(config);
       spinner.text = "Usage folder ready...";
 
-      for (const agent of agents) {
-        const result = await agent.install();
-        if (agent.provider === "codex") {
-          codexNeedsTrust = result.needsTrust;
+      if (captureMode === "automatic") {
+        for (const agent of agents) {
+          const result = await agent.install();
+          if (agent.provider === "codex") {
+            codexNeedsTrust = result.needsTrust;
+          }
         }
+        spinner.text = "Agent hooks installed...";
+      } else {
+        for (const integration of this.integrations) {
+          await integration.remove();
+        }
+        spinner.text = "Agent hooks removed...";
       }
-      spinner.text = "Agent hooks installed...";
 
-      const terminal = configureTerminal
-        ? await this.configureTerminalMessage(terminalMessage)
-        : migrateTerminal
-          ? await this.migrateTerminalMessage()
-          : {};
+      const terminal = captureMode === "on-open"
+        ? await this.configureTerminalMessage(false)
+        : configureTerminal
+          ? await this.configureTerminalMessage(terminalMessage)
+          : migrateTerminal
+            ? await this.migrateTerminalMessage()
+            : {};
       terminalProfile = terminal.profile;
       terminalWarning = terminal.warning;
 
       spinner.succeed("Initialization complete");
 
       for (const agent of agents) {
-        console.log(chalk.green(`\n${agent.label} connected`));
-        if (agent.provider === "codex" && codexNeedsTrust) {
+        const status = captureMode === "automatic"
+          ? "connected"
+          : "available for import";
+        console.log(chalk.green(`\n${agent.label} ${status}`));
+        if (
+          captureMode === "automatic" &&
+          agent.provider === "codex" &&
+          codexNeedsTrust
+        ) {
           console.log(
             chalk.yellow(
               "Codex security requires one final action: open /hooks and trust the new hook.",
@@ -146,11 +166,12 @@ export class SetupCommand {
         }
       }
       if (terminalProfile) {
-        const action = terminalMessage ? "enabled" : "disabled";
+        const terminalEnabled = captureMode === "automatic" && terminalMessage;
+        const action = terminalEnabled ? "enabled" : "disabled";
         console.log(
           chalk.green(`\nSame-terminal usage message ${action}: ${terminalProfile}`),
         );
-        if (terminalMessage) {
+        if (terminalEnabled) {
           console.log(chalk.gray("Open a new terminal for the command wrappers."));
         }
       }

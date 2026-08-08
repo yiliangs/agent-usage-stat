@@ -23,13 +23,15 @@ Download the current installer from [GitHub Releases](https://github.com/yiliang
 
 No separate Node.js or npm installation is required.
 
-The Windows installer shows installation activity, creates Start menu and desktop shortcuts, and opens the application when installation completes. On first launch, Agent Usage Stat asks where to keep the durable usage ledger, then detects installed agents, installs its capture hooks, reconciles existing sessions, and opens the desktop dashboard. The recommended local ledger is `%LOCALAPPDATA%\Agent Usage Stat\ledger` on Windows and `~/Library/Application Support/Agent Usage Stat/ledger` on macOS. Existing configured or shared ledgers are offered when found.
+The Windows installer shows installation activity, creates Start menu and desktop shortcuts, and opens the application when installation completes. On first launch, Agent Usage Stat asks where to keep the durable usage ledger and how sessions should be captured, then reconciles existing sessions and opens the desktop dashboard. The recommended local ledger is `%LOCALAPPDATA%\Agent Usage Stat\ledger` on Windows and `~/Library/Application Support/Agent Usage Stat/ledger` on macOS. Existing configured or shared ledgers are offered when found.
 
 To combine usage from multiple computers, choose a folder in Google Drive, OneDrive, Dropbox, or another synchronized drive, then select the corresponding synchronized folder on each computer. The ledger contains usage totals, model names, project names, branches, and local project paths. It does not contain prompt or response text. Parsing and dashboard caches remain local and disposable.
 
-Codex requires one security confirmation after its hook is first installed. Open `/hooks` in Codex and trust the Agent Usage Stat hook when prompted.
+Automatic capture is recommended and installs hooks for detected agents so completed sessions reach the ledger while the application is closed. Codex requires one security confirmation after its hook is first installed. Open `/hooks` in Codex and trust the Agent Usage Stat hook when prompted.
 
-Closing the desktop window does not disable capture. A small bundled helper records completed sessions without opening the application.
+Import-on-open mode installs no Agent Usage Stat hooks. It reconciles discoverable local transcripts whenever the application opens or refreshes, but cannot recover a session deleted by an agent before the next import. The capture mode can be changed later from the application menu.
+
+When automatic capture is active, closing the desktop window does not disable capture. A small bundled helper records completed sessions without opening the application.
 
 ## What it shows
 
@@ -49,9 +51,13 @@ Each completed session becomes one JSON file under `<data-root>/logbook.d/`. A s
 ## Application architecture
 
 ```text
-Claude / Codex / Copilot hooks
+Claude / Codex / Copilot hooks (automatic mode)
   -> installed standalone helper
   -> provider-specific transcript parser and pricing
+  -> logbook.d/<session-id>.json
+
+Provider transcript discovery (all modes)
+  -> launch / refresh reconciliation
   -> logbook.d/<session-id>.json
 
 Agent Usage Stat desktop application

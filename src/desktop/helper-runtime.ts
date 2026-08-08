@@ -17,6 +17,8 @@ import {
   installedHelperPath,
   installedHelperStatePath,
 } from "../core/application-paths.js";
+import { ConfigManager } from "../core/config-manager.js";
+import { resolvedCaptureMode, type CaptureMode } from "../types/config.js";
 import { resolveUsageRootFromDisk } from "../utils/usage-root.js";
 
 export interface HelperRunResult {
@@ -34,6 +36,8 @@ export interface DesktopSetupResult {
 
 /** Owns the installed helper executable and its first-run setup state. */
 export class HelperRuntime {
+  private configManager = new ConfigManager();
+
   needsSetup(): boolean {
     return !existsSync(desktopSetupStatePath());
   }
@@ -109,11 +113,25 @@ export class HelperRuntime {
 
   async ensureSetup(): Promise<DesktopSetupResult> {
     const statePath = desktopSetupStatePath();
+    const usageRoot = resolveUsageRootFromDisk().root;
+    const captureMode = await this.captureMode();
     if (existsSync(statePath)) {
-      return { configured: true, codexNeedsTrust: false };
+      try {
+        const state = JSON.parse(await readFile(statePath, "utf8")) as {
+          dataRoot?: string;
+          captureMode?: CaptureMode;
+        };
+        if (
+          state.dataRoot === usageRoot &&
+          resolvedCaptureMode(state) === captureMode
+        ) {
+          return { configured: true, codexNeedsTrust: false };
+        }
+      } catch {
+        // Missing, stale, or invalid setup state requires reconciliation.
+      }
     }
 
-    const usageRoot = resolveUsageRootFromDisk().root;
     const setup = await this.run([
       "setup",
       "--data-root",
@@ -136,6 +154,7 @@ export class HelperRuntime {
         version: app.getVersion(),
         configuredAt: new Date().toISOString(),
         dataRoot: usageRoot,
+        captureMode,
         helper: installedHelperPath(),
       }, null, 2),
       "utf8",
@@ -147,12 +166,24 @@ export class HelperRuntime {
   }
 
   async configureDataRoot(root: string): Promise<void> {
-    const configured = await this.run(["config", "--set", `dataRoot=${root}`]);
+    await this.configure("dataRoot", root);
+  }
+
+  async configureCaptureMode(mode: CaptureMode): Promise<void> {
+    await this.configure("captureMode", mode);
+  }
+
+  async captureMode(): Promise<CaptureMode> {
+    return resolvedCaptureMode(await this.configManager.loadConfig());
+  }
+
+  private async configure(key: string, value: string): Promise<void> {
+    const configured = await this.run(["config", "--set", `${key}=${value}`]);
     if (configured.code !== 0) {
       throw new Error(
         configured.stderr.trim() ||
-          configured.stdout.trim() ||
-          "Usage ledger location could not be saved.",
+        configured.stdout.trim() ||
+        "Application configuration could not be saved.",
       );
     }
   }
