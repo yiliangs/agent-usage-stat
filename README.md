@@ -29,7 +29,7 @@ To combine usage from multiple computers, choose a folder in Google Drive, OneDr
 
 Automatic capture is recommended and installs hooks for detected agents so completed sessions reach the ledger while the application is closed. Codex requires one security confirmation after its hook is first installed. Open `/hooks` in Codex and trust the Agent Usage Stat hook when prompted.
 
-Import-on-open mode installs no Agent Usage Stat hooks. It reconciles discoverable local transcripts whenever the application opens or refreshes, but cannot recover a session deleted by an agent before the next import. The capture mode can be changed later from the application menu.
+Import-on-open mode installs no Agent Usage Stat hooks. It reconciles discoverable local transcripts whenever the application opens or refreshes, but cannot recover a session deleted by an agent before the next import. The capture mode can be changed later from Settings.
 
 When automatic capture is active, closing the desktop window does not disable capture. A small bundled helper records completed sessions without opening the application.
 
@@ -46,7 +46,9 @@ Costs are API-equivalent list-price estimates. They are not charges added to a C
 
 Each completed session becomes one JSON file under `<data-root>/logbook.d/`. A synced data folder can combine several Windows and macOS machines.
 
-**Change Data Folder...** merges existing history into the selected ledger without replacing newer records. The original ledger is preserved as a backup by default and is removed only when the user explicitly disables that option after a successful migration.
+Settings keeps common controls for the usage ledger and capture mode visible. Changing the usage ledger folder merges existing history into the selected ledger without replacing newer records. The original ledger is preserved as a backup by default and is removed only when the user explicitly disables that option after a successful migration.
+
+Advanced agent locations normally resolve from `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `COPILOT_HOME`, then fall back to each provider's standard per-user directory. Explicit overrides tell Agent Usage Stat where to scan and manage its hook; they never move or delete provider-owned data.
 
 ## Application architecture
 

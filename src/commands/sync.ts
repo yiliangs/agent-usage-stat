@@ -35,10 +35,10 @@ interface SyncPreflightFailure {
 export class SyncCommand {
   private configManager = new ConfigManager();
   private writer = new LogbookWriter();
-  private providers: SessionProvider[];
+  private providers?: SessionProvider[];
 
   constructor(dependencies: SyncCommandDependencies = {}) {
-    this.providers = dependencies.providers ?? allProviders();
+    this.providers = dependencies.providers;
   }
 
   async execute(options: SyncOptions = {}): Promise<number> {
@@ -48,10 +48,11 @@ export class SyncCommand {
     }).start();
     const config = await this.configManager.loadConfig();
     const { root } = resolveUsageRoot(config);
+    const providers = this.providers ?? allProviders(config);
     let updated = 0;
     const failures: string[] = [];
 
-    for (const provider of this.providers) {
+    for (const provider of providers) {
       const sessions = await provider.findAllSessions();
       const preflight = await mapConcurrent(
         sessions,

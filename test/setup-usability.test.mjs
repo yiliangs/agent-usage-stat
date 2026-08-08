@@ -170,6 +170,108 @@ test(
   },
 );
 
+test(
+  "custom provider roots drive hook setup and transcript reconciliation",
+  { skip: !["win32", "darwin"].includes(process.platform) },
+  async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-provider-roots-"));
+    const dataRoot = join(home, "usage");
+    const claudeHome = join(home, "agent-data", "claude");
+    const codexHome = join(home, "agent-data", "codex");
+    const copilotHome = join(home, "agent-data", "copilot");
+    const sessionId = "77777777-7777-7777-7777-777777777777";
+    const sessionDir = join(codexHome, "sessions", "2026", "08", "08");
+    const rollout = join(
+      sessionDir,
+      `rollout-2026-08-08T10-00-00-${sessionId}.jsonl`,
+    );
+    const line = (type, payload, timestamp) =>
+      JSON.stringify({ type, payload, timestamp });
+
+    await Promise.all([
+      mkdir(claudeHome, { recursive: true }),
+      mkdir(sessionDir, { recursive: true }),
+      mkdir(copilotHome, { recursive: true }),
+    ]);
+    await writeFile(
+      join(home, ".agent-usage-stat.config.json"),
+      JSON.stringify({
+        version: "3.0.0",
+        dataRoot,
+        providerDataRoots: {
+          claude: claudeHome,
+          codex: codexHome,
+          copilot: copilotHome,
+        },
+      }),
+    );
+    await writeFile(
+      rollout,
+      [
+        line(
+          "session_meta",
+          { id: sessionId, cwd: join(home, "project") },
+          "2026-08-08T10:00:00.000Z",
+        ),
+        line(
+          "turn_context",
+          { turn_id: "turn-1", model: "gpt-5.6-sol" },
+          "2026-08-08T10:00:01.000Z",
+        ),
+        line(
+          "event_msg",
+          {
+            type: "token_count",
+            info: {
+              total_token_usage: {
+                input_tokens: 1000,
+                cached_input_tokens: 400,
+                output_tokens: 100,
+                total_tokens: 1100,
+              },
+              last_token_usage: {
+                input_tokens: 1000,
+                cached_input_tokens: 400,
+                output_tokens: 100,
+                total_tokens: 1100,
+              },
+            },
+          },
+          "2026-08-08T10:00:02.000Z",
+        ),
+      ].join("\n"),
+    );
+
+    try {
+      const setup = await runCli(["setup", "--data-root", dataRoot], home);
+      assert.equal(setup.code, 0, setup.output);
+      assert.match(
+        await readFile(join(claudeHome, "settings.json"), "utf8"),
+        /agent-usage-stat/,
+      );
+      assert.match(
+        await readFile(join(codexHome, "hooks.json"), "utf8"),
+        /agent-usage-stat/,
+      );
+      assert.equal(
+        existsSync(join(copilotHome, "hooks", "agent-usage-stat.json")),
+        true,
+      );
+
+      const sync = await runCli(["sync", "--quiet"], home);
+      assert.equal(sync.code, 0, sync.output);
+      const shard = JSON.parse(await readFile(
+        join(dataRoot, "logbook.d", `${sessionId}.json`),
+        "utf8",
+      ));
+      assert.equal(shard.provider, "codex");
+      assert.equal(shard.total_tokens, 1100);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  },
+);
+
 test("a new empty data folder produces a usable portal snapshot", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-usage-stat-empty-"));
   const outDir = join(root, "portal");

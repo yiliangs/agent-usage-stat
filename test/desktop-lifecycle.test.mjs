@@ -5,7 +5,10 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { squirrelLifecycleEvent } from "../dist/desktop/squirrel-events.js";
-import { startupMode } from "../dist/desktop/startup-policy.js";
+import {
+  firstRunPortalUrl,
+  startupMode,
+} from "../dist/desktop/startup-policy.js";
 import {
   ledgerLocationPrompt,
   ledgerMigrationPrompt,
@@ -17,6 +20,14 @@ const require = createRequire(import.meta.url);
 test("cached launches show the dashboard while first launches block on setup", () => {
   assert.equal(startupMode(true), "cached");
   assert.equal(startupMode(false), "first-run");
+});
+
+test("failed first-run agent detection opens advanced settings", () => {
+  assert.equal(firstRunPortalUrl("aus://app/index.html", true), "aus://app/index.html");
+  assert.equal(
+    firstRunPortalUrl("aus://app/index.html", false),
+    "aus://app/index.html#settings",
+  );
 });
 
 test("first-run storage choice explains the local default and shared ledgers", () => {
@@ -76,6 +87,19 @@ test("the dashboard uses the canonical application favicon", async () => {
 
   assert.match(html, /<link rel="icon" type="image\/png" href="\.\.\/assets\/logo\.png">/);
   assert.match(html, /<img src="\.\.\/assets\/logo\.png" alt="">/);
+});
+
+test("settings separate common controls from advanced agent locations", async () => {
+  const html = await readFile(join(process.cwd(), "portal", "index.html"), "utf8");
+  const script = await readFile(join(process.cwd(), "portal", "portal.js"), "utf8");
+
+  assert.match(html, /data-portal-view="settings"/);
+  assert.match(html, /Usage ledger folder/);
+  assert.match(html, /Capture mode/);
+  assert.match(html, /<details[^>]*class="settings-advanced"/);
+  assert.match(html, /Advanced agent locations/);
+  assert.match(script, /\/api\/settings/);
+  assert.match(script, /Reset to automatic/);
 });
 
 test("Squirrel first run enters the application instead of quitting", () => {

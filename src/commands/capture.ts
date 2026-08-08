@@ -68,9 +68,9 @@ export class CaptureCommand {
       logHookEvent(`data root ${root} (${source})`);
 
       if (transcriptPath) {
-        provider = await detectProvider(transcriptPath);
+        provider = await detectProvider(transcriptPath, config);
       } else {
-        const resolved = await findSession(options.session ?? sessionId);
+        const resolved = await findSession(options.session ?? sessionId, config);
         provider = resolved.provider;
         transcriptPath = resolved.found.transcriptPath;
         sessionId = resolved.found.sessionId;

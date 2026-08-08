@@ -2,7 +2,9 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ProviderName } from "../types/provider.js";
+import type { AppConfig } from "../types/config.js";
 import { homeDir } from "../utils/paths.js";
+import { resolveProviderDataRoots } from "../utils/provider-data-roots.js";
 import { installClaudeHook, removeClaudeHook } from "./claude-hooks.js";
 import { installCodexHooks, removeCodexHooks } from "./codex-hooks.js";
 import { installCopilotHook, removeCopilotHook } from "./copilot-hooks.js";
@@ -22,10 +24,14 @@ export function createAgentIntegrations(
   home = homeDir(),
   commandExists: CommandExists = hasCommand,
   environment: NodeJS.ProcessEnv = process.env,
+  config: Pick<AppConfig, "providerDataRoots"> = {},
 ): AgentIntegration[] {
-  const claudeHome = environment.CLAUDE_CONFIG_DIR || join(home, ".claude");
-  const codexHome = environment.CODEX_HOME || join(home, ".codex");
-  const copilotHome = environment.COPILOT_HOME || join(home, ".copilot");
+  const roots = resolveProviderDataRoots(config, environment, home);
+  const rootFor = (provider: ProviderName) =>
+    roots.find((item) => item.provider === provider)?.root || "";
+  const claudeHome = rootFor("claude");
+  const codexHome = rootFor("codex");
+  const copilotHome = rootFor("copilot");
   const claudeSettings = join(claudeHome, "settings.json");
   const codexHooks = join(codexHome, "hooks.json");
   const copilotHooks = join(copilotHome, "hooks", "agent-usage-stat.json");
@@ -67,8 +73,9 @@ export function detectInstalledAgents(
   home = homeDir(),
   commandExists: CommandExists = hasCommand,
   environment: NodeJS.ProcessEnv = process.env,
+  config: Pick<AppConfig, "providerDataRoots"> = {},
 ): ProviderName[] {
-  return createAgentIntegrations(home, commandExists, environment)
+  return createAgentIntegrations(home, commandExists, environment, config)
     .filter((integration) => integration.isInstalled())
     .map((integration) => integration.provider);
 }

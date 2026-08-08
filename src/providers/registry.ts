@@ -7,32 +7,32 @@ import type {
   ProviderName,
   SessionProvider,
 } from "../types/provider.js";
+import type { AppConfig } from "../types/config.js";
+import { homeDir } from "../utils/paths.js";
+import { resolveProviderDataRoots } from "../utils/provider-data-roots.js";
+import { isAbsolute, relative, resolve } from "node:path";
 
 interface ProviderRegistration {
   name: ProviderName;
-  create: () => SessionProvider;
+  create: (root?: string) => SessionProvider;
   transcriptRecordTypes: readonly string[];
-  homePathSegment: string;
 }
 
 const PROVIDERS: readonly ProviderRegistration[] = [
   {
     name: "claude",
-    create: () => new ClaudeProvider(),
+    create: (root) => new ClaudeProvider(root),
     transcriptRecordTypes: ["user", "assistant"],
-    homePathSegment: "/.claude/",
   },
   {
     name: "codex",
-    create: () => new CodexProvider(),
+    create: (root) => new CodexProvider(root),
     transcriptRecordTypes: ["session_meta", "turn_context"],
-    homePathSegment: "/.codex/",
   },
   {
     name: "copilot",
-    create: () => new CopilotProvider(),
+    create: (root) => new CopilotProvider(root),
     transcriptRecordTypes: ["session.start"],
-    homePathSegment: "/.copilot/",
   },
 ];
 
@@ -42,22 +42,33 @@ export interface ResolvedSession {
 }
 
 /** Create a provider explicitly for programmatic library use. */
-export function providerByName(name: ProviderName): SessionProvider {
+export function providerByName(
+  name: ProviderName,
+  root?: string,
+): SessionProvider {
   const registration = PROVIDERS.find((provider) => provider.name === name);
   if (!registration) {
     throw new Error(`Unsupported provider: ${String(name)}`);
   }
-  return registration.create();
+  return registration.create(root);
 }
 
 /** Every installed provider implementation, used by provider-neutral workflows. */
-export function allProviders(): SessionProvider[] {
-  return PROVIDERS.map((provider) => provider.create());
+export function allProviders(
+  config: Pick<AppConfig, "providerDataRoots"> = {},
+  environment: NodeJS.ProcessEnv = process.env,
+  home = homeDir(),
+): SessionProvider[] {
+  const roots = resolveProviderDataRoots(config, environment, home);
+  return roots.map((item) => providerByName(item.provider, item.root));
 }
 
 /** Detect a transcript by wire format, with path only as a final fallback. */
 export async function detectProvider(
   transcriptPath: string,
+  config: Pick<AppConfig, "providerDataRoots"> = {},
+  environment: NodeJS.ProcessEnv = process.env,
+  home = homeDir(),
 ): Promise<SessionProvider> {
   let head = "";
   try {
@@ -88,20 +99,22 @@ export async function detectProvider(
     }
   }
 
-  const normalized = transcriptPath.replace(/\\/g, "/").toLowerCase();
-  const registration = PROVIDERS.find((provider) =>
-    normalized.includes(provider.homePathSegment),
+  const root = resolveProviderDataRoots(config, environment, home).find((item) =>
+    isPathInside(item.root, transcriptPath)
   );
-  if (registration) return registration.create();
+  if (root) return providerByName(root.provider, root.root);
   throw new Error(`Could not detect transcript provider: ${transcriptPath}`);
 }
 
 /** Find the newest matching session across every provider store. */
 export async function findSession(
   query?: string,
+  config: Pick<AppConfig, "providerDataRoots"> = {},
+  environment: NodeJS.ProcessEnv = process.env,
+  home = homeDir(),
 ): Promise<ResolvedSession> {
   const results = await Promise.all(
-    allProviders().map(async (provider) => {
+    allProviders(config, environment, home).map(async (provider) => {
       try {
         return { provider, found: await provider.findSession(query) };
       } catch {
@@ -119,4 +132,9 @@ export async function findSession(
   }
   matches.sort((a, b) => b.found.mtimeMs - a.found.mtimeMs);
   return matches[0];
+}
+
+function isPathInside(root: string, path: string): boolean {
+  const fromRoot = relative(resolve(root), resolve(path));
+  return fromRoot === "" || (!fromRoot.startsWith("..") && !isAbsolute(fromRoot));
 }

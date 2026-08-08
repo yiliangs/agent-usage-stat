@@ -1,3 +1,5 @@
+import type { ProviderName } from "./provider.js";
+
 export type CaptureMode = "automatic" | "on-open";
 
 export interface AppConfig {
@@ -10,6 +12,8 @@ export interface AppConfig {
   dataRoot?: string;
   /** How provider transcripts are reconciled into the durable ledger. */
   captureMode?: CaptureMode;
+  /** Explicit provider state roots; omitted providers resolve automatically. */
+  providerDataRoots?: Partial<Record<ProviderName, string>>;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {

@@ -97,6 +97,12 @@ try {
   assert.match(smoke.renderer.favicon, /^aus:\/\/app\/assets\/logo-/);
   assert.equal(smoke.renderer.protocol, "aus:");
   assert.equal(smoke.refresh.sessions, 0);
+  assert.equal(smoke.settings.api, true);
+  assert.equal(smoke.settings.visible, true);
+  assert.equal(smoke.settings.commonRows, 2);
+  assert.equal(smoke.settings.advanced, true);
+  assert.equal(smoke.settings.providerRows, 3);
+  assert.deepEqual(smoke.settings.providers, ["claude", "codex", "copilot"]);
 
   const installedHelper = process.platform === "win32"
     ? join(home, ".agent-usage-stat", "bin", "agent-usage-stat-helper.exe")
@@ -107,6 +113,11 @@ try {
     "utf8",
   ));
   assert.equal(setupState.captureMode, "automatic");
+  assert.deepEqual(Object.keys(setupState.providerDataRoots).sort(), [
+    "claude",
+    "codex",
+    "copilot",
+  ]);
 
   const claudeSettings = await readFile(
     join(claudeHome, "settings.json"),

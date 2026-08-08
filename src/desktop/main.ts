@@ -16,6 +16,7 @@ import {
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { resolveUsageRootFromDisk } from "../utils/usage-root.js";
+import { ConfigManager } from "../core/config-manager.js";
 import {
   desktopSetupStatePath,
   installedHelperPath,
@@ -28,7 +29,7 @@ import {
   registerPortalScheme,
 } from "./portal-runtime.js";
 import { squirrelLifecycleEvent } from "./squirrel-events.js";
-import { startupMode } from "./startup-policy.js";
+import { firstRunPortalUrl, startupMode } from "./startup-policy.js";
 import { STARTUP_URL, updateStartupScreen } from "./startup-screen.js";
 import {
   ledgerLocationPrompt,
@@ -42,6 +43,8 @@ import {
 } from "../core/usage-ledger-migration.js";
 import { captureModePrompt } from "./capture-mode.js";
 import type { CaptureMode } from "../types/config.js";
+import type { ProviderName } from "../types/provider.js";
+import { buildDesktopSettingsState } from "./settings-state.js";
 
 const WINDOWS_APP_ID = "com.squirrel.AgentUsageStat.AgentUsageStat";
 const WINDOW_ICON = join(app.getAppPath(), "assets", "logo.png");
@@ -54,7 +57,8 @@ if (process.platform === "win32") app.setAppUserModelId(WINDOWS_APP_ID);
 
 let mainWindow: BrowserWindow | null = null;
 const helperRuntime = new HelperRuntime();
-const portalRuntime = new PortalRuntime(helperRuntime);
+const configManager = new ConfigManager();
+const portalRuntime = new PortalRuntime(helperRuntime, handlePortalRequest);
 
 const squirrelEvent = handleSquirrelEvent();
 const isSmokeTest = process.argv.includes("--desktop-smoke-test");
@@ -152,14 +156,14 @@ async function openFirstRunWindow(): Promise<void> {
       "Checking agent connections",
       "Applying your capture choice to Claude Code, Codex, and Copilot CLI.",
     );
-    await ensureDesktopSetup(true);
+    const setupReady = await ensureDesktopSetup(true);
     await updateStartupScreen(
       window,
       "Reconciling recent sessions",
       "Building the local dashboard from your usage ledger.",
     );
     await portalRuntime.refresh();
-    await window.loadURL(PORTAL_URL);
+    await window.loadURL(firstRunPortalUrl(PORTAL_URL, setupReady));
     traceStartup("first-run-complete");
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -300,16 +304,9 @@ function installApplicationMenu(): void {
     },
     { type: "separator" },
     {
-      label: "Change Data Folder...",
-      click: () => void chooseDataFolder(),
-    },
-    {
-      label: "Capture Mode...",
-      click: () => void changeCaptureMode(),
-    },
-    {
-      label: "Repair Capture Setup",
-      click: () => void repairCaptureSetup(),
+      label: "Settings...",
+      accelerator: "CmdOrCtrl+,",
+      click: () => void openSettings(),
     },
   ];
 
@@ -358,7 +355,16 @@ async function refreshAndReload(): Promise<boolean> {
   }
 }
 
-async function chooseDataFolder(): Promise<void> {
+async function openSettings(): Promise<void> {
+  if (!mainWindow) return;
+  await mainWindow.webContents.executeJavaScript(`
+    document.querySelector('[data-portal-view="settings"]')?.click()
+  `);
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+async function chooseDataFolder(reload = true): Promise<boolean> {
   const current = resolveUsageRootFromDisk().root;
   const options: Electron.OpenDialogOptions = {
     title: "Choose usage data folder",
@@ -369,8 +375,8 @@ async function chooseDataFolder(): Promise<void> {
     ? await dialog.showOpenDialog(mainWindow, options)
     : await dialog.showOpenDialog(options);
   const selected = result.filePaths[0];
-  if (result.canceled || !selected) return;
-  if (sameUsageRoot(current, selected)) return;
+  if (result.canceled || !selected) return false;
+  if (sameUsageRoot(current, selected)) return false;
 
   let keepOriginal = true;
   let hasExistingHistory = false;
@@ -390,63 +396,134 @@ async function chooseDataFolder(): Promise<void> {
         checkboxLabel: prompt.checkboxLabel,
         checkboxChecked: prompt.checkboxChecked,
       });
-      if (migration.response !== 0) return;
+      if (migration.response !== 0) return false;
       keepOriginal = migration.checkboxChecked;
       await mergeUsageLedger(current, selected);
     }
 
     await helperRuntime.configureDataRoot(selected);
     await helperRuntime.resetSetup();
-    if (!(await ensureDesktopSetup(true))) return;
-    if (!(await refreshAndReload())) return;
+    if (!(await ensureDesktopSetup(true))) return false;
+    await portalRuntime.refresh();
+    if (reload) await mainWindow?.webContents.reload();
 
     if (hasExistingHistory && !keepOriginal) {
       await removeUsageLedger(current);
     }
+    return true;
   } catch (error) {
     await showOperationError("Data folder was not changed", error);
+    return false;
   }
 }
 
 async function repairCaptureSetup(): Promise<void> {
-  try {
-    await helperRuntime.resetSetup();
-    if (!(await ensureDesktopSetup(true))) return;
-    const mode = await helperRuntime.captureMode();
-    await showMessageBox({
-      type: "info",
-      title: "Agent Usage Stat",
-      message: mode === "automatic"
-        ? "Automatic capture connections are repaired."
-        : "Import-on-open capture setup is refreshed.",
-    });
-  } catch (error) {
-    await showOperationError("Agent repair failed", error);
+  await helperRuntime.resetSetup();
+  if (!(await ensureDesktopSetup(true))) {
+    throw new Error("Capture setup could not be repaired.");
   }
 }
 
-async function changeCaptureMode(): Promise<void> {
-  if (!mainWindow) return;
-  try {
-    const current = await helperRuntime.captureMode();
-    const selected = await chooseCaptureMode(mainWindow, true);
-    if (!selected || selected === current) return;
-
-    await helperRuntime.configureCaptureMode(selected);
-    await helperRuntime.resetSetup();
-    if (!(await ensureDesktopSetup(true))) return;
-    if (!(await refreshAndReload())) return;
-
-    await showMessageBox({
-      type: "info",
-      title: "Agent Usage Stat",
-      message: selected === "automatic"
-        ? "Automatic capture is enabled."
-        : "Sessions will be imported when the application opens.",
-    });
-  } catch (error) {
-    await showOperationError("Capture mode was not changed", error);
+async function applyCaptureMode(mode: CaptureMode): Promise<void> {
+  if (mode === await helperRuntime.captureMode()) return;
+  await helperRuntime.configureCaptureMode(mode);
+  await helperRuntime.resetSetup();
+  if (!(await ensureDesktopSetup(true))) {
+    throw new Error("Capture setup is incomplete. Use Repair capture setup.");
   }
+}
+
+async function chooseProviderDataRoot(provider: ProviderName): Promise<boolean> {
+  const state = await currentSettingsState();
+  const current = state.providers.find((item) => item.provider === provider);
+  if (!current) throw new Error(`Unsupported provider: ${provider}`);
+  const options: Electron.OpenDialogOptions = {
+    title: `Choose ${current.label} data folder`,
+    defaultPath: current.root,
+    properties: ["openDirectory"],
+  };
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  const selected = result.filePaths[0];
+  if (result.canceled || !selected) return false;
+
+  await applyProviderDataRoot(provider, selected);
+  return true;
+}
+
+async function applyProviderDataRoot(
+  provider: ProviderName,
+  root?: string,
+): Promise<void> {
+  await helperRuntime.configureProviderDataRoot(provider, root);
+  await helperRuntime.resetSetup();
+  if (!(await ensureDesktopSetup(true))) {
+    throw new Error("Agent data location was saved, but capture setup is incomplete.");
+  }
+  await portalRuntime.refresh();
+}
+
+async function currentSettingsState() {
+  const config = await configManager.loadConfig();
+  return buildDesktopSettingsState(config, resolveUsageRootFromDisk());
+}
+
+async function handlePortalRequest(
+  request: Request,
+  url: URL,
+): Promise<Response | null> {
+  if (url.pathname !== "/api/settings") return null;
+  try {
+    if (request.method === "GET") {
+      return settingsJson(await currentSettingsState());
+    }
+    if (request.method !== "POST") {
+      return settingsJson({ error: "Method not allowed" }, 405);
+    }
+
+    const body = await request.json() as {
+      action?: string;
+      mode?: CaptureMode;
+      provider?: ProviderName;
+    };
+    if (body.action === "change-ledger") {
+      await chooseDataFolder(false);
+    } else if (body.action === "capture-mode") {
+      if (!body.mode || !["automatic", "on-open"].includes(body.mode)) {
+        throw new Error("Invalid capture mode.");
+      }
+      await applyCaptureMode(body.mode);
+    } else if (body.action === "choose-provider") {
+      if (!isProviderName(body.provider)) throw new Error("Invalid provider.");
+      await chooseProviderDataRoot(body.provider);
+    } else if (body.action === "reset-provider") {
+      if (!isProviderName(body.provider)) throw new Error("Invalid provider.");
+      await applyProviderDataRoot(body.provider);
+    } else if (body.action === "repair-capture") {
+      await repairCaptureSetup();
+    } else {
+      throw new Error("Unknown settings action.");
+    }
+    return settingsJson(await currentSettingsState());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return settingsJson({ error: message }, 500);
+  }
+}
+
+function isProviderName(value: unknown): value is ProviderName {
+  return value === "claude" || value === "codex" || value === "copilot";
+}
+
+function settingsJson(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
 async function showOperationError(title: string, error: unknown): Promise<void> {
@@ -524,6 +601,30 @@ async function runSmokeTestIfRequested(): Promise<boolean> {
     logoLoaded: boolean;
     protocol: string;
   };
+  const settings = await window.webContents.executeJavaScript(`(async () => {
+    document.querySelector('[data-portal-view="settings"]')?.click();
+    for (let index = 0; index < 50; index++) {
+      if (document.querySelectorAll('.provider-location').length === 3) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const response = await fetch('./api/settings', { cache: 'no-store' });
+    const state = await response.json();
+    return {
+      api: response.ok,
+      visible: !document.querySelector('#settingsView')?.hidden,
+      commonRows: document.querySelectorAll('.settings-common .settings-row').length,
+      advanced: !!document.querySelector('details.settings-advanced'),
+      providerRows: document.querySelectorAll('.provider-location').length,
+      providers: state.providers?.map((provider) => provider.provider) ?? [],
+    };
+  })()`) as {
+    api: boolean;
+    visible: boolean;
+    commonRows: number;
+    advanced: boolean;
+    providerRows: number;
+    providers: string[];
+  };
   traceStartup("smoke-renderer-complete");
   const smokeJson = JSON.stringify({
       application: app.getName(),
@@ -535,6 +636,7 @@ async function runSmokeTestIfRequested(): Promise<boolean> {
       setup: existsSync(desktopSetupStatePath()),
       refresh,
       renderer,
+      settings,
     }, null, 2);
   const stagedOutput = `${output}.${process.pid}.tmp`;
   await writeFile(stagedOutput, smokeJson, "utf8");

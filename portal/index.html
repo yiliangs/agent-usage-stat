@@ -218,6 +218,8 @@
     .portal-tab:first-child { border-left: 0; }
     .portal-tab:hover { background: rgba(var(--ink-rgb),.055); color: var(--ink); }
     .portal-tab.active { background: var(--ink); color: var(--paper-hi); }
+    .settings-active .ranges,
+    .settings-active .view-switch { visibility: hidden; pointer-events: none; }
 
     .portal-view[hidden] { display: none; }
 
@@ -1782,6 +1784,153 @@
     .rhythm-data-table thead th { color: var(--muted); font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
     .rhythm-data-table tbody th { color: var(--ink); font-weight: 500; }
 
+    .settings-view {
+      min-height: 780px;
+      padding: 42px 28px 64px;
+      background-color: var(--paper);
+      background-image: var(--texture);
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .settings-shell { width: min(100%, 1080px); margin: 0 auto; }
+    .settings-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 440px);
+      align-items: end;
+      gap: 42px;
+      padding-bottom: 24px;
+      border-bottom: 2px solid var(--ink);
+    }
+    .settings-head h1 {
+      margin: 6px 0 0;
+      font-family: var(--serif);
+      font-size: clamp(38px, 5vw, 62px);
+      font-weight: 400;
+      letter-spacing: -.05em;
+    }
+    .settings-head p,
+    .settings-note {
+      margin: 0;
+      color: var(--graphite);
+      font-size: 12px;
+      line-height: 1.65;
+    }
+    .settings-section-label {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 28px 0 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .settings-section-label::after { content: ''; flex: 1; height: 1px; background: var(--line-dark); }
+    .settings-common { border: 1px solid var(--line-dark); background: var(--paper-hi); }
+    .settings-row {
+      min-height: 116px;
+      display: grid;
+      grid-template-columns: minmax(170px, 220px) minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 28px;
+      padding: 22px 24px;
+      border-top: 1px solid var(--line-dark);
+    }
+    .settings-row:first-child { border-top: 0; }
+    .settings-row h2,
+    .provider-location h3 { margin: 0; font-family: var(--sans); font-size: 13px; font-weight: 600; }
+    .settings-row p,
+    .provider-location p { margin: 6px 0 0; color: var(--graphite); font-size: 11px; line-height: 1.5; }
+    .settings-path {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.55;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .settings-path-meta { display: block; margin-top: 5px; color: var(--muted); font-size: 8px; letter-spacing: .09em; text-transform: uppercase; }
+    .settings-button {
+      min-height: 34px;
+      border: 1px solid var(--ink);
+      background: transparent;
+      color: var(--ink);
+      padding: 0 14px;
+      font-family: var(--sans);
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .settings-button:hover,
+    .settings-button.active { background: var(--ink); color: var(--paper-hi); }
+    .settings-button:disabled { cursor: wait; opacity: .48; }
+    .settings-segmented { display: inline-flex; border: 1px solid var(--ink); }
+    .settings-segmented .settings-button { border: 0; border-left: 1px solid var(--ink); }
+    .settings-segmented .settings-button:first-child { border-left: 0; }
+
+    .settings-advanced { margin-top: 22px; border: 1px solid var(--line-dark); background: var(--paper); }
+    .settings-advanced > summary {
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 22px;
+      list-style: none;
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .settings-advanced > summary::-webkit-details-marker { display: none; }
+    .settings-advanced > summary::before { content: '+'; font-family: var(--mono); font-size: 18px; font-weight: 400; }
+    .settings-advanced[open] > summary::before { content: '−'; }
+    .settings-advanced > summary span { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 8px; font-weight: 400; letter-spacing: .1em; text-transform: uppercase; }
+    .settings-advanced-body { padding: 0 22px 22px; border-top: 1px solid var(--line-dark); }
+    .settings-note { max-width: 760px; padding: 18px 0; }
+    .provider-locations { border: 1px solid var(--line-dark); }
+    .provider-location {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(150px, 190px) minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 24px;
+      min-height: 112px;
+      padding: 20px 20px 20px 26px;
+      border-top: 1px solid var(--line-dark);
+      background: var(--paper-hi);
+    }
+    .provider-location:first-child { border-top: 0; }
+    .provider-location::before {
+      content: '';
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 5px;
+      background: var(--status-good);
+    }
+    .provider-location.missing::before { background: var(--accent); }
+    .provider-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      color: var(--graphite);
+      font-family: var(--mono);
+      font-size: 8px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .provider-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--status-good); }
+    .provider-location.missing .provider-status::before { background: var(--accent); }
+    .provider-actions { display: flex; gap: 7px; }
+    .settings-repair { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18px 0 0; }
+    .settings-status { min-height: 18px; margin-top: 14px; color: var(--status-good); font-family: var(--mono); font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
+    .settings-status.error { color: var(--status-error); }
+
     .footer {
       height: 48px;
       display: grid;
@@ -2038,6 +2187,11 @@
       .rhythm-head { grid-template-columns: 1fr; gap: 16px; }
       .rhythm-head-tools { width: 100%; grid-template-columns: 1fr auto; align-items: end; justify-items: start; }
       .rhythm-control-row { justify-self: end; }
+      .settings-head { grid-template-columns: 1fr; gap: 12px; }
+      .settings-row,
+      .provider-location { grid-template-columns: 1fr; gap: 14px; }
+      .settings-row > .settings-button,
+      .provider-actions { justify-self: start; }
     }
 
     @media (max-width: 1120px) {
@@ -2082,6 +2236,12 @@
       .rhythm-control-row .rhythm-key { flex: 1 1 100%; justify-content: flex-start; }
       .rhythm-scroll { padding-left: 14px; padding-right: 14px; }
       .footer { height: auto; gap: 12px; padding-top: 16px; padding-bottom: 16px; }
+      .settings-view { padding: 28px 14px 42px; }
+      .settings-advanced-body { padding-left: 12px; padding-right: 12px; }
+      .settings-segmented { display: grid; }
+      .settings-segmented .settings-button { border-left: 0; border-top: 1px solid var(--ink); }
+      .settings-segmented .settings-button:first-child { border-top: 0; }
+      .settings-repair { align-items: flex-start; flex-direction: column; }
     }
 
     @media print {
@@ -2163,6 +2323,7 @@
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="tokens">Tokens</button>
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="projects">Projects</button>
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="sessions">Sessions</button>
+        <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="settings">Settings</button>
       </div>
       <div class="view-switch">
         <button class="refresh-button" id="refreshButton"><i></i>REFRESH DATA</button>
@@ -2471,6 +2632,45 @@
         <span class="analysis-table-count" id="sessionCount"></span>
       </div>
       <div class="analysis-table-wrap"><table class="analysis-table" id="sessionTable"></table></div>
+    </section>
+
+    <section class="settings-view portal-view" id="settingsView" data-view="settings" hidden>
+      <div class="settings-shell">
+        <header class="settings-head">
+          <div><span class="micro">Application control</span><h1>Settings</h1></div>
+          <p>Choose where durable usage history lives and how completed sessions reach it. Provider-owned data stays in place.</p>
+        </header>
+
+        <div class="settings-section-label">Common</div>
+        <div class="settings-common">
+          <section class="settings-row">
+            <div><h2>Usage ledger folder</h2><p>The durable source of truth for usage analytics.</p></div>
+            <div class="settings-path" id="settingsLedgerPath">Loading…</div>
+            <button class="settings-button" data-settings-action="change-ledger">Change folder</button>
+          </section>
+          <section class="settings-row">
+            <div><h2>Capture mode</h2><p>Automatic capture remains the durable default.</p></div>
+            <div class="settings-note" id="settingsCaptureNote">Loading capture configuration…</div>
+            <div class="settings-segmented" aria-label="Capture mode">
+              <button class="settings-button" data-settings-action="capture-mode" data-mode="automatic">Automatic</button>
+              <button class="settings-button" data-settings-action="capture-mode" data-mode="on-open">Import on open</button>
+            </div>
+          </section>
+        </div>
+
+        <details class="settings-advanced">
+          <summary>Advanced agent locations <span>Usually automatic</span></summary>
+          <div class="settings-advanced-body">
+            <p class="settings-note">These locations tell Agent Usage Stat where each agent already stores sessions. Changing a pointer does not move, rewrite, or delete provider-owned data.</p>
+            <div class="provider-locations" id="settingsProviderLocations"></div>
+            <div class="settings-repair">
+              <p class="settings-note">Reapply the selected capture mode if an agent updated or a connection was removed.</p>
+              <button class="settings-button" data-settings-action="repair-capture">Repair capture setup</button>
+            </div>
+          </div>
+        </details>
+        <div class="settings-status" id="settingsStatus" role="status" aria-live="polite"></div>
+      </div>
     </section>
 
     <footer class="footer">

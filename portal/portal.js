@@ -21,6 +21,7 @@ const state = {
   projectSort: { key: 'cost', direction: -1 },
   sessionSort: { key: 'start', direction: -1 },
   sessionQuery: '',
+  settings: null,
 }
 
 const MODEL_STYLES = {
@@ -981,6 +982,101 @@ function applyPortalView() {
     button.classList.toggle('active', active)
     button.setAttribute('aria-selected', String(active))
   })
+  document.body.classList.toggle('settings-active', state.view === 'settings')
+}
+
+function renderSettings() {
+  if (!state.settings) return
+  const { ledger, captureMode, providers } = state.settings
+  const ledgerSource = ledger.source === 'default'
+    ? 'Local default'
+    : ledger.source === 'detected'
+      ? 'Detected synchronized ledger'
+      : 'Selected folder'
+  $('#settingsLedgerPath').innerHTML = `${escapeHtml(ledger.root)}<span class="settings-path-meta">${ledgerSource}</span>`
+  $('#settingsCaptureNote').textContent = captureMode === 'automatic'
+    ? 'Active: hooks record completed sessions while this application is closed. Import on open removes hooks and can miss sessions deleted before the next launch.'
+    : 'Active: no hooks are installed. Sessions deleted before the next application launch cannot be recovered.'
+  $$('[data-settings-action="capture-mode"]').forEach((button) => {
+    const active = button.dataset.mode === captureMode
+    button.classList.toggle('active', active)
+    button.setAttribute('aria-pressed', String(active))
+  })
+
+  $('#settingsProviderLocations').innerHTML = providers.map((provider) => {
+    const source = provider.source === 'custom'
+      ? 'Custom pointer'
+      : provider.source === 'environment'
+        ? `${provider.environmentVariable} environment`
+        : 'Default location'
+    const status = provider.sessions > 0
+      ? `${provider.sessions} session${provider.sessions === 1 ? '' : 's'} found`
+      : provider.available
+        ? 'Folder found / no sessions'
+        : 'Folder not found'
+    const reset = provider.source === 'custom'
+      ? `<button class="settings-button" data-settings-action="reset-provider" data-provider="${provider.provider}">Reset to automatic</button>`
+      : ''
+    return `<section class="provider-location${provider.available ? '' : ' missing'}">
+      <div><h3>${escapeHtml(provider.label)}</h3><span class="provider-status">${escapeHtml(status)}</span></div>
+      <div class="settings-path">${escapeHtml(provider.root)}<span class="settings-path-meta">${escapeHtml(source)}</span></div>
+      <div class="provider-actions">
+        <button class="settings-button" data-settings-action="choose-provider" data-provider="${provider.provider}">Choose folder</button>
+        ${reset}
+      </div>
+    </section>`
+  }).join('')
+  if (providers.every((provider) => !provider.available)) {
+    document.querySelector('details.settings-advanced').open = true
+  }
+}
+
+async function loadSettings() {
+  try {
+    const response = await fetch('./api/settings', { cache: 'no-store' })
+    const result = await response.json().catch(() => null)
+    if (!response.ok) throw new Error(result?.error || `Settings failed (${response.status})`)
+    state.settings = result
+    renderSettings()
+  } catch (error) {
+    setSettingsStatus(error.message || 'Settings could not load.', true)
+    console.error(error.stack || error)
+  }
+}
+
+async function performSettingsAction(action, detail = {}) {
+  setSettingsBusy(true)
+  setSettingsStatus('Applying settings…')
+  try {
+    const response = await fetch('./api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...detail }),
+    })
+    const result = await response.json().catch(() => null)
+    if (!response.ok) throw new Error(result?.error || `Settings failed (${response.status})`)
+    state.settings = result
+    renderSettings()
+    if (['change-ledger', 'choose-provider', 'reset-provider'].includes(action)) {
+      await load()
+    }
+    setSettingsStatus('Settings are current.')
+  } catch (error) {
+    setSettingsStatus(error.message || 'Settings were not changed.', true)
+    console.error(error.stack || error)
+  } finally {
+    setSettingsBusy(false)
+  }
+}
+
+function setSettingsBusy(busy) {
+  $$('#settingsView [data-settings-action]').forEach((button) => { button.disabled = busy })
+}
+
+function setSettingsStatus(message, error = false) {
+  const status = $('#settingsStatus')
+  status.textContent = message
+  status.classList.toggle('error', error)
 }
 
 function renderProjects(sessions) {
@@ -1812,8 +1908,9 @@ async function load() {
     state.rhythmProjectColors = null
     state.meta = meta
     const requestedView = window.location.hash.slice(1)
-    if (['overview', 'spend', 'tokens', 'projects', 'sessions'].includes(requestedView)) state.view = requestedView
+    if (['overview', 'spend', 'tokens', 'projects', 'sessions', 'settings'].includes(requestedView)) state.view = requestedView
     render()
+    if (state.view === 'settings') await loadSettings()
   } catch (error) {
     const stateValue = $$('.top-meta b')[2]
     if (stateValue) stateValue.textContent = 'DATA UNAVAILABLE'
@@ -1833,8 +1930,19 @@ $$('[data-portal-view]').forEach((button) => button.addEventListener('click', ()
   state.view = button.dataset.portalView
   window.history.replaceState(null, '', `#${state.view}`)
   applyPortalView()
+  if (state.view === 'settings') void loadSettings()
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }))
+
+$('#settingsView').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-settings-action]')
+  if (!button || button.disabled) return
+  const action = button.dataset.settingsAction
+  const detail = {}
+  if (button.dataset.mode) detail.mode = button.dataset.mode
+  if (button.dataset.provider) detail.provider = button.dataset.provider
+  void performSettingsAction(action, detail)
+})
 
 $('#sessionSearch').addEventListener('input', (event) => {
   state.sessionQuery = event.target.value

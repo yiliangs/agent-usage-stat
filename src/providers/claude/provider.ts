@@ -19,7 +19,11 @@ export class ClaudeProvider implements SessionProvider {
 
   private calculator = new UsageCalculator();
   private parser = new TranscriptParser();
-  private finder = new SessionFinder();
+  private finder: SessionFinder;
+
+  constructor(claudeHome?: string) {
+    this.finder = new SessionFinder(claudeHome);
+  }
 
   findSession(query?: string): Promise<FoundSession> {
     return this.finder.find(query);

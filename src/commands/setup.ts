@@ -4,7 +4,7 @@ import chalk from "chalk";
 import prompts from "prompts";
 import ora from "ora";
 import { ConfigManager } from "../core/config-manager.js";
-import { expandHome } from "../utils/paths.js";
+import { expandHome, homeDir } from "../utils/paths.js";
 import { resolveUsageRoot } from "../utils/usage-root.js";
 import {
   detectShellProfile,
@@ -34,9 +34,9 @@ export interface SetupOptions {
 
 export class SetupCommand {
   private configManager = new ConfigManager();
-  private integrations: AgentIntegration[];
+  private integrations?: AgentIntegration[];
 
-  constructor(integrations = createAgentIntegrations()) {
+  constructor(integrations?: AgentIntegration[]) {
     this.integrations = integrations;
   }
 
@@ -72,7 +72,9 @@ export class SetupCommand {
     configureTerminal = true,
     migrateTerminal = false,
   ): Promise<void> {
-    const agents = this.integrations.filter((integration) =>
+    const existing = await this.configManager.loadConfig();
+    const integrations = this.integrationsFor(existing);
+    const agents = integrations.filter((integration) =>
       integration.isInstalled()
     );
     if (agents.length === 0) {
@@ -81,7 +83,6 @@ export class SetupCommand {
       );
     }
 
-    const existing = await this.configManager.loadConfig();
     const captureMode = resolvedCaptureMode(existing);
     const suggestedRoot = resolveUsageRoot(existing).root;
     const answers = dataRootOption
@@ -130,7 +131,7 @@ export class SetupCommand {
         }
         spinner.text = "Agent hooks installed...";
       } else {
-        for (const integration of this.integrations) {
+        for (const integration of integrations) {
           await integration.remove();
         }
         spinner.text = "Agent hooks removed...";
@@ -190,7 +191,8 @@ export class SetupCommand {
     const spinner = ora("Removing agent hooks...").start();
 
     try {
-      for (const integration of this.integrations) {
+      const config = await this.configManager.loadConfig();
+      for (const integration of this.integrationsFor(config)) {
         await integration.remove();
       }
       const terminal = await this.configureTerminalMessage(false);
@@ -252,5 +254,14 @@ export class SetupCommand {
     const profile = detectShellProfile();
     if (!profile || !(await hasTerminalWrappers(profile))) return {};
     return this.configureTerminalMessage(true);
+  }
+
+  private integrationsFor(config: AppConfig): AgentIntegration[] {
+    return this.integrations ?? createAgentIntegrations(
+      homeDir(),
+      undefined,
+      process.env,
+      config,
+    );
   }
 }
