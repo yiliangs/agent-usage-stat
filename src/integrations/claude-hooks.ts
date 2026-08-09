@@ -6,8 +6,10 @@ import {
   captureHookCommands,
   isAgentUsageStatCommand,
 } from "./hook-command.js";
+import type { HookConfigurationStatus } from "./hook-status.js";
 
 interface ClaudeSettings {
+  disableAllHooks?: boolean;
   hooks?: {
     Stop?: ClaudeHookGroup[];
     SessionEnd?: Array<{
@@ -31,6 +33,25 @@ interface ClaudeHookGroup {
 }
 
 const CAPTURE_EVENTS = ["Stop", "SessionEnd"] as const;
+
+export async function inspectClaudeHook(
+  settingsPath: string,
+): Promise<HookConfigurationStatus> {
+  if (!existsSync(settingsPath)) return "missing";
+  try {
+    const settings = JSON.parse(await readFile(settingsPath, "utf-8")) as ClaudeSettings;
+    if (settings.disableAllHooks === true) return "disabled";
+    return CAPTURE_EVENTS.every((event) =>
+        ((settings.hooks?.[event] ?? []) as ClaudeHookGroup[]).some((group) =>
+          group.hooks?.some((hook) => isAgentUsageStatCommand(hook.command))
+        )
+      )
+      ? "configured"
+      : "missing";
+  } catch {
+    return "invalid";
+  }
+}
 
 export async function installClaudeHook(settingsPath: string): Promise<void> {
   const claudeDir = join(settingsPath, "..");

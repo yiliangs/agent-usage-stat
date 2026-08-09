@@ -629,17 +629,23 @@ async function runSmokeTestIfRequested(): Promise<boolean> {
       api: response.ok,
       visible: !document.querySelector('#settingsView')?.hidden,
       commonRows: document.querySelectorAll('.settings-common .settings-row').length,
+      captureChannels: document.querySelectorAll('.capture-channel').length,
+      captureStatus: document.querySelector('#globalCaptureStatus')?.textContent ?? '',
       advanced: !!document.querySelector('details.settings-advanced'),
       providerRows: document.querySelectorAll('.provider-location').length,
       providers: state.providers?.map((provider) => provider.provider) ?? [],
+      providerMonitorStatuses: state.providers?.map((provider) => provider.captureMonitor?.status) ?? [],
     };
   })()`) as {
     api: boolean;
     visible: boolean;
     commonRows: number;
+    captureChannels: number;
+    captureStatus: string;
     advanced: boolean;
     providerRows: number;
     providers: string[];
+    providerMonitorStatuses: string[];
   };
   traceStartup("smoke-renderer-complete");
   const smokeJson = JSON.stringify({

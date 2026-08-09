@@ -1002,6 +1002,7 @@ function renderSettings() {
     button.classList.toggle('active', active)
     button.setAttribute('aria-pressed', String(active))
   })
+  renderCaptureMonitor(providers)
 
   $('#settingsProviderLocations').innerHTML = providers.map((provider) => {
     const source = provider.source === 'custom'
@@ -1028,24 +1029,10 @@ function renderSettings() {
     const captureStatus = provider.captureStrategy === 'continuous'
       ? 'Best-effort hook + app reconciliation'
       : 'App open + Sync now only'
-    const health = provider.captureHealth
-    const attemptStatus = health?.lastAttemptStatus === 'failed'
-      ? 'failed'
-      : health
-        ? 'succeeded'
-        : null
-    const attempt = health
-      ? `Last hook attempt ${attemptStatus} ${fmt.dateYear(new Date(health.lastAttemptAt))} / ${clockTime(Date.parse(health.lastAttemptAt))}`
-      : 'No hook attempt observed yet'
-    const success = health?.lastSuccessAt
-      ? `Last successful checkpoint ${fmt.dateYear(new Date(health.lastSuccessAt))} / ${clockTime(Date.parse(health.lastSuccessAt))}`
-      : 'No successful hook checkpoint observed yet'
-    const checkpoint = provider.captureStrategy === 'batch'
-      ? 'Hook checkpoints disabled for this agent'
-      : `${attempt}. ${success}. App sync remains the fallback.`
-    return `<section class="provider-location${provider.available ? '' : ' missing'}">
-      <div><h3>${escapeHtml(provider.label)}</h3><span class="provider-status">${escapeHtml(status)} / ${captureStatus}</span></div>
-      <div class="settings-note">${escapeHtml(checkpoint)}</div>
+    const diagnostic = captureMonitorPresentation(provider.captureMonitor)
+    return `<section class="provider-location ${provider.captureMonitor.status}">
+      <div class="provider-identity"><h3>${escapeHtml(provider.label)}</h3><span class="provider-status">${escapeHtml(status)} / ${captureStatus}</span></div>
+      <div class="capture-diagnostic"><strong>${escapeHtml(diagnostic.title)}</strong><p>${escapeHtml(diagnostic.detail)}</p></div>
       <div class="settings-path">${escapeHtml(provider.root)}<span class="settings-path-meta">${escapeHtml(source)}</span></div>
       <div class="settings-segmented" aria-label="${escapeHtml(provider.label)} capture policy">
         <button class="settings-button${inherited ? ' active' : ''}" aria-pressed="${inherited}" data-settings-action="capture-policy" data-provider="${provider.provider}" data-inherit="true">Use default</button>
@@ -1062,6 +1049,77 @@ function renderSettings() {
   }
 }
 
+function renderCaptureMonitor(providers) {
+  $('#captureMonitorSummary').innerHTML = providers.map((provider) => {
+    const presentation = captureMonitorPresentation(provider.captureMonitor)
+    return `<div class="capture-channel ${provider.captureMonitor.status}"><span>${escapeHtml(provider.label)}</span><strong>${escapeHtml(presentation.title)}</strong></div>`
+  }).join('')
+
+  const aggregate = captureMonitorAggregate(providers)
+  const link = $('[data-capture-monitor-link]')
+  link.className = `capture-monitor-link ${aggregate.status}`
+  $('#globalCaptureStatus').textContent = aggregate.label.toUpperCase()
+  link.title = aggregate.detail
+  $('#captureMonitorRepair').hidden = aggregate.status !== 'needs_attention'
+}
+
+function captureMonitorAggregate(providers) {
+  const counts = providers.reduce((result, provider) => {
+    result[provider.captureMonitor.status] = (result[provider.captureMonitor.status] || 0) + 1
+    return result
+  }, {})
+  if (counts.needs_attention) {
+    return { status: 'needs_attention', label: 'Needs attention', detail: `${counts.needs_attention} local capture configuration${counts.needs_attention === 1 ? ' needs' : 's need'} attention.` }
+  }
+  if (counts.unverified) {
+    return { status: 'unverified', label: 'Unverified', detail: `${counts.unverified} configured hook${counts.unverified === 1 ? '' : 's'} are waiting for a first observed checkpoint.` }
+  }
+  if (counts.observed) {
+    return { status: 'observed', label: 'Hook observed', detail: `${counts.observed} local hook${counts.observed === 1 ? '' : 's'} have delivered a checkpoint.` }
+  }
+  return { status: 'off', label: 'Sync only', detail: 'No local continuous hooks are active.' }
+}
+
+function captureMonitorPresentation(monitor) {
+  const observation = monitor.observation
+  if (monitor.reason === 'batch_capture') {
+    return { title: 'Batch sync', detail: 'Hook capture is intentionally off. App open and Sync now reconcile usage.' }
+  }
+  if (monitor.reason === 'agent_not_detected') {
+    return { title: 'Not detected', detail: 'No local agent data folder was found.' }
+  }
+  if (monitor.reason === 'hook_missing') {
+    return { title: 'Needs attention', detail: 'Continuous capture is selected, but the local hook is missing.' }
+  }
+  if (monitor.reason === 'hooks_disabled') {
+    return { title: 'Needs attention', detail: 'This agent’s local settings disable hook execution.' }
+  }
+  if (monitor.reason === 'settings_invalid') {
+    return { title: 'Needs attention', detail: 'The local hook settings could not be read.' }
+  }
+  if (monitor.reason === 'last_attempt_failed') {
+    const at = monitorTime(observation?.lastAttemptAt)
+    const failure = observation?.lastFailureMessage ? ` ${observation.lastFailureMessage}` : ''
+    return { title: 'Needs attention', detail: `Last hook attempt failed${at}.${failure} App sync remains available.` }
+  }
+  if (monitor.reason === 'awaiting_first_attempt') {
+    return { title: 'Waiting for first checkpoint', detail: 'Hook configuration is present, but no local delivery has been observed. Another settings scope or a managed policy may still block it.' }
+  }
+  const attempt = monitorTime(observation?.lastAttemptAt)
+  const success = monitorTime(observation?.lastSuccessAt)
+  return {
+    title: 'Hook observed',
+    detail: `Last hook attempt succeeded${attempt}. Last successful checkpoint${success}. App sync remains the fallback.`,
+  }
+}
+
+function monitorTime(value) {
+  if (!value) return ' at an unknown time'
+  const parsed = Date.parse(value)
+  if (!Number.isFinite(parsed)) return ' at an unknown time'
+  return ` ${fmt.dateYear(new Date(parsed))} / ${clockTime(parsed)}`
+}
+
 async function loadSettings() {
   try {
     const response = await fetch('./api/settings', { cache: 'no-store' })
@@ -1070,6 +1128,10 @@ async function loadSettings() {
     state.settings = result
     renderSettings()
   } catch (error) {
+    const link = $('[data-capture-monitor-link]')
+    link.className = 'capture-monitor-link not_detected'
+    $('#globalCaptureStatus').textContent = 'UNAVAILABLE'
+    link.title = 'Capture health could not be loaded.'
     setSettingsStatus(error.message || 'Settings could not load.', true)
     console.error(error.stack || error)
   }
@@ -1941,7 +2003,7 @@ async function load() {
     const requestedView = window.location.hash.slice(1)
     if (['overview', 'spend', 'tokens', 'projects', 'sessions', 'settings'].includes(requestedView)) state.view = requestedView
     render()
-    if (state.view === 'settings') await loadSettings()
+    await loadSettings()
   } catch (error) {
     const stateValue = $$('.top-meta b')[2]
     if (stateValue) stateValue.textContent = 'DATA UNAVAILABLE'
@@ -1964,6 +2026,10 @@ $$('[data-portal-view]').forEach((button) => button.addEventListener('click', ()
   if (state.view === 'settings') void loadSettings()
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }))
+
+$('[data-capture-monitor-link]').addEventListener('click', () => {
+  $('[data-portal-view="settings"]').click()
+})
 
 $('#settingsView').addEventListener('click', (event) => {
   const button = event.target.closest('[data-settings-action]')

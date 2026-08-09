@@ -161,6 +161,24 @@
       font-weight: 500;
     }
 
+    .capture-monitor-link {
+      width: calc(100% + 34px);
+      min-height: 68px;
+      margin: 0 -17px;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .capture-monitor-link:hover { background: rgba(var(--ink-rgb), .045); }
+    .capture-monitor-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+    .capture-monitor-link .micro,
+    .capture-monitor-link b { display: block; padding-left: 17px; }
+    .capture-monitor-link.needs_attention b { color: var(--status-error); }
+    .capture-monitor-link.unverified b { color: var(--accent-dark); }
+    .capture-monitor-link.observed b { color: var(--status-good); }
+
     .control-band {
       min-height: 49px;
       display: grid;
@@ -423,6 +441,11 @@
       background: var(--accent);
       display: inline-block;
     }
+    .capture-monitor-link.needs_attention .status-dot { background: var(--status-error); }
+    .capture-monitor-link.unverified .status-dot { background: var(--accent); }
+    .capture-monitor-link.observed .status-dot { background: var(--status-good); }
+    .capture-monitor-link.off .status-dot,
+    .capture-monitor-link.not_detected .status-dot { background: var(--muted); }
 
     .module-grid {
       display: grid;
@@ -1873,6 +1896,50 @@
     .settings-segmented .settings-button { border: 0; border-left: 1px solid var(--ink); }
     .settings-segmented .settings-button:first-child { border-left: 0; }
 
+    .capture-monitor-summary {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border: 1px solid var(--line-dark);
+    }
+    .capture-channel {
+      position: relative;
+      min-width: 0;
+      padding: 12px 13px 11px 17px;
+      border-left: 1px solid var(--line);
+    }
+    .capture-channel:first-child { border-left: 0; }
+    .capture-channel::before {
+      content: '';
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+      background: var(--muted);
+    }
+    .capture-channel.observed::before { background: var(--status-good); }
+    .capture-channel.unverified::before { background: var(--accent); }
+    .capture-channel.needs_attention::before { background: var(--status-error); }
+    .capture-channel span,
+    .capture-channel strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .capture-channel span {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 7.5px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .capture-channel strong {
+      margin-top: 5px;
+      font-family: var(--sans);
+      font-size: 10px;
+      font-weight: 600;
+    }
+
     .settings-advanced { margin-top: 22px; border: 1px solid var(--line-dark); background: var(--paper); }
     .settings-advanced > summary {
       min-height: 64px;
@@ -1903,6 +1970,9 @@
       padding: 20px 20px 20px 26px;
       border-top: 1px solid var(--line-dark);
       background: var(--paper-hi);
+      grid-template-areas:
+        "identity diagnostic path"
+        "identity policy actions";
     }
     .provider-location:first-child { border-top: 0; }
     .provider-location::before {
@@ -1910,9 +1980,17 @@
       position: absolute;
       inset: 0 auto 0 0;
       width: 5px;
-      background: var(--status-good);
+      background: var(--muted);
     }
-    .provider-location.missing::before { background: var(--accent); }
+    .provider-location.observed::before { background: var(--status-good); }
+    .provider-location.unverified::before { background: var(--accent); }
+    .provider-location.needs_attention::before { background: var(--status-error); }
+    .provider-identity { grid-area: identity; }
+    .provider-location > .settings-path { grid-area: path; }
+    .provider-location > .settings-segmented { grid-area: policy; justify-self: start; }
+    .capture-diagnostic { grid-area: diagnostic; min-width: 0; }
+    .capture-diagnostic strong { font-family: var(--sans); font-size: 11px; font-weight: 600; }
+    .capture-diagnostic p { overflow-wrap: anywhere; }
     .provider-status {
       display: inline-flex;
       align-items: center;
@@ -1925,8 +2003,8 @@
       text-transform: uppercase;
     }
     .provider-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--status-good); }
-    .provider-location.missing .provider-status::before { background: var(--accent); }
-    .provider-actions { display: flex; gap: 7px; }
+    .provider-location.not_detected .provider-status::before { background: var(--muted); }
+    .provider-actions { grid-area: actions; display: flex; justify-self: end; gap: 7px; }
     .settings-repair { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18px 0 0; }
     .settings-status { min-height: 18px; margin-top: 14px; color: var(--status-good); font-family: var(--mono); font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
     .settings-status.error { color: var(--status-error); }
@@ -2190,6 +2268,14 @@
       .settings-head { grid-template-columns: 1fr; gap: 12px; }
       .settings-row,
       .provider-location { grid-template-columns: 1fr; gap: 14px; }
+      .provider-location {
+        grid-template-areas:
+          "identity"
+          "diagnostic"
+          "path"
+          "policy"
+          "actions";
+      }
       .settings-row > .settings-button,
       .provider-actions { justify-self: start; }
     }
@@ -2239,6 +2325,9 @@
       .settings-view { padding: 28px 14px 42px; }
       .settings-advanced-body { padding-left: 12px; padding-right: 12px; }
       .settings-segmented { display: grid; }
+      .capture-monitor-summary { grid-template-columns: 1fr; }
+      .capture-channel { border-top: 1px solid var(--line); border-left: 0; }
+      .capture-channel:first-child { border-top: 0; }
       .settings-segmented .settings-button { border-left: 0; border-top: 1px solid var(--ink); }
       .settings-segmented .settings-button:first-child { border-top: 0; }
       .settings-repair { align-items: flex-start; flex-direction: column; }
@@ -2304,7 +2393,11 @@
       <div class="top-meta">
         <div><span class="micro">Machine</span><b>CHI-W11-01</b></div>
         <div><span class="micro">Snapshot</span><b>24 JUL 2026</b></div>
-        <div><span class="micro"><span class="status-dot"></span>State</span><b>LIVE / 14:32</b></div>
+        <div>
+          <button class="capture-monitor-link not_detected" type="button" data-capture-monitor-link aria-label="Open capture monitor in Settings">
+            <span class="micro"><span class="status-dot"></span>Capture</span><b id="globalCaptureStatus">CHECKING</b>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -2655,6 +2748,11 @@
               <button class="settings-button" data-settings-action="capture-policy" data-strategy="continuous">Continuous</button>
               <button class="settings-button" data-settings-action="capture-policy" data-strategy="batch">Batch sync</button>
             </div>
+          </section>
+          <section class="settings-row">
+            <div><h2>Capture monitor</h2><p>Local Windows and macOS configuration plus observed hook delivery for each agent.</p></div>
+            <div class="capture-monitor-summary" id="captureMonitorSummary" aria-live="polite">Loading capture health…</div>
+            <button class="settings-button" id="captureMonitorRepair" data-settings-action="repair-capture" hidden>Repair setup</button>
           </section>
         </div>
 
