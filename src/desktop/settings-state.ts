@@ -1,6 +1,11 @@
 import { existsSync } from "node:fs";
 import type { AppConfig } from "../types/config.js";
-import { resolvedCaptureMode } from "../types/config.js";
+import {
+  resolvedCapturePolicy,
+  resolvedCaptureStrategy,
+  type CapturePolicy,
+  type CaptureStrategy,
+} from "../types/config.js";
 import { allProviders } from "../providers/registry.js";
 import type { ResolvedUsageRoot } from "../utils/usage-root.js";
 import {
@@ -9,6 +14,10 @@ import {
 } from "../utils/provider-data-roots.js";
 import { homeDir } from "../utils/paths.js";
 import type { ProviderName } from "../types/provider.js";
+import {
+  readCaptureHealth,
+  type CaptureHealth,
+} from "../utils/capture-health.js";
 
 export interface ProviderLocationSetting {
   provider: ProviderName;
@@ -18,11 +27,14 @@ export interface ProviderLocationSetting {
   environmentVariable: string;
   available: boolean;
   sessions: number;
+  captureStrategy: CaptureStrategy;
+  captureOverride: boolean;
+  captureHealth: CaptureHealth | null;
 }
 
 export interface DesktopSettingsState {
   ledger: ResolvedUsageRoot;
-  captureMode: "automatic" | "on-open";
+  capturePolicy: CapturePolicy;
   providers: ProviderLocationSetting[];
 }
 
@@ -41,16 +53,21 @@ export async function buildDesktopSettingsState(
     } catch {
       // A settings diagnostic must not prevent the page from opening.
     }
+    const strategy = resolvedCaptureStrategy(config, root.provider);
+    const captureHealth = await readCaptureHealth(root.provider, environment);
     return {
       ...root,
       available: existsSync(root.root),
       sessions,
+      captureStrategy: strategy,
+      captureOverride: config.capturePolicy?.providers?.[root.provider] !== undefined,
+      captureHealth,
     };
   }));
 
   return {
     ledger,
-    captureMode: resolvedCaptureMode(config),
+    capturePolicy: resolvedCapturePolicy(config),
     providers: locations,
   };
 }

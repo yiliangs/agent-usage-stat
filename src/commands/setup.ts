@@ -11,6 +11,7 @@ import {
   installTerminalWrappers,
   hasTerminalWrappers,
   removeTerminalWrappers,
+  type WrappedCommand,
 } from "../core/terminal-wrappers.js";
 import {
   createAgentIntegrations,
@@ -18,9 +19,10 @@ import {
 } from "../integrations/agent-integrations.js";
 import { hookExecutablePaths } from "../integrations/hook-command.js";
 import {
-  resolvedCaptureMode,
+  resolvedCaptureStrategy,
   type AppConfig,
 } from "../types/config.js";
+import type { ProviderName } from "../types/provider.js";
 
 export { detectInstalledAgents } from "../integrations/agent-integrations.js";
 
@@ -83,7 +85,6 @@ export class SetupCommand {
       );
     }
 
-    const captureMode = resolvedCaptureMode(existing);
     const suggestedRoot = resolveUsageRoot(existing).root;
     const answers = dataRootOption
       ? { dataRoot: dataRootOption }
@@ -122,27 +123,34 @@ export class SetupCommand {
       await this.configManager.saveConfig(config);
       spinner.text = "Usage folder ready...";
 
-      if (captureMode === "automatic") {
-        for (const agent of agents) {
+      const continuousAgents = agents.filter((agent) =>
+        resolvedCaptureStrategy(config, agent.provider) === "continuous"
+      );
+      for (const integration of integrations) {
+        if (
+          integration.isInstalled() &&
+          resolvedCaptureStrategy(config, integration.provider) === "continuous"
+        ) {
+          const agent = integration;
           const result = await agent.install();
           if (agent.provider === "codex") {
             codexNeedsTrust = result.needsTrust;
           }
-        }
-        spinner.text = "Agent hooks installed...";
-      } else {
-        for (const integration of integrations) {
+        } else {
           await integration.remove();
         }
-        spinner.text = "Agent hooks removed...";
       }
+      spinner.text = continuousAgents.length > 0
+        ? "Best-effort agent hooks configured..."
+        : "Agent hooks removed...";
 
-      const terminal = captureMode === "on-open"
+      const continuousProviders = continuousAgents.map((agent) => agent.provider);
+      const terminal = continuousProviders.length === 0
         ? await this.configureTerminalMessage(false)
         : configureTerminal
-          ? await this.configureTerminalMessage(terminalMessage)
+          ? await this.configureTerminalMessage(terminalMessage, continuousProviders)
           : migrateTerminal
-            ? await this.migrateTerminalMessage()
+            ? await this.migrateTerminalMessage(continuousProviders)
             : {};
       terminalProfile = terminal.profile;
       terminalWarning = terminal.warning;
@@ -150,12 +158,13 @@ export class SetupCommand {
       spinner.succeed("Initialization complete");
 
       for (const agent of agents) {
-        const status = captureMode === "automatic"
-          ? "connected"
-          : "available for import";
+        const continuous = resolvedCaptureStrategy(config, agent.provider) === "continuous";
+        const status = continuous
+          ? "continuous hook configured (best effort)"
+          : "available for batch sync";
         console.log(chalk.green(`\n${agent.label} ${status}`));
         if (
-          captureMode === "automatic" &&
+          continuous &&
           agent.provider === "codex" &&
           codexNeedsTrust
         ) {
@@ -167,7 +176,7 @@ export class SetupCommand {
         }
       }
       if (terminalProfile) {
-        const terminalEnabled = captureMode === "automatic" && terminalMessage;
+        const terminalEnabled = continuousProviders.length > 0 && terminalMessage;
         const action = terminalEnabled ? "enabled" : "disabled";
         console.log(
           chalk.green(`\nSame-terminal usage message ${action}: ${terminalProfile}`),
@@ -221,6 +230,7 @@ export class SetupCommand {
 
   private async configureTerminalMessage(
     enabled: boolean,
+    providers: ProviderName[] = [],
   ): Promise<{ profile?: string; warning?: string }> {
     const profile = detectShellProfile();
     if (!profile) {
@@ -230,7 +240,12 @@ export class SetupCommand {
     try {
       if (enabled) {
         const { windowsBin, windowsUsesNode } = hookExecutablePaths();
-        await installTerminalWrappers(profile, windowsBin, windowsUsesNode);
+        await installTerminalWrappers(
+          profile,
+          windowsBin,
+          windowsUsesNode,
+          wrapperCommands(providers),
+        );
       } else {
         await removeTerminalWrappers(profile);
       }
@@ -247,13 +262,13 @@ export class SetupCommand {
     }
   }
 
-  private async migrateTerminalMessage(): Promise<{
+  private async migrateTerminalMessage(providers: ProviderName[]): Promise<{
     profile?: string;
     warning?: string;
   }> {
     const profile = detectShellProfile();
     if (!profile || !(await hasTerminalWrappers(profile))) return {};
-    return this.configureTerminalMessage(true);
+    return this.configureTerminalMessage(true, providers);
   }
 
   private integrationsFor(config: AppConfig): AgentIntegration[] {
@@ -264,4 +279,13 @@ export class SetupCommand {
       config,
     );
   }
+}
+
+function wrapperCommands(providers: ProviderName[]): WrappedCommand[] {
+  const commands: WrappedCommand[] = [];
+  for (const provider of providers) {
+    if (provider === "claude") commands.push("claude", "claudex");
+    else commands.push(provider);
+  }
+  return commands;
 }

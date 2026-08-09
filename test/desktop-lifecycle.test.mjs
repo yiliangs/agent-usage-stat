@@ -13,7 +13,7 @@ import {
   ledgerLocationPrompt,
   ledgerMigrationPrompt,
 } from "../dist/desktop/ledger-onboarding.js";
-import { captureModePrompt } from "../dist/desktop/capture-mode.js";
+import { capturePolicyPrompt } from "../dist/desktop/capture-policy.js";
 
 const require = createRequire(import.meta.url);
 
@@ -64,13 +64,13 @@ test("changing folders offers migration and preserves the original by default", 
   );
 });
 
-test("first-run capture choice recommends durable hooks and explains hookless risk", () => {
-  assert.deepEqual(captureModePrompt(), {
+test("first-run capture choice treats hooks as best effort and explains recovery", () => {
+  assert.deepEqual(capturePolicyPrompt(), {
     message: "How should usage be captured?",
     detail:
-      "Automatic capture (recommended) records completed sessions even while Agent Usage Stat is closed. It installs hooks in detected agents.\n\n" +
-      "Import when the app opens installs no hooks. Sessions deleted by an agent before the next import cannot be recovered.",
-    buttons: ["Use Automatic Capture", "Import When App Opens"],
+      "Continuous capture (recommended) uses agent hooks to checkpoint usage while you work. Hooks are best effort, so Agent Usage Stat also reconciles transcripts whenever the application opens and when you choose Sync now.\n\n" +
+      "Batch sync installs no hooks. Sessions deleted by an agent before the next application sync cannot be recovered.",
+    buttons: ["Use Continuous Capture", "Use Batch Sync"],
   });
 });
 
@@ -95,11 +95,17 @@ test("settings separate common controls from advanced agent locations", async ()
 
   assert.match(html, /data-portal-view="settings"/);
   assert.match(html, /Usage ledger folder/);
-  assert.match(html, /Capture mode/);
+  assert.match(html, /Capture policy/);
+  assert.match(html, />Continuous</);
+  assert.match(html, />Batch sync</);
   assert.match(html, /<details[^>]*class="settings-advanced"/);
-  assert.match(html, /Advanced agent locations/);
+  assert.match(html, /Per-agent capture and locations/);
   assert.match(script, /\/api\/settings/);
-  assert.match(script, /Reset to automatic/);
+  assert.match(script, /Best-effort hook/);
+  assert.match(script, /Last hook attempt/);
+  assert.match(script, /Last successful checkpoint/);
+  assert.match(script, /data-settings-action="capture-policy"/);
+  assert.match(script, /Use default/);
 });
 
 test("Squirrel first run enters the application instead of quitting", () => {

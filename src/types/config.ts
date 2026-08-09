@@ -1,6 +1,11 @@
 import type { ProviderName } from "./provider.js";
 
-export type CaptureMode = "automatic" | "on-open";
+export type CaptureStrategy = "continuous" | "batch";
+
+export interface CapturePolicy {
+  default: CaptureStrategy;
+  providers?: Partial<Record<ProviderName, CaptureStrategy>>;
+}
 
 export interface AppConfig {
   version: string;
@@ -10,17 +15,34 @@ export interface AppConfig {
    * folder to combine usage from several machines.
    */
   dataRoot?: string;
-  /** How provider transcripts are reconciled into the durable ledger. */
-  captureMode?: CaptureMode;
+  /** Default capture strategy plus optional per-provider overrides. */
+  capturePolicy?: CapturePolicy;
   /** Explicit provider state roots; omitted providers resolve automatically. */
   providerDataRoots?: Partial<Record<ProviderName, string>>;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
   version: "2.0.0",
-  captureMode: "automatic",
+  capturePolicy: { default: "continuous" },
 };
 
-export const resolvedCaptureMode = (
-  config: Pick<AppConfig, "captureMode">,
-): CaptureMode => config.captureMode === "on-open" ? "on-open" : "automatic";
+export function resolvedCaptureStrategy(
+  config: Pick<AppConfig, "capturePolicy">,
+  provider?: ProviderName,
+): CaptureStrategy {
+  const defaultStrategy = config.capturePolicy?.default === "batch"
+    ? "batch"
+    : "continuous";
+  if (!provider) return defaultStrategy;
+  return config.capturePolicy?.providers?.[provider] ?? defaultStrategy;
+}
+
+export function resolvedCapturePolicy(
+  config: Pick<AppConfig, "capturePolicy">,
+): CapturePolicy {
+  const providers = config.capturePolicy?.providers;
+  return {
+    default: resolvedCaptureStrategy(config),
+    ...(providers && Object.keys(providers).length > 0 ? { providers } : {}),
+  };
+}

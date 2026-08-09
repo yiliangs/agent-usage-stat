@@ -18,7 +18,12 @@ import {
   installedHelperStatePath,
 } from "../core/application-paths.js";
 import { ConfigManager } from "../core/config-manager.js";
-import { resolvedCaptureMode, type CaptureMode } from "../types/config.js";
+import {
+  resolvedCapturePolicy,
+  resolvedCaptureStrategy,
+  type CapturePolicy,
+  type CaptureStrategy,
+} from "../types/config.js";
 import type { ProviderName } from "../types/provider.js";
 import { createAgentIntegrations } from "../integrations/agent-integrations.js";
 import { homeDir } from "../utils/paths.js";
@@ -122,7 +127,7 @@ export class HelperRuntime {
     const statePath = desktopSetupStatePath();
     const usageRoot = resolveUsageRootFromDisk().root;
     const config = await this.configManager.loadConfig();
-    const captureMode = resolvedCaptureMode(config);
+    const capturePolicy = resolvedCapturePolicy(config);
     const providerDataRoots = Object.fromEntries(
       resolveProviderDataRoots(config).map((item) => [item.provider, item.root]),
     );
@@ -131,12 +136,13 @@ export class HelperRuntime {
       try {
         const state = JSON.parse(await readFile(statePath, "utf8")) as {
           dataRoot?: string;
-          captureMode?: CaptureMode;
+          capturePolicy?: CapturePolicy;
           providerDataRoots?: Record<string, string>;
         };
         if (
+          state.capturePolicy &&
           state.dataRoot === usageRoot &&
-          resolvedCaptureMode(state) === captureMode &&
+          sameCapturePolicy(resolvedCapturePolicy(state), capturePolicy) &&
           sameProviderDataRoots(state.providerDataRoots, providerDataRoots)
         ) {
           return { configured: true, codexNeedsTrust: false };
@@ -176,7 +182,7 @@ export class HelperRuntime {
         version: app.getVersion(),
         configuredAt: new Date().toISOString(),
         dataRoot: usageRoot,
-        captureMode,
+        capturePolicy,
         providerDataRoots,
         helper: installedHelperPath(),
       }, null, 2),
@@ -192,8 +198,31 @@ export class HelperRuntime {
     await this.configure("dataRoot", root);
   }
 
-  async configureCaptureMode(mode: CaptureMode): Promise<void> {
-    await this.configure("captureMode", mode);
+  async configureCapturePolicy(
+    strategy: CaptureStrategy | undefined,
+    provider?: ProviderName,
+  ): Promise<void> {
+    const config = await this.configManager.loadConfig();
+    const current = resolvedCapturePolicy(config);
+    if (!provider) {
+      if (!strategy) throw new Error("A default capture strategy is required.");
+      await this.configManager.saveConfig({
+        ...config,
+        capturePolicy: { ...current, default: strategy },
+      });
+      return;
+    }
+
+    const providers = { ...current.providers };
+    if (!strategy) delete providers[provider];
+    else providers[provider] = strategy;
+    await this.configManager.saveConfig({
+      ...config,
+      capturePolicy: {
+        default: current.default,
+        ...(Object.keys(providers).length > 0 ? { providers } : {}),
+      },
+    });
   }
 
   async configureProviderDataRoot(
@@ -227,8 +256,8 @@ export class HelperRuntime {
     await this.configManager.saveConfig(next);
   }
 
-  async captureMode(): Promise<CaptureMode> {
-    return resolvedCaptureMode(await this.configManager.loadConfig());
+  async captureStrategy(provider?: ProviderName): Promise<CaptureStrategy> {
+    return resolvedCaptureStrategy(await this.configManager.loadConfig(), provider);
   }
 
   private async configure(key: string, value: string): Promise<void> {
@@ -289,6 +318,14 @@ function sameProviderDataRoots(
   return ["claude", "codex", "copilot"].every(
     (provider) => left[provider] === right[provider],
   );
+}
+
+function sameCapturePolicy(left: CapturePolicy, right: CapturePolicy): boolean {
+  return left.default === right.default &&
+    ["claude", "codex", "copilot"].every((provider) =>
+      left.providers?.[provider as ProviderName] ===
+        right.providers?.[provider as ProviderName]
+    );
 }
 
 async function filesEqual(left: string, right: string): Promise<boolean> {

@@ -9,6 +9,7 @@ import {
 
 interface ClaudeSettings {
   hooks?: {
+    Stop?: ClaudeHookGroup[];
     SessionEnd?: Array<{
       hooks: Array<{
         type: string;
@@ -19,6 +20,17 @@ interface ClaudeSettings {
   };
   [key: string]: unknown;
 }
+
+interface ClaudeHookGroup {
+  hooks: Array<{
+    type: string;
+    command: string;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+const CAPTURE_EVENTS = ["Stop", "SessionEnd"] as const;
 
 export async function installClaudeHook(settingsPath: string): Promise<void> {
   const claudeDir = join(settingsPath, "..");
@@ -38,25 +50,21 @@ export async function installClaudeHook(settingsPath: string): Promise<void> {
   }
 
   settings.hooks ||= {};
-  settings.hooks.SessionEnd ||= [];
-
   const hookCommand = captureHookCommands().unix;
-  const existingHook = settings.hooks.SessionEnd.find((group) =>
-    group.hooks.some((hook) => isAgentUsageStatCommand(hook.command)),
-  );
-
-  if (existingHook) {
-    if (existingHook.hooks.some((hook) => hook.command === hookCommand)) return;
-    console.log(chalk.yellow("\nClaude Code hook already installed; updating it."));
-    settings.hooks.SessionEnd = settings.hooks.SessionEnd.filter(
-      (group) =>
-        !group.hooks.some((hook) => isAgentUsageStatCommand(hook.command)),
-    );
+  let updating = false;
+  for (const event of CAPTURE_EVENTS) {
+    const groups = (settings.hooks[event] ?? []) as ClaudeHookGroup[];
+    if (groups.some((group) =>
+      group.hooks.some((hook) => isAgentUsageStatCommand(hook.command))
+    )) updating = true;
+    settings.hooks[event] = withoutAgentUsageStatHooks(groups);
+    settings.hooks[event]!.push({
+      hooks: [{ type: "command", command: hookCommand }],
+    });
   }
-
-  settings.hooks.SessionEnd.push({
-    hooks: [{ type: "command", command: hookCommand }],
-  });
+  if (updating) {
+    console.log(chalk.yellow("\nClaude Code hooks already installed; updating them."));
+  }
   await writeFile(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
 }
 
@@ -71,13 +79,23 @@ export async function removeClaudeHook(settingsPath: string): Promise<void> {
     throw new Error("Failed to parse settings.json");
   }
 
-  if (!settings.hooks?.SessionEnd) return;
-  settings.hooks.SessionEnd = settings.hooks.SessionEnd.filter(
-    (group) =>
-      !group.hooks.some((hook) => isAgentUsageStatCommand(hook.command)),
-  );
-  if (settings.hooks.SessionEnd.length === 0) delete settings.hooks.SessionEnd;
+  if (!settings.hooks) return;
+  for (const event of CAPTURE_EVENTS) {
+    const groups = (settings.hooks[event] ?? []) as ClaudeHookGroup[];
+    const remaining = withoutAgentUsageStatHooks(groups);
+    if (remaining.length > 0) settings.hooks[event] = remaining;
+    else delete settings.hooks[event];
+  }
   if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
 
   await writeFile(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+}
+
+function withoutAgentUsageStatHooks(groups: ClaudeHookGroup[]): ClaudeHookGroup[] {
+  return groups
+    .map((group) => ({
+      ...group,
+      hooks: group.hooks.filter((hook) => !isAgentUsageStatCommand(hook.command)),
+    }))
+    .filter((group) => group.hooks.length > 0);
 }

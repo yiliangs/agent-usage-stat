@@ -58,12 +58,14 @@ export function runDetachShim(options: DetachShimOptions): void {
   // by the transcript's entrypoint
   // ("sdk-cli"); interactive runs report "cli". Override with
   // AGENT_USAGE_STAT_ALL_SESSIONS=1.
-  if (
-    hookEventName(raw) === "SessionEnd" &&
-    !process.env.AGENT_USAGE_STAT_ALL_SESSIONS
-  ) {
+  if (!process.env.AGENT_USAGE_STAT_ALL_SESSIONS) {
+    const event = hookEventName(raw);
     const entrypoint = hookTranscriptEntrypoint(raw);
-    if (entrypoint && entrypoint.startsWith("sdk")) {
+    if (
+      (event === "Stop" || event === "SessionEnd") &&
+      entrypoint &&
+      entrypoint.startsWith("sdk")
+    ) {
       logHookEvent(`shim skip: non-interactive entrypoint=${entrypoint}`);
       return;
     }
@@ -141,7 +143,7 @@ export function runDetachShim(options: DetachShimOptions): void {
 }
 
 /**
- * Peek at the SessionEnd hook JSON (raw stdin) to find the transcript, then
+ * Peek at the hook JSON (raw stdin) to find the transcript, then
  * read the head of that transcript for its `entrypoint`. Interactive runs
  * report "cli"; headless SDK runs report "sdk-cli". Only the first chunk is
  * read — these transcripts can be hundreds of MB. Returns null when it can't

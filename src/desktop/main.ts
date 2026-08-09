@@ -41,8 +41,8 @@ import {
   sameUsageRoot,
   usageLedgerHasRecords,
 } from "../core/usage-ledger-migration.js";
-import { captureModePrompt } from "./capture-mode.js";
-import type { CaptureMode } from "../types/config.js";
+import { capturePolicyPrompt } from "./capture-policy.js";
+import type { CaptureStrategy } from "../types/config.js";
 import type { ProviderName } from "../types/provider.js";
 import { buildDesktopSettingsState } from "./settings-state.js";
 
@@ -145,10 +145,10 @@ async function openFirstRunWindow(): Promise<void> {
       await updateStartupScreen(
         window,
         "Choosing capture behavior",
-        "Choose between automatic background capture and import on application launch.",
+        "Choose between continuous checkpoints and batch synchronization.",
       );
-      await helperRuntime.configureCaptureMode(
-        (await chooseCaptureMode(window)) ?? "automatic",
+      await helperRuntime.configureCapturePolicy(
+        (await chooseCapturePolicy(window)) ?? "continuous",
       );
     }
     await updateStartupScreen(
@@ -204,11 +204,11 @@ async function chooseFirstRunUsageRoot(window: BrowserWindow): Promise<string> {
   }
 }
 
-async function chooseCaptureMode(
+async function chooseCapturePolicy(
   window: BrowserWindow,
   cancellable = false,
-): Promise<CaptureMode | null> {
-  const prompt = captureModePrompt();
+): Promise<CaptureStrategy | null> {
+  const prompt = capturePolicyPrompt();
   const buttons = cancellable
     ? [...prompt.buttons, "Cancel"]
     : prompt.buttons;
@@ -223,7 +223,7 @@ async function chooseCaptureMode(
     noLink: true,
   });
   if (cancellable && choice.response === 2) return null;
-  return choice.response === 0 ? "automatic" : "on-open";
+  return choice.response === 0 ? "continuous" : "batch";
 }
 
 async function synchronizeCachedWindow(window: BrowserWindow): Promise<void> {
@@ -424,9 +424,12 @@ async function repairCaptureSetup(): Promise<void> {
   }
 }
 
-async function applyCaptureMode(mode: CaptureMode): Promise<void> {
-  if (mode === await helperRuntime.captureMode()) return;
-  await helperRuntime.configureCaptureMode(mode);
+async function applyCapturePolicy(
+  strategy: CaptureStrategy | undefined,
+  provider?: ProviderName,
+): Promise<void> {
+  if (!provider && strategy === await helperRuntime.captureStrategy()) return;
+  await helperRuntime.configureCapturePolicy(strategy, provider);
   await helperRuntime.resetSetup();
   if (!(await ensureDesktopSetup(true))) {
     throw new Error("Capture setup is incomplete. Use Repair capture setup.");
@@ -484,16 +487,29 @@ async function handlePortalRequest(
 
     const body = await request.json() as {
       action?: string;
-      mode?: CaptureMode;
+      strategy?: CaptureStrategy;
+      inherit?: boolean;
       provider?: ProviderName;
     };
     if (body.action === "change-ledger") {
       await chooseDataFolder(false);
-    } else if (body.action === "capture-mode") {
-      if (!body.mode || !["automatic", "on-open"].includes(body.mode)) {
-        throw new Error("Invalid capture mode.");
+    } else if (body.action === "capture-policy") {
+      if (
+        !body.inherit &&
+        (!body.strategy || !["continuous", "batch"].includes(body.strategy))
+      ) {
+        throw new Error("Invalid capture strategy.");
       }
-      await applyCaptureMode(body.mode);
+      if (body.provider !== undefined && !isProviderName(body.provider)) {
+        throw new Error("Invalid provider.");
+      }
+      if (body.inherit && !body.provider) {
+        throw new Error("Only an agent policy can inherit the default.");
+      }
+      await applyCapturePolicy(
+        body.inherit ? undefined : body.strategy,
+        body.provider,
+      );
     } else if (body.action === "choose-provider") {
       if (!isProviderName(body.provider)) throw new Error("Invalid provider.");
       await chooseProviderDataRoot(body.provider);

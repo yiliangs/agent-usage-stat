@@ -8,7 +8,7 @@
 // under src/providers/ implementing this interface; nothing downstream
 // changes except reading the `provider` discriminator.
 //
-// Deliberately NOT abstracted here: the SessionEnd hook trigger (detach shim,
+// Deliberately NOT abstracted here: host hook triggers (detach shim,
 // setup). Hook wiring is per-host-tool by nature and the shim must stay
 // builtins-only — provider dispatch happens in the worker, never the shim.
 

@@ -1,9 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { UsageCalculator } from "../dist/providers/claude/usage-calculator.js";
+import { ClaudeProvider } from "../dist/providers/claude/provider.js";
 
 function assistant(
   id,
@@ -23,6 +33,76 @@ function assistant(
     },
   });
 }
+
+test("Claude checkpoints process only appended transcript bytes across the session tree", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-claude-incremental-"));
+  const cache = join(dir, "cache");
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const projectDir = join(dir, "projects", "demo");
+  const path = join(projectDir, `${sessionId}.jsonl`);
+  const subagentDir = join(projectDir, sessionId, "subagents");
+  const subagent = join(subagentDir, "agent-one.jsonl");
+  const priorCacheRoot = process.env.AGENT_USAGE_STAT_CACHE_ROOT;
+  process.env.AGENT_USAGE_STAT_CACHE_ROOT = cache;
+  await mkdir(subagentDir, { recursive: true });
+  await writeFile(
+    path,
+    [
+      JSON.stringify({
+        type: "user",
+        timestamp: "2026-08-09T10:00:00.000Z",
+        cwd: "C:\\work\\demo",
+        message: { role: "user", content: "First prompt" },
+      }),
+      assistant("main-one", {
+        input_tokens: 1_000,
+        output_tokens: 100,
+      }, "claude-sonnet-4-6", "2026-08-09T10:00:01.000Z"),
+    ].join("\n") + "\n",
+  );
+  await writeFile(
+    subagent,
+    assistant("sub-one", {
+      input_tokens: 2_000,
+      output_tokens: 200,
+    }, "claude-sonnet-4-6", "2026-08-09T10:00:02.000Z") + "\n",
+  );
+
+  try {
+    const provider = new ClaudeProvider();
+    const first = await provider.calculateUsage(path, sessionId);
+    assert.equal(first.totalTokens, 3_300);
+
+    const appended = assistant("main-two", {
+      input_tokens: 3_000,
+      output_tokens: 300,
+    }, "claude-sonnet-4-6", "2026-08-09T10:00:03.000Z") + "\n";
+    await appendFile(path, appended + '{"type":"user"');
+
+    const second = await provider.calculateUsage(path, sessionId);
+    const transcript = await provider.parseTranscript(path, sessionId);
+    assert.equal(second.totalTokens, 6_600);
+    assert.deepEqual(second.turns.map((turn) => turn.id), [
+      "main-one",
+      "sub-one",
+      "main-two",
+    ]);
+    assert.equal(transcript.firstPrompt, "First prompt");
+    assert.equal(transcript.projectName, "demo");
+
+    const [cacheFile] = (await readdir(join(cache, "claude")))
+      .filter((name) => name.endsWith(".json"));
+    const cacheState = JSON.parse(
+      await readFile(join(cache, "claude", cacheFile), "utf8"),
+    );
+    assert.ok(cacheState.lastReadBytes > 0);
+    assert.ok(cacheState.lastReadBytes < (await stat(path)).size);
+  } finally {
+    if (priorCacheRoot === undefined) delete process.env.AGENT_USAGE_STAT_CACHE_ROOT;
+    else process.env.AGENT_USAGE_STAT_CACHE_ROOT = priorCacheRoot;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test("Claude Opus 5 aliases use current Anthropic pricing", async () => {
   const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-opus-5-"));

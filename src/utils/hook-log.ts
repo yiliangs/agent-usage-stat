@@ -4,7 +4,7 @@ import { join } from "path";
 /**
  * Append a one-line event to ~/.agent-usage-stat/hook.log. Fails silently so
  * logging never breaks the hook. The log is the only window into hook
- * behavior because SessionEnd has no console.
+ * behavior because detached hooks have no console.
  *
  * Lives in its own module (Node built-ins only) so the detach shim can import
  * it without dragging in provider parsers or worker code. See detach-shim.ts.

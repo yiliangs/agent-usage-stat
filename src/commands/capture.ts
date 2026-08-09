@@ -20,6 +20,7 @@ import { resolveUsageRoot } from "../utils/usage-root.js";
 import type { HookData } from "../types/session-hook.js";
 import type { SessionProvider } from "../types/provider.js";
 import type { CaptureOutcome } from "../utils/capture-run.js";
+import { recordCaptureHealth } from "../utils/capture-health.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -95,6 +96,7 @@ export class CaptureCommand {
 
       if (sessionData.totalTokens <= 0) {
         outcome = { status: "no_usage", reason: "zero_tokens" };
+        await this.recordHookHealth(hookData, provider, outcome);
         spinner.info("No token usage to record.");
         logHookEvent(`skip zero-token session=${sessionId ?? "?"}`);
         return;
@@ -122,6 +124,7 @@ export class CaptureCommand {
         total_cost_usd: Number(sessionData.totalCost.toFixed(6)),
         shard_path: shardPath,
       };
+      await this.recordHookHealth(hookData, provider, outcome);
       logHookEvent(
         `done provider=${provider.name} tokens=${sessionData.totalTokens} cost=${sessionData.totalCost.toFixed(6)} shard=${shardPath}`,
       );
@@ -129,6 +132,7 @@ export class CaptureCommand {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       outcome = { status: "failed", message };
+      await this.recordHookHealth(hookData, provider, outcome);
       spinner.fail("Failed to record usage.");
       logHookEvent(`fatal: ${message}`);
       if (!options.quiet) console.error(chalk.red(`Error: ${message}`));
@@ -200,6 +204,25 @@ export class CaptureCommand {
       await unlink(path);
     } catch {
       // Best-effort cleanup. A matching result still resolves correlated work.
+    }
+  }
+
+  private async recordHookHealth(
+    hookData: HookData | null,
+    provider: SessionProvider | undefined,
+    outcome: CaptureOutcome,
+  ): Promise<void> {
+    if (!hookData?.hook_event_name || !provider) return;
+    try {
+      await recordCaptureHealth({
+        provider: provider.name,
+        hookEventName: hookData.hook_event_name,
+        status: outcome.status,
+        ...(outcome.status === "failed" ? { message: outcome.message } : {}),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      logHookEvent(`health update failed provider=${provider.name}: ${message}`);
     }
   }
 

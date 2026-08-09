@@ -2638,7 +2638,7 @@
       <div class="settings-shell">
         <header class="settings-head">
           <div><span class="micro">Application control</span><h1>Settings</h1></div>
-          <p>Choose where durable usage history lives and how completed sessions reach it. Provider-owned data stays in place.</p>
+          <p>Choose where durable usage history lives and how agent checkpoints reach it. Provider-owned data stays in place.</p>
         </header>
 
         <div class="settings-section-label">Common</div>
@@ -2649,22 +2649,22 @@
             <button class="settings-button" data-settings-action="change-ledger">Change folder</button>
           </section>
           <section class="settings-row">
-            <div><h2>Capture mode</h2><p>Automatic capture remains the durable default.</p></div>
+            <div><h2>Capture policy</h2><p>Choose the default behavior. Per-agent overrides are available below.</p></div>
             <div class="settings-note" id="settingsCaptureNote">Loading capture configuration…</div>
-            <div class="settings-segmented" aria-label="Capture mode">
-              <button class="settings-button" data-settings-action="capture-mode" data-mode="automatic">Automatic</button>
-              <button class="settings-button" data-settings-action="capture-mode" data-mode="on-open">Import on open</button>
+            <div class="settings-segmented" aria-label="Default capture policy">
+              <button class="settings-button" data-settings-action="capture-policy" data-strategy="continuous">Continuous</button>
+              <button class="settings-button" data-settings-action="capture-policy" data-strategy="batch">Batch sync</button>
             </div>
           </section>
         </div>
 
         <details class="settings-advanced">
-          <summary>Advanced agent locations <span>Usually automatic</span></summary>
+          <summary>Per-agent capture and locations <span>Advanced</span></summary>
           <div class="settings-advanced-body">
             <p class="settings-note">These locations tell Agent Usage Stat where each agent already stores sessions. Changing a pointer does not move, rewrite, or delete provider-owned data.</p>
             <div class="provider-locations" id="settingsProviderLocations"></div>
             <div class="settings-repair">
-              <p class="settings-note">Reapply the selected capture mode if an agent updated or a connection was removed.</p>
+              <p class="settings-note">Reapply best-effort hooks if an agent updated or removed its configuration.</p>
               <button class="settings-button" data-settings-action="repair-capture">Repair capture setup</button>
             </div>
           </div>

@@ -50,6 +50,26 @@ test("the provider is inferred from transcript content", async () => {
   }
 });
 
+test("legacy hookless capture config migrates to batch without re-enabling hooks", async () => {
+  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-policy-migration-"));
+  const configPath = join(home, ".agent-usage-stat.config.json");
+  await writeFile(configPath, JSON.stringify({
+    version: "2.0.0",
+    captureMode: "on-open",
+  }));
+
+  try {
+    const shown = await runCli(["config", "--show"], home);
+    assert.equal(shown.code, 0, shown.output);
+    assert.match(shown.output, /Capture\s+batch/);
+    const migrated = JSON.parse(await readFile(configPath, "utf8"));
+    assert.deepEqual(migrated.capturePolicy, { default: "batch" });
+    assert.equal("captureMode" in migrated, false);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test(
   "setup asks for no provider and reuses the chosen folder",
   { skip: !["win32", "darwin"].includes(process.platform) },
@@ -85,7 +105,15 @@ test(
       assert.equal(copilotHooks.version, 1);
       assert.equal(copilotHooks.hooks.SessionEnd.length, 1);
       assert.match(copilotHooks.hooks.SessionEnd[0].powershell, /capture --detach --quiet/);
-      await readFile(join(home, ".claude", "settings.json"), "utf8");
+      const claudeSettings = JSON.parse(
+        await readFile(join(home, ".claude", "settings.json"), "utf8"),
+      );
+      assert.equal(claudeSettings.hooks.Stop.length, 1);
+      assert.equal(claudeSettings.hooks.SessionEnd.length, 1);
+      assert.equal(
+        claudeSettings.hooks.Stop[0].hooks[0].command,
+        claudeSettings.hooks.SessionEnd[0].hooks[0].command,
+      );
       const shellProfile = await readFile(
         join(home, "shell-profile.ps1"),
         "utf8",
@@ -117,7 +145,7 @@ test(
 );
 
 test(
-  "import-on-open setup removes automatic capture connections",
+  "batch setup removes continuous capture connections",
   { skip: !["win32", "darwin"].includes(process.platform) },
   async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-hookless-"));
@@ -136,13 +164,13 @@ test(
     await mkdir(join(home, ".copilot"));
 
     try {
-      const automatic = await runCli(["setup", "--data-root", dataRoot], home);
-      assert.equal(automatic.code, 0, automatic.output);
+      const continuous = await runCli(["setup", "--data-root", dataRoot], home);
+      assert.equal(continuous.code, 0, continuous.output);
       assert.equal(existsSync(copilotHook), true);
       assert.match(await readFile(shellProfile, "utf8"), /function global:codex/);
 
       const configured = await runCli(
-        ["config", "--set", "captureMode=on-open"],
+        ["config", "--set", "capturePolicy=batch"],
         home,
       );
       assert.equal(configured.code, 0, configured.output);
@@ -157,13 +185,61 @@ test(
       assert.equal(existsSync(copilotHook), false);
       assert.doesNotMatch(await readFile(shellProfile, "utf8"), /Agent Usage Stat/);
 
-      await runCli(["config", "--set", "captureMode=automatic"], home);
+      await runCli(["config", "--set", "capturePolicy=continuous"], home);
       const restored = await runCli(["setup", "--data-root", dataRoot], home);
       assert.equal(restored.code, 0, restored.output);
       assert.match(await readFile(claudeSettings, "utf8"), /agent-usage-stat/);
       assert.match(await readFile(codexHooks, "utf8"), /agent-usage-stat/);
       assert.equal(existsSync(copilotHook), true);
       assert.match(await readFile(shellProfile, "utf8"), /Agent Usage Stat/);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "capture policy can keep one agent continuous while the others use batch sync",
+  { skip: !["win32", "darwin"].includes(process.platform) },
+  async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-policy-"));
+    const dataRoot = join(home, "usage");
+    const claudeSettings = join(home, ".claude", "settings.json");
+    const codexHooks = join(home, ".codex", "hooks.json");
+    const copilotHook = join(
+      home,
+      ".copilot",
+      "hooks",
+      "agent-usage-stat.json",
+    );
+    const shellProfile = join(home, "shell-profile.ps1");
+    await mkdir(join(home, ".claude"));
+    await mkdir(join(home, ".codex"));
+    await mkdir(join(home, ".copilot"));
+
+    try {
+      const defaultPolicy = await runCli(
+        ["config", "--set", "capturePolicy=batch"],
+        home,
+      );
+      assert.equal(defaultPolicy.code, 0, defaultPolicy.output);
+      const claudePolicy = await runCli(
+        ["config", "--set", "capturePolicy.claude=continuous"],
+        home,
+      );
+      assert.equal(claudePolicy.code, 0, claudePolicy.output);
+
+      const setup = await runCli(["setup", "--data-root", dataRoot], home);
+      assert.equal(setup.code, 0, setup.output);
+      assert.match(await readFile(claudeSettings, "utf8"), /agent-usage-stat/);
+      assert.equal(existsSync(codexHooks), false);
+      assert.equal(existsSync(copilotHook), false);
+
+      const profile = await readFile(shellProfile, "utf8");
+      assert.match(profile, /function global:claude/);
+      assert.match(profile, /function global:claudex/);
+      assert.doesNotMatch(profile, /function global:codex/);
+      assert.doesNotMatch(profile, /function global:copilot/);
     } finally {
       await rm(home, { recursive: true, force: true });
     }

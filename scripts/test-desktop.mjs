@@ -112,7 +112,7 @@ try {
     join(home, ".agent-usage-stat", "desktop-setup.json"),
     "utf8",
   ));
-  assert.equal(setupState.captureMode, "automatic");
+  assert.deepEqual(setupState.capturePolicy, { default: "continuous" });
   assert.deepEqual(Object.keys(setupState.providerDataRoots).sort(), [
     "claude",
     "codex",
@@ -129,6 +129,9 @@ try {
     "utf8",
   );
   assert.match(claudeSettings, /agent-usage-stat-helper/);
+  const claudeHookConfig = JSON.parse(claudeSettings);
+  assert.equal(claudeHookConfig.hooks.Stop.length, 1);
+  assert.equal(claudeHookConfig.hooks.SessionEnd.length, 1);
   assert.match(codexHooks, /agent-usage-stat-helper/);
   assert.doesNotMatch(codexHooks, /node .*agent-usage-stat-helper/);
   assert.match(copilotHooks, /agent-usage-stat-helper/);

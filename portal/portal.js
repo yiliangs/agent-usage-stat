@@ -987,18 +987,18 @@ function applyPortalView() {
 
 function renderSettings() {
   if (!state.settings) return
-  const { ledger, captureMode, providers } = state.settings
+  const { ledger, capturePolicy, providers } = state.settings
   const ledgerSource = ledger.source === 'default'
     ? 'Local default'
     : ledger.source === 'detected'
       ? 'Detected synchronized ledger'
       : 'Selected folder'
   $('#settingsLedgerPath').innerHTML = `${escapeHtml(ledger.root)}<span class="settings-path-meta">${ledgerSource}</span>`
-  $('#settingsCaptureNote').textContent = captureMode === 'automatic'
-    ? 'Active: hooks record completed sessions while this application is closed. Import on open removes hooks and can miss sessions deleted before the next launch.'
-    : 'Active: no hooks are installed. Sessions deleted before the next application launch cannot be recovered.'
-  $$('[data-settings-action="capture-mode"]').forEach((button) => {
-    const active = button.dataset.mode === captureMode
+  $('#settingsCaptureNote').textContent = capturePolicy.default === 'continuous'
+    ? 'Continuous is the default. Best-effort hooks checkpoint usage while you work; opening the app and Sync now always reconcile available transcripts.'
+    : 'Batch sync is the default. No hook is installed unless an agent overrides it; opening the app and Sync now reconcile available transcripts.'
+  $$('[data-settings-action="capture-policy"]:not([data-provider])').forEach((button) => {
+    const active = button.dataset.strategy === capturePolicy.default
     button.classList.toggle('active', active)
     button.setAttribute('aria-pressed', String(active))
   })
@@ -1017,9 +1017,40 @@ function renderSettings() {
     const reset = provider.source === 'custom'
       ? `<button class="settings-button" data-settings-action="reset-provider" data-provider="${provider.provider}">Reset to automatic</button>`
       : ''
+    const captureButtons = [
+      ['continuous', 'Continuous'],
+      ['batch', 'Batch sync'],
+    ].map(([strategy, label]) => {
+      const active = provider.captureOverride && provider.captureStrategy === strategy
+      return `<button class="settings-button${active ? ' active' : ''}" aria-pressed="${active}" data-settings-action="capture-policy" data-provider="${provider.provider}" data-strategy="${strategy}">${label}</button>`
+    }).join('')
+    const inherited = !provider.captureOverride
+    const captureStatus = provider.captureStrategy === 'continuous'
+      ? 'Best-effort hook + app reconciliation'
+      : 'App open + Sync now only'
+    const health = provider.captureHealth
+    const attemptStatus = health?.lastAttemptStatus === 'failed'
+      ? 'failed'
+      : health
+        ? 'succeeded'
+        : null
+    const attempt = health
+      ? `Last hook attempt ${attemptStatus} ${fmt.dateYear(new Date(health.lastAttemptAt))} / ${clockTime(Date.parse(health.lastAttemptAt))}`
+      : 'No hook attempt observed yet'
+    const success = health?.lastSuccessAt
+      ? `Last successful checkpoint ${fmt.dateYear(new Date(health.lastSuccessAt))} / ${clockTime(Date.parse(health.lastSuccessAt))}`
+      : 'No successful hook checkpoint observed yet'
+    const checkpoint = provider.captureStrategy === 'batch'
+      ? 'Hook checkpoints disabled for this agent'
+      : `${attempt}. ${success}. App sync remains the fallback.`
     return `<section class="provider-location${provider.available ? '' : ' missing'}">
-      <div><h3>${escapeHtml(provider.label)}</h3><span class="provider-status">${escapeHtml(status)}</span></div>
+      <div><h3>${escapeHtml(provider.label)}</h3><span class="provider-status">${escapeHtml(status)} / ${captureStatus}</span></div>
+      <div class="settings-note">${escapeHtml(checkpoint)}</div>
       <div class="settings-path">${escapeHtml(provider.root)}<span class="settings-path-meta">${escapeHtml(source)}</span></div>
+      <div class="settings-segmented" aria-label="${escapeHtml(provider.label)} capture policy">
+        <button class="settings-button${inherited ? ' active' : ''}" aria-pressed="${inherited}" data-settings-action="capture-policy" data-provider="${provider.provider}" data-inherit="true">Use default</button>
+        ${captureButtons}
+      </div>
       <div class="provider-actions">
         <button class="settings-button" data-settings-action="choose-provider" data-provider="${provider.provider}">Choose folder</button>
         ${reset}
@@ -1939,7 +1970,8 @@ $('#settingsView').addEventListener('click', (event) => {
   if (!button || button.disabled) return
   const action = button.dataset.settingsAction
   const detail = {}
-  if (button.dataset.mode) detail.mode = button.dataset.mode
+  if (button.dataset.strategy) detail.strategy = button.dataset.strategy
+  if (button.dataset.inherit) detail.inherit = true
   if (button.dataset.provider) detail.provider = button.dataset.provider
   void performSettingsAction(action, detail)
 })
