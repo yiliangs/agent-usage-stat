@@ -22,10 +22,27 @@ export class ConfigManager {
 
     try {
       const content = await readFile(this.configPath, "utf-8");
-      const config = JSON.parse(content);
+      const parsed = JSON.parse(content) as AppConfig & {
+        captureMode?: "automatic" | "on-open";
+      };
+
+      if (!parsed.capturePolicy && parsed.captureMode) {
+        const { captureMode, ...withoutLegacyMode } = parsed;
+        const migrated: AppConfig = {
+          ...DEFAULT_CONFIG,
+          ...withoutLegacyMode,
+          capturePolicy: {
+            default: captureMode === "on-open" ? "batch" : "continuous",
+          },
+        };
+        await this.saveConfig(migrated).catch(() => {
+          console.warn("Failed to persist migrated capture policy");
+        });
+        return migrated;
+      }
 
       // Merge with defaults to ensure all fields exist
-      return { ...DEFAULT_CONFIG, ...config };
+      return { ...DEFAULT_CONFIG, ...parsed };
     } catch (error) {
       console.warn("Failed to parse config file, using defaults");
       return DEFAULT_CONFIG;

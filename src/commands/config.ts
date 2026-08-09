@@ -1,7 +1,12 @@
 import chalk from "chalk";
 import { ConfigManager } from "../core/config-manager.js";
 import { resolveUsageRoot } from "../utils/usage-root.js";
-import type { AppConfig } from "../types/config.js";
+import {
+  resolvedCapturePolicy,
+  type AppConfig,
+  type CaptureStrategy,
+} from "../types/config.js";
+import type { ProviderName } from "../types/provider.js";
 
 export interface ConfigOptions {
   show?: boolean;
@@ -29,17 +34,66 @@ export class ConfigCommand {
     const { root, source } = resolveUsageRoot(config);
     console.log(chalk.cyan.bold("\nAgent Usage Stat"));
     console.log(chalk.gray(this.configManager.getConfigPath()));
-    console.log(`\n  Data root  ${source === "config" ? root : `${root} (${source})`}\n`);
+    console.log(`\n  Data root     ${source === "config" ? root : `${root} (${source})`}`);
+    const policy = resolvedCapturePolicy(config);
+    console.log(`  Capture       ${policy.default}`);
+    for (const [provider, strategy] of Object.entries(policy.providers ?? {})) {
+      console.log(`  ${provider.padEnd(13)} ${strategy} (override)`);
+    }
+    console.log();
   }
 
   private async setConfig(expression: string): Promise<void> {
     const [rawKey, ...parts] = expression.split("=");
-    const key = rawKey?.trim() as keyof AppConfig;
+    const key = rawKey?.trim();
     const value = parts.join("=").trim();
-    if (key !== "dataRoot" || !value) {
-      throw new Error('Use --set dataRoot="<path>"');
+    if (!value) {
+      throw new Error(
+        'Use --set dataRoot="<path>", capturePolicy="continuous|batch", or capturePolicy.<agent>="continuous|batch|default"',
+      );
     }
-    await this.configManager.updateConfig(key, value);
-    console.log(chalk.green(`Data root updated: ${value}`));
+    if (key === "dataRoot") {
+      await this.configManager.updateConfig("dataRoot", value);
+      console.log(chalk.green(`Data root updated: ${value}`));
+      return;
+    }
+    if (key === "capturePolicy") {
+      this.assertStrategy(value);
+      const config = await this.configManager.loadConfig();
+      await this.configManager.saveConfig({
+        ...config,
+        capturePolicy: { ...config.capturePolicy, default: value },
+      });
+      console.log(chalk.green(`Capture policy updated: ${value}`));
+      return;
+    }
+    const match = /^capturePolicy\.(claude|codex|copilot)$/.exec(key || "");
+    if (!match) {
+      throw new Error(
+        'Use --set dataRoot="<path>", capturePolicy="continuous|batch", or capturePolicy.<agent>="continuous|batch|default"',
+      );
+    }
+    if (!["continuous", "batch", "default"].includes(value)) {
+      throw new Error('Provider capture policy must be "continuous", "batch", or "default"');
+    }
+    const provider = match[1] as ProviderName;
+    const config = await this.configManager.loadConfig();
+    const providers = { ...config.capturePolicy?.providers };
+    if (value === "default") delete providers[provider];
+    else providers[provider] = value as CaptureStrategy;
+    await this.configManager.saveConfig({
+      ...config,
+      capturePolicy: {
+        default: resolvedCapturePolicy(config).default,
+        ...(Object.keys(providers).length > 0 ? { providers } : {}),
+      },
+    });
+    console.log(chalk.green(`${provider} capture policy updated: ${value}`));
+  }
+
+  private assertStrategy(value: string): asserts value is CaptureStrategy {
+    if (!['continuous', 'batch'].includes(value)) {
+      throw new Error('Capture policy must be "continuous" or "batch"');
+    }
   }
 }

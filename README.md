@@ -23,11 +23,15 @@ Download the current installer from [GitHub Releases](https://github.com/yiliang
 
 No separate Node.js or npm installation is required.
 
-The Windows installer shows installation activity, creates Start menu and desktop shortcuts, and opens the application when installation completes. On first launch, Agent Usage Stat detects installed agents, preserves an existing v2 data location when present, installs its capture hooks, reconciles existing sessions, and opens the desktop dashboard. New installations use `~/.agent-usage-stat/data` unless an existing shared usage root is detected.
+The Windows installer shows installation activity, creates Start menu and desktop shortcuts, and opens the application when installation completes. On first launch, Agent Usage Stat asks where to keep the durable usage ledger and how sessions should be captured, then reconciles existing sessions and opens the desktop dashboard. The recommended local ledger is `%LOCALAPPDATA%\Agent Usage Stat\ledger` on Windows and `~/Library/Application Support/Agent Usage Stat/ledger` on macOS. Existing configured or shared ledgers are offered when found.
 
-Codex requires one security confirmation after its hook is first installed. Open `/hooks` in Codex and trust the Agent Usage Stat hook when prompted.
+To combine usage from multiple computers, choose a folder in Google Drive, OneDrive, Dropbox, or another synchronized drive, then select the corresponding synchronized folder on each computer. The ledger contains usage totals, model names, project names, branches, and local project paths. It does not contain prompt or response text. Parsing and dashboard caches remain local and disposable.
 
-Closing the desktop window does not disable capture. A small bundled helper records completed sessions without opening the application.
+Continuous capture is recommended. It installs best-effort hooks for detected agents so usage can be checkpointed while you work and while the application is closed. Agent Usage Stat does not assume those hooks always fire: opening the application and choosing Sync now both reconcile every discoverable transcript. Codex requires one security confirmation after its hook is first installed. Open `/hooks` in Codex and trust the Agent Usage Stat hook when prompted.
+
+Batch sync installs no Agent Usage Stat hooks. It reconciles discoverable local transcripts whenever the application opens or Sync now is selected, but cannot recover a session deleted by an agent before the next sync. The default policy and per-agent overrides can be changed later from Settings.
+
+When continuous capture is active, closing the desktop window does not disable hooks. A small bundled helper records checkpoints without opening the application. Settings reports the last hook attempt and the last successful checkpoint separately; hook configuration is not presented as proof that a hook works on a particular machine.
 
 ## What it shows
 
@@ -42,12 +46,20 @@ Costs are API-equivalent list-price estimates. They are not charges added to a C
 
 Each completed session becomes one JSON file under `<data-root>/logbook.d/`. A synced data folder can combine several Windows and macOS machines.
 
+Settings keeps common controls for the usage ledger and default capture policy visible. Changing the usage ledger folder merges existing history into the selected ledger without replacing newer records. The original ledger is preserved as a backup by default and is removed only when the user explicitly disables that option after a successful migration.
+
+Advanced agent locations normally resolve from `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `COPILOT_HOME`, then fall back to each provider's standard per-user directory. Explicit overrides tell Agent Usage Stat where to scan and manage its hook; they never move or delete provider-owned data.
+
 ## Application architecture
 
 ```text
-Claude / Codex / Copilot hooks
+Claude / Codex / Copilot hooks (continuous policy, best effort)
   -> installed standalone helper
   -> provider-specific transcript parser and pricing
+  -> logbook.d/<session-id>.json
+
+Provider transcript discovery (all modes)
+  -> launch / refresh reconciliation
   -> logbook.d/<session-id>.json
 
 Agent Usage Stat desktop application

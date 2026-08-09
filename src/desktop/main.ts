@@ -16,6 +16,7 @@ import {
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { resolveUsageRootFromDisk } from "../utils/usage-root.js";
+import { ConfigManager } from "../core/config-manager.js";
 import {
   desktopSetupStatePath,
   installedHelperPath,
@@ -28,8 +29,22 @@ import {
   registerPortalScheme,
 } from "./portal-runtime.js";
 import { squirrelLifecycleEvent } from "./squirrel-events.js";
-import { startupMode } from "./startup-policy.js";
+import { firstRunPortalUrl, startupMode } from "./startup-policy.js";
 import { STARTUP_URL, updateStartupScreen } from "./startup-screen.js";
+import {
+  ledgerLocationPrompt,
+  ledgerMigrationPrompt,
+} from "./ledger-onboarding.js";
+import {
+  mergeUsageLedger,
+  removeUsageLedger,
+  sameUsageRoot,
+  usageLedgerHasRecords,
+} from "../core/usage-ledger-migration.js";
+import { capturePolicyPrompt } from "./capture-policy.js";
+import type { CaptureStrategy } from "../types/config.js";
+import type { ProviderName } from "../types/provider.js";
+import { buildDesktopSettingsState } from "./settings-state.js";
 
 const WINDOWS_APP_ID = "com.squirrel.AgentUsageStat.AgentUsageStat";
 const WINDOW_ICON = join(app.getAppPath(), "assets", "logo.png");
@@ -42,7 +57,8 @@ if (process.platform === "win32") app.setAppUserModelId(WINDOWS_APP_ID);
 
 let mainWindow: BrowserWindow | null = null;
 const helperRuntime = new HelperRuntime();
-const portalRuntime = new PortalRuntime(helperRuntime);
+const configManager = new ConfigManager();
+const portalRuntime = new PortalRuntime(helperRuntime, handlePortalRequest);
 
 const squirrelEvent = handleSquirrelEvent();
 const isSmokeTest = process.argv.includes("--desktop-smoke-test");
@@ -114,22 +130,40 @@ async function openFirstRunWindow(): Promise<void> {
     await updateStartupScreen(
       window,
       "Connecting the local helper",
-      "Preparing the background capture process. This keeps recording sessions even when the window is closed.",
+      "Preparing the local process that imports agent sessions into your usage ledger.",
     );
     await helperRuntime.syncInstallation();
+    if (helperRuntime.needsSetup()) {
+      await updateStartupScreen(
+        window,
+        "Choosing usage storage",
+        "Select where the durable usage ledger should be kept.",
+      );
+      await helperRuntime.configureDataRoot(
+        await chooseFirstRunUsageRoot(window),
+      );
+      await updateStartupScreen(
+        window,
+        "Choosing capture behavior",
+        "Choose between continuous checkpoints and batch synchronization.",
+      );
+      await helperRuntime.configureCapturePolicy(
+        (await chooseCapturePolicy(window)) ?? "continuous",
+      );
+    }
     await updateStartupScreen(
       window,
       "Checking agent connections",
-      "Connecting Claude Code, Codex, and Copilot CLI where they are installed.",
+      "Applying your capture choice to Claude Code, Codex, and Copilot CLI.",
     );
-    await ensureDesktopSetup(true);
+    const setupReady = await ensureDesktopSetup(true);
     await updateStartupScreen(
       window,
       "Reconciling recent sessions",
       "Building the local dashboard from your usage ledger.",
     );
     await portalRuntime.refresh();
-    await window.loadURL(PORTAL_URL);
+    await window.loadURL(firstRunPortalUrl(PORTAL_URL, setupReady));
     traceStartup("first-run-complete");
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -141,6 +175,55 @@ async function openFirstRunWindow(): Promise<void> {
     );
     await showOperationError("Startup failed", error);
   }
+}
+
+async function chooseFirstRunUsageRoot(window: BrowserWindow): Promise<string> {
+  while (true) {
+    const resolved = resolveUsageRootFromDisk();
+    const prompt = ledgerLocationPrompt(resolved);
+    const choice = await dialog.showMessageBox(window, {
+      type: "question",
+      title: "Usage History Storage",
+      message: prompt.message,
+      detail: prompt.detail,
+      buttons: prompt.buttons,
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (choice.response === 0) return resolved.root;
+
+    const selected = await dialog.showOpenDialog(window, {
+      title: "Choose usage ledger folder",
+      defaultPath: resolved.root,
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (!selected.canceled && selected.filePaths[0]) {
+      return selected.filePaths[0];
+    }
+  }
+}
+
+async function chooseCapturePolicy(
+  window: BrowserWindow,
+  cancellable = false,
+): Promise<CaptureStrategy | null> {
+  const prompt = capturePolicyPrompt();
+  const buttons = cancellable
+    ? [...prompt.buttons, "Cancel"]
+    : prompt.buttons;
+  const choice = await dialog.showMessageBox(window, {
+    type: "question",
+    title: "Usage Capture",
+    message: prompt.message,
+    detail: prompt.detail,
+    buttons,
+    defaultId: 0,
+    cancelId: cancellable ? 2 : 0,
+    noLink: true,
+  });
+  if (cancellable && choice.response === 2) return null;
+  return choice.response === 0 ? "continuous" : "batch";
 }
 
 async function synchronizeCachedWindow(window: BrowserWindow): Promise<void> {
@@ -221,16 +304,9 @@ function installApplicationMenu(): void {
     },
     { type: "separator" },
     {
-      label: "Change Data Folder...",
-      click: () => void chooseDataFolder(),
-    },
-    {
-      label: "Repair Agent Connections",
-      click: () => void repairAgentConnections(),
-    },
-    {
-      label: "Remove Agent Connections...",
-      click: () => void removeAgentConnections(),
+      label: "Settings...",
+      accelerator: "CmdOrCtrl+,",
+      click: () => void openSettings(),
     },
   ];
 
@@ -268,79 +344,202 @@ function installApplicationMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-async function refreshAndReload(): Promise<void> {
+async function refreshAndReload(): Promise<boolean> {
   try {
     await portalRuntime.refresh();
     await mainWindow?.webContents.reload();
+    return true;
   } catch (error) {
     await showOperationError("Refresh failed", error);
+    return false;
   }
 }
 
-async function chooseDataFolder(): Promise<void> {
+async function openSettings(): Promise<void> {
+  if (!mainWindow) return;
+  await mainWindow.webContents.executeJavaScript(`
+    document.querySelector('[data-portal-view="settings"]')?.click()
+  `);
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+async function chooseDataFolder(reload = true): Promise<boolean> {
+  const current = resolveUsageRootFromDisk().root;
   const options: Electron.OpenDialogOptions = {
     title: "Choose usage data folder",
-    defaultPath: resolveUsageRootFromDisk().root,
+    defaultPath: current,
     properties: ["openDirectory", "createDirectory"],
   };
   const result = mainWindow
     ? await dialog.showOpenDialog(mainWindow, options)
     : await dialog.showOpenDialog(options);
   const selected = result.filePaths[0];
-  if (result.canceled || !selected) return;
+  if (result.canceled || !selected) return false;
+  if (sameUsageRoot(current, selected)) return false;
 
-  const configured = await helperRuntime.run([
-    "config",
-    "--set",
-    `dataRoot=${selected}`,
-  ]);
-  if (configured.code !== 0) {
-    await showOperationError(
-      "Data folder was not changed",
-      configured.stderr || configured.stdout,
-    );
-    return;
-  }
-  await helperRuntime.resetSetup();
-  await ensureDesktopSetup(true);
-  await refreshAndReload();
-}
-
-async function repairAgentConnections(): Promise<void> {
+  let keepOriginal = true;
+  let hasExistingHistory = false;
   try {
+    hasExistingHistory = await usageLedgerHasRecords(current);
+    if (hasExistingHistory) {
+      const prompt = ledgerMigrationPrompt(current, selected);
+      const migration = await showMessageBox({
+        type: "question",
+        title: "Change Usage Ledger Folder",
+        message: prompt.message,
+        detail: prompt.detail,
+        buttons: prompt.buttons,
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+        checkboxLabel: prompt.checkboxLabel,
+        checkboxChecked: prompt.checkboxChecked,
+      });
+      if (migration.response !== 0) return false;
+      keepOriginal = migration.checkboxChecked;
+      await mergeUsageLedger(current, selected);
+    }
+
+    await helperRuntime.configureDataRoot(selected);
     await helperRuntime.resetSetup();
-    await ensureDesktopSetup(true);
-    await showMessageBox({
-      type: "info",
-      title: "Agent Usage Stat",
-      message: "Agent connections are repaired.",
-    });
+    if (!(await ensureDesktopSetup(true))) return false;
+    await portalRuntime.refresh();
+    if (reload) await mainWindow?.webContents.reload();
+
+    if (hasExistingHistory && !keepOriginal) {
+      await removeUsageLedger(current);
+    }
+    return true;
   } catch (error) {
-    await showOperationError("Agent repair failed", error);
+    await showOperationError("Data folder was not changed", error);
+    return false;
   }
 }
 
-async function removeAgentConnections(): Promise<void> {
-  const confirmation = await showMessageBox({
-    type: "warning",
-    title: "Remove Agent Connections",
-    message: "Stop recording new agent sessions?",
-    detail: "Existing usage data will be preserved.",
-    buttons: ["Cancel", "Remove Connections"],
-    defaultId: 0,
-    cancelId: 0,
-  });
-  if (confirmation.response !== 1) return;
-
-  const removed = await helperRuntime.run(["setup", "--uninstall"]);
-  if (removed.code !== 0) {
-    await showOperationError(
-      "Agent connections were not removed",
-      removed.stderr || removed.stdout,
-    );
-    return;
-  }
+async function repairCaptureSetup(): Promise<void> {
   await helperRuntime.resetSetup();
+  if (!(await ensureDesktopSetup(true))) {
+    throw new Error("Capture setup could not be repaired.");
+  }
+}
+
+async function applyCapturePolicy(
+  strategy: CaptureStrategy | undefined,
+  provider?: ProviderName,
+): Promise<void> {
+  if (!provider && strategy === await helperRuntime.captureStrategy()) return;
+  await helperRuntime.configureCapturePolicy(strategy, provider);
+  await helperRuntime.resetSetup();
+  if (!(await ensureDesktopSetup(true))) {
+    throw new Error("Capture setup is incomplete. Use Repair capture setup.");
+  }
+}
+
+async function chooseProviderDataRoot(provider: ProviderName): Promise<boolean> {
+  const state = await currentSettingsState();
+  const current = state.providers.find((item) => item.provider === provider);
+  if (!current) throw new Error(`Unsupported provider: ${provider}`);
+  const options: Electron.OpenDialogOptions = {
+    title: `Choose ${current.label} data folder`,
+    defaultPath: current.root,
+    properties: ["openDirectory"],
+  };
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  const selected = result.filePaths[0];
+  if (result.canceled || !selected) return false;
+
+  await applyProviderDataRoot(provider, selected);
+  return true;
+}
+
+async function applyProviderDataRoot(
+  provider: ProviderName,
+  root?: string,
+): Promise<void> {
+  await helperRuntime.configureProviderDataRoot(provider, root);
+  await helperRuntime.resetSetup();
+  if (!(await ensureDesktopSetup(true))) {
+    throw new Error("Agent data location was saved, but capture setup is incomplete.");
+  }
+  await portalRuntime.refresh();
+}
+
+async function currentSettingsState() {
+  const config = await configManager.loadConfig();
+  return buildDesktopSettingsState(config, resolveUsageRootFromDisk());
+}
+
+async function handlePortalRequest(
+  request: Request,
+  url: URL,
+): Promise<Response | null> {
+  if (url.pathname !== "/api/settings") return null;
+  try {
+    if (request.method === "GET") {
+      return settingsJson(await currentSettingsState());
+    }
+    if (request.method !== "POST") {
+      return settingsJson({ error: "Method not allowed" }, 405);
+    }
+
+    const body = await request.json() as {
+      action?: string;
+      strategy?: CaptureStrategy;
+      inherit?: boolean;
+      provider?: ProviderName;
+    };
+    if (body.action === "change-ledger") {
+      await chooseDataFolder(false);
+    } else if (body.action === "capture-policy") {
+      if (
+        !body.inherit &&
+        (!body.strategy || !["continuous", "batch"].includes(body.strategy))
+      ) {
+        throw new Error("Invalid capture strategy.");
+      }
+      if (body.provider !== undefined && !isProviderName(body.provider)) {
+        throw new Error("Invalid provider.");
+      }
+      if (body.inherit && !body.provider) {
+        throw new Error("Only an agent policy can inherit the default.");
+      }
+      await applyCapturePolicy(
+        body.inherit ? undefined : body.strategy,
+        body.provider,
+      );
+    } else if (body.action === "choose-provider") {
+      if (!isProviderName(body.provider)) throw new Error("Invalid provider.");
+      await chooseProviderDataRoot(body.provider);
+    } else if (body.action === "reset-provider") {
+      if (!isProviderName(body.provider)) throw new Error("Invalid provider.");
+      await applyProviderDataRoot(body.provider);
+    } else if (body.action === "repair-capture") {
+      await repairCaptureSetup();
+    } else {
+      throw new Error("Unknown settings action.");
+    }
+    return settingsJson(await currentSettingsState());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return settingsJson({ error: message }, 500);
+  }
+}
+
+function isProviderName(value: unknown): value is ProviderName {
+  return value === "claude" || value === "codex" || value === "copilot";
+}
+
+function settingsJson(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
 async function showOperationError(title: string, error: unknown): Promise<void> {
@@ -361,7 +560,7 @@ function showMessageBox(
     : dialog.showMessageBox(options);
 }
 
-async function ensureDesktopSetup(interactive: boolean): Promise<void> {
+async function ensureDesktopSetup(interactive: boolean): Promise<boolean> {
   const setup = await helperRuntime.ensureSetup();
   if (!setup.configured) {
     if (!interactive) throw new Error(setup.detail || "Desktop setup failed.");
@@ -371,7 +570,7 @@ async function ensureDesktopSetup(interactive: boolean): Promise<void> {
       message: "The application opened, but agent capture could not be connected.",
       detail: setup.detail,
     });
-    return;
+    return false;
   }
 
   if (interactive && setup.codexNeedsTrust) {
@@ -382,6 +581,7 @@ async function ensureDesktopSetup(interactive: boolean): Promise<void> {
       detail: "Open /hooks in Codex and trust the Agent Usage Stat hook.",
     });
   }
+  return true;
 }
 
 async function runSmokeTestIfRequested(): Promise<boolean> {
@@ -417,6 +617,30 @@ async function runSmokeTestIfRequested(): Promise<boolean> {
     logoLoaded: boolean;
     protocol: string;
   };
+  const settings = await window.webContents.executeJavaScript(`(async () => {
+    document.querySelector('[data-portal-view="settings"]')?.click();
+    for (let index = 0; index < 50; index++) {
+      if (document.querySelectorAll('.provider-location').length === 3) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const response = await fetch('./api/settings', { cache: 'no-store' });
+    const state = await response.json();
+    return {
+      api: response.ok,
+      visible: !document.querySelector('#settingsView')?.hidden,
+      commonRows: document.querySelectorAll('.settings-common .settings-row').length,
+      advanced: !!document.querySelector('details.settings-advanced'),
+      providerRows: document.querySelectorAll('.provider-location').length,
+      providers: state.providers?.map((provider) => provider.provider) ?? [],
+    };
+  })()`) as {
+    api: boolean;
+    visible: boolean;
+    commonRows: number;
+    advanced: boolean;
+    providerRows: number;
+    providers: string[];
+  };
   traceStartup("smoke-renderer-complete");
   const smokeJson = JSON.stringify({
       application: app.getName(),
@@ -428,6 +652,7 @@ async function runSmokeTestIfRequested(): Promise<boolean> {
       setup: existsSync(desktopSetupStatePath()),
       refresh,
       renderer,
+      settings,
     }, null, 2);
   const stagedOutput = `${output}.${process.pid}.tmp`;
   await writeFile(stagedOutput, smokeJson, "utf8");

@@ -11,6 +11,8 @@ const SNAPSHOT_VERSION = createHash("sha256")
   .digest("hex")
   .slice(0, 16);
 
+export const claudeSnapshotVersion = (): string => SNAPSHOT_VERSION;
+
 export async function fingerprintSessionTranscript(
   mainPath: string,
   sessionId: string,
@@ -57,4 +59,8 @@ async function fingerprintTranscriptFilePart(path: string): Promise<string> {
 
 function fingerprintPart(size: number, tail: Buffer): string {
   return `${size}:${createHash("sha256").update(tail).digest("hex")}`;
+}
+
+export function fingerprintTranscriptTail(size: number, tail: Buffer): string {
+  return fingerprintPart(size, tail);
 }

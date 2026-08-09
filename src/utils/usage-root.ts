@@ -5,14 +5,14 @@
  *
  *   1. `dataRoot` in ~/.agent-usage-stat.config.json
  *   2. an existing shared root on a Google Drive mount
- *   3. ~/.agent-usage-stat/data
+ *   3. the platform-native per-user Agent Usage Stat ledger directory
  *
  * Shared-root detection only accepts a directory that already contains
  * `logbook.d/`. It never creates a new cloud directory implicitly.
  */
 
 import { existsSync, readFileSync, readdirSync } from "fs";
-import { join } from "path";
+import { join, posix, win32 } from "path";
 import { homeDir, expandHome, configFilePath } from "./paths.js";
 
 const SHARED_DIR_NAME = "agent-usage-stat";
@@ -23,6 +23,35 @@ export type UsageRootSource = "config" | "detected" | "default";
 export interface ResolvedUsageRoot {
   root: string;
   source: UsageRootSource;
+}
+
+export interface UsageRootRuntime {
+  platform?: NodeJS.Platform;
+  home?: string;
+  localAppData?: string;
+}
+
+/** The application-owned ledger location offered to a new desktop user. */
+export function defaultUsageRoot(runtime: UsageRootRuntime = {}): string {
+  const platform = runtime.platform ?? process.platform;
+  const home = runtime.home ?? homeDir();
+
+  if (platform === "win32") {
+    const localAppData = runtime.localAppData ??
+      process.env.LOCALAPPDATA ??
+      win32.join(home, "AppData", "Local");
+    return win32.join(localAppData, "Agent Usage Stat", "ledger");
+  }
+  if (platform === "darwin") {
+    return posix.join(
+      home,
+      "Library",
+      "Application Support",
+      "Agent Usage Stat",
+      "ledger",
+    );
+  }
+  return join(home, ".agent-usage-stat", "data");
 }
 
 export function resolveUsageRoot(config: {
@@ -38,7 +67,7 @@ export function resolveUsageRoot(config: {
     return { root: detected, source: "detected" };
   }
 
-  return { root: `${homeDir()}/.agent-usage-stat/data`, source: "default" };
+  return { root: defaultUsageRoot(), source: "default" };
 }
 
 export function resolveUsageRootFromDisk(): ResolvedUsageRoot {

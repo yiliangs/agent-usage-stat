@@ -11,6 +11,7 @@ const BLOCK_PATTERN = new RegExp(
   "g",
 );
 const COMMANDS = ["claude", "codex", "copilot", "claudex"] as const;
+export type WrappedCommand = (typeof COMMANDS)[number];
 
 export type ShellProfileKind = "powershell" | "zsh" | "bash";
 
@@ -52,13 +53,14 @@ export async function installTerminalWrappers(
   profile: ShellProfile,
   cliPath: string,
   usesNode = true,
+  commands: readonly WrappedCommand[] = COMMANDS,
 ): Promise<ProfileUpdate> {
   const existing = await readOptional(profile.path);
   const eol = existing.includes("\r\n") ? "\r\n" : "\n";
   const withoutBlock = existing.replace(BLOCK_PATTERN, "");
   const separator = withoutBlock && !withoutBlock.endsWith(eol) ? eol : "";
   const blankLine = withoutBlock.trim() ? eol : "";
-  const block = renderBlock(profile.kind, cliPath, usesNode, eol);
+  const block = renderBlock(profile.kind, cliPath, usesNode, eol, commands);
   const next = `${withoutBlock}${separator}${blankLine}${block}${eol}`;
 
   if (next === existing) return { profile, changed: false };
@@ -134,8 +136,9 @@ function renderBlock(
   cliPath: string,
   usesNode: boolean,
   eol: string,
+  commands: readonly WrappedCommand[],
 ): string {
-  const functions = COMMANDS.map((command) =>
+  const functions = commands.map((command) =>
     kind === "powershell"
       ? renderPowerShellFunction(command, cliPath, usesNode, eol)
       : renderPosixFunction(command, cliPath, usesNode, eol),
@@ -144,7 +147,7 @@ function renderBlock(
 }
 
 function renderPowerShellFunction(
-  command: (typeof COMMANDS)[number],
+  command: WrappedCommand,
   cliPath: string,
   usesNode: boolean,
   eol: string,
@@ -168,7 +171,7 @@ function renderPowerShellFunction(
 }
 
 function renderPosixFunction(
-  command: (typeof COMMANDS)[number],
+  command: WrappedCommand,
   cliPath: string,
   usesNode: boolean,
   eol: string,

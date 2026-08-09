@@ -32,6 +32,11 @@ interface PortalMeta {
   totalCost?: number;
 }
 
+export type PortalRequestHandler = (
+  request: Request,
+  url: URL,
+) => Promise<Response | null>;
+
 export function registerPortalScheme(): void {
   protocol.registerSchemesAsPrivileged([
     {
@@ -49,7 +54,10 @@ export function registerPortalScheme(): void {
 export class PortalRuntime {
   private refreshPromise: Promise<PortalRefreshResult> | null = null;
 
-  constructor(private readonly helperRuntime: HelperRuntime) {}
+  constructor(
+    private readonly helperRuntime: HelperRuntime,
+    private readonly requestHandler?: PortalRequestHandler,
+  ) {}
 
   async registerProtocol(): Promise<void> {
     await protocol.handle(APP_SCHEME, (request) => this.handleRequest(request));
@@ -80,6 +88,9 @@ export class PortalRuntime {
   private async handleRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (url.host !== APP_HOST) return new Response("Not found", { status: 404 });
+
+    const handled = await this.requestHandler?.(request, url);
+    if (handled) return handled;
 
     if (url.pathname === "/api/refresh") {
       if (request.method !== "POST") {

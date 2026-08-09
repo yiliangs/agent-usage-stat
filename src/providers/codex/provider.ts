@@ -15,7 +15,11 @@ export class CodexProvider implements SessionProvider {
 
   private calculator = new UsageCalculator();
   private parser = new TranscriptParser();
-  private finder = new SessionFinder();
+  private finder: SessionFinder;
+
+  constructor(codexHome?: string) {
+    this.finder = new SessionFinder(codexHome);
+  }
 
   findSession(query?: string): Promise<FoundSession> {
     return this.finder.find(query);

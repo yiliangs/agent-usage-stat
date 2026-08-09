@@ -97,11 +97,27 @@ try {
   assert.match(smoke.renderer.favicon, /^aus:\/\/app\/assets\/logo-/);
   assert.equal(smoke.renderer.protocol, "aus:");
   assert.equal(smoke.refresh.sessions, 0);
+  assert.equal(smoke.settings.api, true);
+  assert.equal(smoke.settings.visible, true);
+  assert.equal(smoke.settings.commonRows, 2);
+  assert.equal(smoke.settings.advanced, true);
+  assert.equal(smoke.settings.providerRows, 3);
+  assert.deepEqual(smoke.settings.providers, ["claude", "codex", "copilot"]);
 
   const installedHelper = process.platform === "win32"
     ? join(home, ".agent-usage-stat", "bin", "agent-usage-stat-helper.exe")
     : join(home, ".agent-usage-stat", "bin", "agent-usage-stat-helper");
   assert.equal(existsSync(installedHelper), true);
+  const setupState = JSON.parse(await readFile(
+    join(home, ".agent-usage-stat", "desktop-setup.json"),
+    "utf8",
+  ));
+  assert.deepEqual(setupState.capturePolicy, { default: "continuous" });
+  assert.deepEqual(Object.keys(setupState.providerDataRoots).sort(), [
+    "claude",
+    "codex",
+    "copilot",
+  ]);
 
   const claudeSettings = await readFile(
     join(claudeHome, "settings.json"),
@@ -113,6 +129,9 @@ try {
     "utf8",
   );
   assert.match(claudeSettings, /agent-usage-stat-helper/);
+  const claudeHookConfig = JSON.parse(claudeSettings);
+  assert.equal(claudeHookConfig.hooks.Stop.length, 1);
+  assert.equal(claudeHookConfig.hooks.SessionEnd.length, 1);
   assert.match(codexHooks, /agent-usage-stat-helper/);
   assert.doesNotMatch(codexHooks, /node .*agent-usage-stat-helper/);
   assert.match(copilotHooks, /agent-usage-stat-helper/);

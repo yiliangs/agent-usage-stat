@@ -4,20 +4,25 @@ import chalk from "chalk";
 import prompts from "prompts";
 import ora from "ora";
 import { ConfigManager } from "../core/config-manager.js";
-import { expandHome } from "../utils/paths.js";
+import { expandHome, homeDir } from "../utils/paths.js";
 import { resolveUsageRoot } from "../utils/usage-root.js";
 import {
   detectShellProfile,
   installTerminalWrappers,
   hasTerminalWrappers,
   removeTerminalWrappers,
+  type WrappedCommand,
 } from "../core/terminal-wrappers.js";
 import {
   createAgentIntegrations,
   type AgentIntegration,
 } from "../integrations/agent-integrations.js";
 import { hookExecutablePaths } from "../integrations/hook-command.js";
-import type { AppConfig } from "../types/config.js";
+import {
+  resolvedCaptureStrategy,
+  type AppConfig,
+} from "../types/config.js";
+import type { ProviderName } from "../types/provider.js";
 
 export { detectInstalledAgents } from "../integrations/agent-integrations.js";
 
@@ -31,9 +36,9 @@ export interface SetupOptions {
 
 export class SetupCommand {
   private configManager = new ConfigManager();
-  private integrations: AgentIntegration[];
+  private integrations?: AgentIntegration[];
 
-  constructor(integrations = createAgentIntegrations()) {
+  constructor(integrations?: AgentIntegration[]) {
     this.integrations = integrations;
   }
 
@@ -62,14 +67,16 @@ export class SetupCommand {
     }
   }
 
-  /** Detect installed agents, choose one data directory, and install hooks. */
+  /** Configure the ledger and apply the selected provider capture mode. */
   private async install(
     dataRootOption?: string,
     terminalMessage = true,
     configureTerminal = true,
     migrateTerminal = false,
   ): Promise<void> {
-    const agents = this.integrations.filter((integration) =>
+    const existing = await this.configManager.loadConfig();
+    const integrations = this.integrationsFor(existing);
+    const agents = integrations.filter((integration) =>
       integration.isInstalled()
     );
     if (agents.length === 0) {
@@ -78,7 +85,6 @@ export class SetupCommand {
       );
     }
 
-    const existing = await this.configManager.loadConfig();
     const suggestedRoot = resolveUsageRoot(existing).root;
     const answers = dataRootOption
       ? { dataRoot: dataRootOption }
@@ -117,27 +123,51 @@ export class SetupCommand {
       await this.configManager.saveConfig(config);
       spinner.text = "Usage folder ready...";
 
-      for (const agent of agents) {
-        const result = await agent.install();
-        if (agent.provider === "codex") {
-          codexNeedsTrust = result.needsTrust;
+      const continuousAgents = agents.filter((agent) =>
+        resolvedCaptureStrategy(config, agent.provider) === "continuous"
+      );
+      for (const integration of integrations) {
+        if (
+          integration.isInstalled() &&
+          resolvedCaptureStrategy(config, integration.provider) === "continuous"
+        ) {
+          const agent = integration;
+          const result = await agent.install();
+          if (agent.provider === "codex") {
+            codexNeedsTrust = result.needsTrust;
+          }
+        } else {
+          await integration.remove();
         }
       }
-      spinner.text = "Agent hooks installed...";
+      spinner.text = continuousAgents.length > 0
+        ? "Best-effort agent hooks configured..."
+        : "Agent hooks removed...";
 
-      const terminal = configureTerminal
-        ? await this.configureTerminalMessage(terminalMessage)
-        : migrateTerminal
-          ? await this.migrateTerminalMessage()
-          : {};
+      const continuousProviders = continuousAgents.map((agent) => agent.provider);
+      const terminal = continuousProviders.length === 0
+        ? await this.configureTerminalMessage(false)
+        : configureTerminal
+          ? await this.configureTerminalMessage(terminalMessage, continuousProviders)
+          : migrateTerminal
+            ? await this.migrateTerminalMessage(continuousProviders)
+            : {};
       terminalProfile = terminal.profile;
       terminalWarning = terminal.warning;
 
       spinner.succeed("Initialization complete");
 
       for (const agent of agents) {
-        console.log(chalk.green(`\n${agent.label} connected`));
-        if (agent.provider === "codex" && codexNeedsTrust) {
+        const continuous = resolvedCaptureStrategy(config, agent.provider) === "continuous";
+        const status = continuous
+          ? "continuous hook configured (best effort)"
+          : "available for batch sync";
+        console.log(chalk.green(`\n${agent.label} ${status}`));
+        if (
+          continuous &&
+          agent.provider === "codex" &&
+          codexNeedsTrust
+        ) {
           console.log(
             chalk.yellow(
               "Codex security requires one final action: open /hooks and trust the new hook.",
@@ -146,11 +176,12 @@ export class SetupCommand {
         }
       }
       if (terminalProfile) {
-        const action = terminalMessage ? "enabled" : "disabled";
+        const terminalEnabled = continuousProviders.length > 0 && terminalMessage;
+        const action = terminalEnabled ? "enabled" : "disabled";
         console.log(
           chalk.green(`\nSame-terminal usage message ${action}: ${terminalProfile}`),
         );
-        if (terminalMessage) {
+        if (terminalEnabled) {
           console.log(chalk.gray("Open a new terminal for the command wrappers."));
         }
       }
@@ -169,7 +200,8 @@ export class SetupCommand {
     const spinner = ora("Removing agent hooks...").start();
 
     try {
-      for (const integration of this.integrations) {
+      const config = await this.configManager.loadConfig();
+      for (const integration of this.integrationsFor(config)) {
         await integration.remove();
       }
       const terminal = await this.configureTerminalMessage(false);
@@ -198,6 +230,7 @@ export class SetupCommand {
 
   private async configureTerminalMessage(
     enabled: boolean,
+    providers: ProviderName[] = [],
   ): Promise<{ profile?: string; warning?: string }> {
     const profile = detectShellProfile();
     if (!profile) {
@@ -207,7 +240,12 @@ export class SetupCommand {
     try {
       if (enabled) {
         const { windowsBin, windowsUsesNode } = hookExecutablePaths();
-        await installTerminalWrappers(profile, windowsBin, windowsUsesNode);
+        await installTerminalWrappers(
+          profile,
+          windowsBin,
+          windowsUsesNode,
+          wrapperCommands(providers),
+        );
       } else {
         await removeTerminalWrappers(profile);
       }
@@ -224,12 +262,30 @@ export class SetupCommand {
     }
   }
 
-  private async migrateTerminalMessage(): Promise<{
+  private async migrateTerminalMessage(providers: ProviderName[]): Promise<{
     profile?: string;
     warning?: string;
   }> {
     const profile = detectShellProfile();
     if (!profile || !(await hasTerminalWrappers(profile))) return {};
-    return this.configureTerminalMessage(true);
+    return this.configureTerminalMessage(true, providers);
   }
+
+  private integrationsFor(config: AppConfig): AgentIntegration[] {
+    return this.integrations ?? createAgentIntegrations(
+      homeDir(),
+      undefined,
+      process.env,
+      config,
+    );
+  }
+}
+
+function wrapperCommands(providers: ProviderName[]): WrappedCommand[] {
+  const commands: WrappedCommand[] = [];
+  for (const provider of providers) {
+    if (provider === "claude") commands.push("claude", "claudex");
+    else commands.push(provider);
+  }
+  return commands;
 }
