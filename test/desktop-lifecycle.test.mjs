@@ -82,10 +82,10 @@ test("the dashboard exposes a corner status for background synchronization", asy
   assert.match(script, /SYNC FAILED/);
 });
 
-test("the dashboard uses the canonical application favicon", async () => {
+test("the dashboard separates the application icon from the in-app mark", async () => {
   const html = await readFile(join(process.cwd(), "portal", "index.html"), "utf8");
 
-  assert.match(html, /<link rel="icon" type="image\/png" href="\.\.\/assets\/logo\.png">/);
+  assert.match(html, /<link rel="icon" type="image\/png" href="\.\.\/assets\/icon\.png">/);
   assert.match(html, /<img src="\.\.\/assets\/logo\.png" alt="">/);
 });
 
@@ -149,8 +149,10 @@ test("Windows packaging includes branded installation and a portable archive", (
   assert.equal(existsSync(squirrel.config.setupIcon), true);
   assert.equal(config.packagerConfig.ignore("/assets"), false);
   assert.equal(config.packagerConfig.ignore("/assets/logo.png"), false);
+  assert.equal(config.packagerConfig.ignore("/assets/icon.png"), false);
   assert.equal(config.packagerConfig.ignore("/assets/icon-source.svg"), true);
   assert.equal(existsSync(join(process.cwd(), "assets", "icon-source.svg")), true);
+  assert.equal(existsSync(join(process.cwd(), "assets", "mark-source.svg")), true);
   assert.equal(existsSync(join(process.cwd(), "assets", "icon-source.png")), false);
   assert.equal(zip.platforms.includes("win32"), true);
   assert.equal(

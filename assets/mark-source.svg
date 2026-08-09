@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#f3f0e7"/>
+
+  <!-- Left seam center: 272 + (480 * 0.381966) = 455.34368 -->
+  <rect x="272" y="272" width="154" height="175.34368" rx="12" fill="#171817"/>
+  <rect x="272" y="463.34368" width="154" height="288.65632" rx="12" fill="#171817"/>
+
+  <rect x="442" y="272" width="310" height="312" rx="12" fill="#171817"/>
+  <rect x="442" y="600" width="310" height="152" rx="12" fill="#ba5d37"/>
+</svg>

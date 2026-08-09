@@ -47,7 +47,7 @@ import type { ProviderName } from "../types/provider.js";
 import { buildDesktopSettingsState } from "./settings-state.js";
 
 const WINDOWS_APP_ID = "com.squirrel.AgentUsageStat.AgentUsageStat";
-const WINDOW_ICON = join(app.getAppPath(), "assets", "logo.png");
+const WINDOW_ICON = join(app.getAppPath(), "assets", "icon.png");
 
 traceStartup("module-loaded");
 
