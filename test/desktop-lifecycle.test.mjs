@@ -149,7 +149,9 @@ test("Windows packaging includes branded installation and a portable archive", (
   assert.equal(existsSync(squirrel.config.setupIcon), true);
   assert.equal(config.packagerConfig.ignore("/assets"), false);
   assert.equal(config.packagerConfig.ignore("/assets/logo.png"), false);
-  assert.equal(config.packagerConfig.ignore("/assets/icon-source.png"), true);
+  assert.equal(config.packagerConfig.ignore("/assets/icon-source.svg"), true);
+  assert.equal(existsSync(join(process.cwd(), "assets", "icon-source.svg")), true);
+  assert.equal(existsSync(join(process.cwd(), "assets", "icon-source.png")), false);
   assert.equal(zip.platforms.includes("win32"), true);
   assert.equal(
     squirrel.config.loadingGif,

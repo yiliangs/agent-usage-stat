@@ -9,7 +9,7 @@ import sharp from "sharp";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const assets = join(root, "assets");
-const source = join(assets, "icon-source.png");
+const source = join(assets, "icon-source.svg");
 const work = join(root, "build", "icons");
 const windowsSizes = [16, 24, 32, 48, 64, 128, 256];
 
