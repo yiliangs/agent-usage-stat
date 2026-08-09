@@ -94,7 +94,7 @@ try {
   assert.equal(smoke.renderer.title, "Agent Usage Stat");
   assert.equal(smoke.renderer.hasTimeline, true);
   assert.equal(smoke.renderer.logoLoaded, true);
-  assert.match(smoke.renderer.favicon, /^aus:\/\/app\/assets\/icon-/);
+  assert.match(smoke.renderer.favicon, /^aus:\/\/app\/assets\/logo-.*\.svg$/);
   assert.equal(smoke.renderer.protocol, "aus:");
   assert.equal(smoke.refresh.sessions, 0);
   assert.equal(smoke.settings.api, true);

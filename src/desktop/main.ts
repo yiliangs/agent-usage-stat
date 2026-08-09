@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   dialog,
   Menu,
+  nativeTheme,
   shell,
   type MenuItemConstructorOptions,
 } from "electron";
@@ -29,7 +30,11 @@ import {
   registerPortalScheme,
 } from "./portal-runtime.js";
 import { squirrelLifecycleEvent } from "./squirrel-events.js";
-import { firstRunPortalUrl, startupMode } from "./startup-policy.js";
+import {
+  firstRunPortalUrl,
+  startupIconFilename,
+  startupMode,
+} from "./startup-policy.js";
 import { STARTUP_URL, updateStartupScreen } from "./startup-screen.js";
 import {
   ledgerLocationPrompt,
@@ -47,7 +52,11 @@ import type { ProviderName } from "../types/provider.js";
 import { buildDesktopSettingsState } from "./settings-state.js";
 
 const WINDOWS_APP_ID = "com.squirrel.AgentUsageStat.AgentUsageStat";
-const WINDOW_ICON = join(app.getAppPath(), "assets", "icon.png");
+const windowIconPath = (): string => join(
+  app.getAppPath(),
+  "assets",
+  startupIconFilename(nativeTheme.shouldUseDarkColors),
+);
 
 traceStartup("module-loaded");
 
@@ -261,7 +270,7 @@ async function createWindow(
 ): Promise<BrowserWindow> {
   const window = new BrowserWindow({
     title: "Agent Usage Stat",
-    icon: WINDOW_ICON,
+    icon: windowIconPath(),
     width: 1440,
     height: 960,
     minWidth: 1040,
@@ -653,7 +662,7 @@ async function runSmokeTestIfRequested(): Promise<boolean> {
       version: app.getVersion(),
       packaged: app.isPackaged,
       assets: existsSync(join(portalRuntime.assetsRoot(), "index.html")),
-      runtimeIcon: existsSync(WINDOW_ICON),
+      runtimeIcon: existsSync(windowIconPath()),
       helper: JSON.parse(helper.stdout),
       setup: existsSync(desktopSetupStatePath()),
       refresh,

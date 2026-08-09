@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -12,15 +12,23 @@ const assets = join(root, "assets");
 const logoSource = join(assets, "logo.svg");
 const work = join(root, "build", "icons");
 const windowsSizes = [16, 24, 32, 48, 64, 128, 256];
+const logoSvg = await readFile(logoSource, "utf8");
+const lightLogoSource = themedLogoSource(logoSvg, "light");
+const darkLogoSource = themedLogoSource(logoSvg, "dark");
 
 await rm(work, { recursive: true, force: true });
 await mkdir(work, { recursive: true });
 
-await sharp(logoSource).resize(1024, 1024).png().toFile(join(assets, "icon.png"));
+const lightIcon = await sharp(lightLogoSource).resize(1024, 1024).png().toBuffer();
+await Promise.all([
+  writeFile(join(assets, "icon.png"), lightIcon),
+  writeFile(join(assets, "icon-light.png"), lightIcon),
+  sharp(darkLogoSource).resize(1024, 1024).png().toFile(join(assets, "icon-dark.png")),
+]);
 const windowsPngs = await Promise.all(
   windowsSizes.map(async (size) => {
     const path = join(work, `icon-${size}.png`);
-    await sharp(logoSource).resize(size, size).png().toFile(path);
+    await sharp(lightLogoSource).resize(size, size).png().toFile(path);
     return path;
   }),
 );
@@ -31,11 +39,11 @@ if (process.platform === "darwin") {
   const iconset = join(work, "icon.iconset");
   await mkdir(iconset, { recursive: true });
   for (const size of [16, 32, 128, 256, 512]) {
-    await sharp(logoSource)
+    await sharp(lightLogoSource)
       .resize(size, size)
       .png()
       .toFile(join(iconset, `icon_${size}x${size}.png`));
-    await sharp(logoSource)
+    await sharp(lightLogoSource)
       .resize(size * 2, size * 2)
       .png()
       .toFile(join(iconset, `icon_${size}x${size}@2x.png`));
@@ -44,6 +52,12 @@ if (process.platform === "darwin") {
 }
 
 process.stdout.write(`icons built in ${assets}\n`);
+
+function themedLogoSource(source, theme) {
+  const themed = source.replace("<svg ", `<svg data-render-theme="${theme}" `);
+  if (themed === source) throw new Error("Logo source is missing its root SVG element");
+  return Buffer.from(themed);
+}
 
 function run(command, args) {
   return new Promise((resolveRun, reject) => {
@@ -60,7 +74,7 @@ async function buildInstallerAnimation(output) {
   const width = 420;
   const height = 220;
   const frames = 12;
-  const brandIcon = await sharp(logoSource).resize(132, 132).png().toBuffer();
+  const brandIcon = await sharp(lightLogoSource).resize(132, 132).png().toBuffer();
   const images = await Promise.all(
     Array.from({ length: frames }, async (_, frame) => {
       const progress = 178 + Math.round((frame / (frames - 1)) * 204);

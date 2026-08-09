@@ -8,6 +8,12 @@
       .fill { fill: #f2efe7; }
       .ghost { fill-opacity: .28; }
     }
+    svg[data-render-theme="light"] .bg { fill: #f2efe7; }
+    svg[data-render-theme="light"] .fill { fill: #1c1c1a; }
+    svg[data-render-theme="light"] .ghost { fill-opacity: .34; }
+    svg[data-render-theme="dark"] .bg { fill: #1c1c1a; }
+    svg[data-render-theme="dark"] .fill { fill: #f2efe7; }
+    svg[data-render-theme="dark"] .ghost { fill-opacity: .28; }
   </style>
   <clipPath id="m"><rect width="128" height="128" rx="28.6" /></clipPath>
   <g clip-path="url(#m)">
