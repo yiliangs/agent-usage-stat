@@ -39,7 +39,7 @@ module.exports = {
       const included =
         /^\/(dist|node_modules)(\/|$)/.test(file) ||
         /^\/package\.json$/.test(file) ||
-        /^\/assets(?:$|\/(?:icon|logo)\.png$)/.test(file) ||
+        /^\/assets(?:$|\/(?:icon\.png|logo\.svg)$)/.test(file) ||
         /^\/portal(?:$|\/scripts(?:\/|$))/.test(file);
       return !included;
     },

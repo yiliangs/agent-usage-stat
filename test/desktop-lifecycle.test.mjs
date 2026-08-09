@@ -82,11 +82,15 @@ test("the dashboard exposes a corner status for background synchronization", asy
   assert.match(script, /SYNC FAILED/);
 });
 
-test("the dashboard separates the application icon from the in-app mark", async () => {
+test("the dashboard uses a theme-aware logo while keeping the app icon as its favicon", async () => {
   const html = await readFile(join(process.cwd(), "portal", "index.html"), "utf8");
+  const logo = await readFile(join(process.cwd(), "assets", "logo.svg"), "utf8");
 
   assert.match(html, /<link rel="icon" type="image\/png" href="\.\.\/assets\/icon\.png">/);
-  assert.match(html, /<img src="\.\.\/assets\/logo\.png" alt="">/);
+  assert.match(html, /<div class="mark"[^>]*>\s*<img src="\.\.\/assets\/logo\.svg"/);
+  assert.match(logo, /@media \(prefers-color-scheme: dark\)/);
+  assert.match(logo, /\.bg \{ fill: #1c1c1a; \}/);
+  assert.match(logo, /\.fill \{ fill: #f2efe7; \}/);
 });
 
 test("settings separate common controls from advanced agent locations", async () => {
@@ -148,11 +152,14 @@ test("Windows packaging includes branded installation and a portable archive", (
   assert.equal(existsSync(squirrel.config.loadingGif), true);
   assert.equal(existsSync(squirrel.config.setupIcon), true);
   assert.equal(config.packagerConfig.ignore("/assets"), false);
-  assert.equal(config.packagerConfig.ignore("/assets/logo.png"), false);
+  assert.equal(config.packagerConfig.ignore("/assets/logo.png"), true);
+  assert.equal(config.packagerConfig.ignore("/assets/logo.svg"), false);
   assert.equal(config.packagerConfig.ignore("/assets/icon.png"), false);
   assert.equal(config.packagerConfig.ignore("/assets/icon-source.svg"), true);
-  assert.equal(existsSync(join(process.cwd(), "assets", "icon-source.svg")), true);
-  assert.equal(existsSync(join(process.cwd(), "assets", "mark-source.svg")), true);
+  assert.equal(existsSync(join(process.cwd(), "assets", "icon-source.svg")), false);
+  assert.equal(existsSync(join(process.cwd(), "assets", "logo.svg")), true);
+  assert.equal(existsSync(join(process.cwd(), "assets", "mark-source.svg")), false);
+  assert.equal(existsSync(join(process.cwd(), "assets", "logo.png")), false);
   assert.equal(existsSync(join(process.cwd(), "assets", "icon-source.png")), false);
   assert.equal(zip.platforms.includes("win32"), true);
   assert.equal(

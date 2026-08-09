@@ -9,20 +9,18 @@ import sharp from "sharp";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const assets = join(root, "assets");
-const iconSource = join(assets, "icon-source.svg");
-const markSource = join(assets, "mark-source.svg");
+const logoSource = join(assets, "logo.svg");
 const work = join(root, "build", "icons");
 const windowsSizes = [16, 24, 32, 48, 64, 128, 256];
 
 await rm(work, { recursive: true, force: true });
 await mkdir(work, { recursive: true });
 
-await sharp(iconSource).resize(1024, 1024).png().toFile(join(assets, "icon.png"));
-await sharp(markSource).resize(128, 128).png().toFile(join(assets, "logo.png"));
+await sharp(logoSource).resize(1024, 1024).png().toFile(join(assets, "icon.png"));
 const windowsPngs = await Promise.all(
   windowsSizes.map(async (size) => {
     const path = join(work, `icon-${size}.png`);
-    await sharp(iconSource).resize(size, size).png().toFile(path);
+    await sharp(logoSource).resize(size, size).png().toFile(path);
     return path;
   }),
 );
@@ -33,11 +31,11 @@ if (process.platform === "darwin") {
   const iconset = join(work, "icon.iconset");
   await mkdir(iconset, { recursive: true });
   for (const size of [16, 32, 128, 256, 512]) {
-    await sharp(iconSource)
+    await sharp(logoSource)
       .resize(size, size)
       .png()
       .toFile(join(iconset, `icon_${size}x${size}.png`));
-    await sharp(iconSource)
+    await sharp(logoSource)
       .resize(size * 2, size * 2)
       .png()
       .toFile(join(iconset, `icon_${size}x${size}@2x.png`));
@@ -62,7 +60,7 @@ async function buildInstallerAnimation(output) {
   const width = 420;
   const height = 220;
   const frames = 12;
-  const brandIcon = await sharp(iconSource).resize(132, 132).png().toBuffer();
+  const brandIcon = await sharp(logoSource).resize(132, 132).png().toBuffer();
   const images = await Promise.all(
     Array.from({ length: frames }, async (_, frame) => {
       const progress = 178 + Math.round((frame / (frames - 1)) * 204);
