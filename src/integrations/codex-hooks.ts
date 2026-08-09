@@ -5,6 +5,7 @@ import {
   captureHookCommands,
   isAgentUsageStatCommand,
 } from "./hook-command.js";
+import type { HookConfigurationStatus } from "./hook-status.js";
 
 interface CommandHook {
   type: "command";
@@ -22,6 +23,26 @@ interface HookGroup {
 interface CodexHooksFile {
   hooks?: Record<string, HookGroup[]>;
   [key: string]: unknown;
+}
+
+export async function inspectCodexHooks(
+  hooksPath: string,
+): Promise<HookConfigurationStatus> {
+  if (!existsSync(hooksPath)) return "missing";
+  try {
+    const config = JSON.parse(await readFile(hooksPath, "utf-8")) as CodexHooksFile;
+    return ["Stop", "SubagentStop"].every((event) =>
+        (config.hooks?.[event] || []).some((group) =>
+          group.hooks?.some((hook) =>
+            isAgentUsageStatCommand(`${hook.command} ${hook.commandWindows || ""}`)
+          )
+        )
+      )
+      ? "configured"
+      : "missing";
+  } catch {
+    return "invalid";
+  }
 }
 
 /** Install silent, detached Codex updates. Stop is per turn, not per task. */

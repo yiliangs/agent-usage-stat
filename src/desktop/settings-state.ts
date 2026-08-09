@@ -16,8 +16,12 @@ import { homeDir } from "../utils/paths.js";
 import type { ProviderName } from "../types/provider.js";
 import {
   readCaptureHealth,
-  type CaptureHealth,
 } from "../utils/capture-health.js";
+import {
+  captureMonitor,
+  type CaptureMonitor,
+} from "./capture-monitor.js";
+import { createAgentIntegrations } from "../integrations/agent-integrations.js";
 
 export interface ProviderLocationSetting {
   provider: ProviderName;
@@ -29,7 +33,7 @@ export interface ProviderLocationSetting {
   sessions: number;
   captureStrategy: CaptureStrategy;
   captureOverride: boolean;
-  captureHealth: CaptureHealth | null;
+  captureMonitor: CaptureMonitor;
 }
 
 export interface DesktopSettingsState {
@@ -46,6 +50,12 @@ export async function buildDesktopSettingsState(
 ): Promise<DesktopSettingsState> {
   const roots = resolveProviderDataRoots(config, environment, home);
   const providers = allProviders(config, environment, home);
+  const integrations = createAgentIntegrations(
+    home,
+    () => false,
+    environment,
+    config,
+  );
   const locations = await Promise.all(roots.map(async (root, index) => {
     let sessions = 0;
     try {
@@ -54,14 +64,23 @@ export async function buildDesktopSettingsState(
       // A settings diagnostic must not prevent the page from opening.
     }
     const strategy = resolvedCaptureStrategy(config, root.provider);
-    const captureHealth = await readCaptureHealth(root.provider, environment);
+    const available = existsSync(root.root);
+    const [observation, hookConfiguration] = await Promise.all([
+      readCaptureHealth(root.provider, environment),
+      integrations[index].inspect(),
+    ]);
     return {
       ...root,
-      available: existsSync(root.root),
+      available,
       sessions,
       captureStrategy: strategy,
       captureOverride: config.capturePolicy?.providers?.[root.provider] !== undefined,
-      captureHealth,
+      captureMonitor: captureMonitor(
+        strategy,
+        available,
+        hookConfiguration,
+        observation,
+      ),
     };
   }));
 

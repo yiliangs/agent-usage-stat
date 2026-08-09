@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { squirrelLifecycleEvent } from "../dist/desktop/squirrel-events.js";
 import {
   firstRunPortalUrl,
+  startupIconFilename,
   startupMode,
 } from "../dist/desktop/startup-policy.js";
 import {
@@ -82,12 +83,21 @@ test("the dashboard exposes a corner status for background synchronization", asy
   assert.match(script, /SYNC FAILED/);
 });
 
-test("the dashboard uses the adaptive application mark with a PNG favicon fallback", async () => {
+test("the dashboard uses the theme-aware logo for both its header and favicon", async () => {
   const html = await readFile(join(process.cwd(), "portal", "index.html"), "utf8");
+  const logo = await readFile(join(process.cwd(), "assets", "logo.svg"), "utf8");
 
-  assert.match(html, /<link rel="icon" type="image\/png" href="\.\.\/assets\/logo\.png\?v=mark-7b-adaptive">/);
-  assert.match(html, /<link rel="icon" type="image\/svg\+xml" href="\.\.\/assets\/logo\.svg\?v=mark-7b-adaptive">/);
-  assert.match(html, /<img src="\.\.\/assets\/logo\.svg\?v=mark-7b-adaptive" alt="">/);
+  assert.match(html, /<link rel="icon" type="image\/svg\+xml" href="\.\.\/assets\/logo\.svg">/);
+  assert.match(html, /<div class="mark"[^>]*>\s*<img src="\.\.\/assets\/logo\.svg"/);
+  assert.match(logo, /@media \(prefers-color-scheme: dark\)/);
+  assert.match(logo, /data-render-theme="dark"/);
+  assert.match(logo, /\.bg \{ fill: #1c1c1a; \}/);
+  assert.match(logo, /\.fill \{ fill: #f2efe7; \}/);
+});
+
+test("window icons follow the OS theme selected at startup", () => {
+  assert.equal(startupIconFilename(false), "icon-light.png");
+  assert.equal(startupIconFilename(true), "icon-dark.png");
 });
 
 test("settings separate common controls from advanced agent locations", async () => {
@@ -97,14 +107,19 @@ test("settings separate common controls from advanced agent locations", async ()
   assert.match(html, /data-portal-view="settings"/);
   assert.match(html, /Usage ledger folder/);
   assert.match(html, /Capture policy/);
+  assert.match(html, /Capture monitor/);
+  assert.match(html, /id="captureMonitorSummary"/);
+  assert.match(html, /data-capture-monitor-link/);
   assert.match(html, />Continuous</);
   assert.match(html, />Batch sync</);
   assert.match(html, /<details[^>]*class="settings-advanced"/);
   assert.match(html, /Per-agent capture and locations/);
   assert.match(script, /\/api\/settings/);
   assert.match(script, /Best-effort hook/);
-  assert.match(script, /Last hook attempt/);
-  assert.match(script, /Last successful checkpoint/);
+  assert.match(script, /Hook observed/);
+  assert.match(script, /Needs attention/);
+  assert.match(script, /Waiting for first checkpoint/);
+  assert.doesNotMatch(script, /provider\.captureHealth/);
   assert.match(script, /data-settings-action="capture-policy"/);
   assert.match(script, /Use default/);
 });
@@ -144,10 +159,19 @@ test("Windows packaging includes branded installation and a portable archive", (
   assert.equal(existsSync(squirrel.config.loadingGif), true);
   assert.equal(existsSync(squirrel.config.setupIcon), true);
   assert.equal(config.packagerConfig.ignore("/assets"), false);
-  assert.equal(config.packagerConfig.ignore("/assets/logo.png"), false);
+  assert.equal(config.packagerConfig.ignore("/assets/logo.png"), true);
   assert.equal(config.packagerConfig.ignore("/assets/logo.svg"), false);
-  assert.equal(config.packagerConfig.ignore("/assets/icon-source.png"), true);
-  assert.equal(config.packagerConfig.ignore("/assets/icon-rounded-source.png"), true);
+  assert.equal(config.packagerConfig.ignore("/assets/icon.png"), false);
+  assert.equal(config.packagerConfig.ignore("/assets/icon-light.png"), false);
+  assert.equal(config.packagerConfig.ignore("/assets/icon-dark.png"), false);
+  assert.equal(config.packagerConfig.ignore("/assets/icon-source.svg"), true);
+  assert.equal(existsSync(join(process.cwd(), "assets", "icon-source.svg")), false);
+  assert.equal(existsSync(join(process.cwd(), "assets", "logo.svg")), true);
+  assert.equal(existsSync(join(process.cwd(), "assets", "icon-light.png")), true);
+  assert.equal(existsSync(join(process.cwd(), "assets", "icon-dark.png")), true);
+  assert.equal(existsSync(join(process.cwd(), "assets", "mark-source.svg")), false);
+  assert.equal(existsSync(join(process.cwd(), "assets", "logo.png")), false);
+  assert.equal(existsSync(join(process.cwd(), "assets", "icon-source.png")), false);
   assert.equal(zip.platforms.includes("win32"), true);
   assert.equal(
     squirrel.config.loadingGif,

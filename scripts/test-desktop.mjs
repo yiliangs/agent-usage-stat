@@ -94,15 +94,22 @@ try {
   assert.equal(smoke.renderer.title, "Agent Usage Stat");
   assert.equal(smoke.renderer.hasTimeline, true);
   assert.equal(smoke.renderer.logoLoaded, true);
-  assert.match(smoke.renderer.favicon, /^aus:\/\/app\/assets\/logo-/);
+  assert.match(smoke.renderer.favicon, /^aus:\/\/app\/assets\/logo-.*\.svg$/);
   assert.equal(smoke.renderer.protocol, "aus:");
   assert.equal(smoke.refresh.sessions, 0);
   assert.equal(smoke.settings.api, true);
   assert.equal(smoke.settings.visible, true);
-  assert.equal(smoke.settings.commonRows, 2);
+  assert.equal(smoke.settings.commonRows, 3);
+  assert.equal(smoke.settings.captureChannels, 3);
+  assert.equal(smoke.settings.captureStatus, "UNVERIFIED");
   assert.equal(smoke.settings.advanced, true);
   assert.equal(smoke.settings.providerRows, 3);
   assert.deepEqual(smoke.settings.providers, ["claude", "codex", "copilot"]);
+  assert.deepEqual(smoke.settings.providerMonitorStatuses, [
+    "unverified",
+    "unverified",
+    "unverified",
+  ]);
 
   const installedHelper = process.platform === "win32"
     ? join(home, ".agent-usage-stat", "bin", "agent-usage-stat-helper.exe")

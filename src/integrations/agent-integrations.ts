@@ -5,14 +5,28 @@ import type { ProviderName } from "../types/provider.js";
 import type { AppConfig } from "../types/config.js";
 import { homeDir } from "../utils/paths.js";
 import { resolveProviderDataRoots } from "../utils/provider-data-roots.js";
-import { installClaudeHook, removeClaudeHook } from "./claude-hooks.js";
-import { installCodexHooks, removeCodexHooks } from "./codex-hooks.js";
-import { installCopilotHook, removeCopilotHook } from "./copilot-hooks.js";
+import {
+  inspectClaudeHook,
+  installClaudeHook,
+  removeClaudeHook,
+} from "./claude-hooks.js";
+import {
+  inspectCodexHooks,
+  installCodexHooks,
+  removeCodexHooks,
+} from "./codex-hooks.js";
+import {
+  inspectCopilotHook,
+  installCopilotHook,
+  removeCopilotHook,
+} from "./copilot-hooks.js";
+import type { HookConfigurationStatus } from "./hook-status.js";
 
 export interface AgentIntegration {
   provider: ProviderName;
   label: string;
   isInstalled(): boolean;
+  inspect(): Promise<HookConfigurationStatus>;
   install(): Promise<{ needsTrust: boolean }>;
   remove(): Promise<void>;
 }
@@ -41,6 +55,7 @@ export function createAgentIntegrations(
       provider: "claude",
       label: "Claude Code",
       isInstalled: () => existsSync(claudeHome) || commandExists("claude"),
+      inspect: () => inspectClaudeHook(claudeSettings),
       install: async () => {
         await installClaudeHook(claudeSettings);
         return { needsTrust: false };
@@ -51,6 +66,7 @@ export function createAgentIntegrations(
       provider: "codex",
       label: "Codex",
       isInstalled: () => existsSync(codexHome) || commandExists("codex"),
+      inspect: () => inspectCodexHooks(codexHooks),
       install: async () => ({
         needsTrust: await installCodexHooks(codexHooks),
       }),
@@ -60,6 +76,7 @@ export function createAgentIntegrations(
       provider: "copilot",
       label: "GitHub Copilot CLI",
       isInstalled: () => existsSync(copilotHome) || commandExists("copilot"),
+      inspect: () => inspectCopilotHook(copilotHooks),
       install: async () => {
         await installCopilotHook(copilotHooks);
         return { needsTrust: false };

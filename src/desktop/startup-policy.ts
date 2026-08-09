@@ -7,3 +7,6 @@ export const firstRunPortalUrl = (
   portalUrl: string,
   setupReady: boolean,
 ): string => setupReady ? portalUrl : `${portalUrl}#settings`;
+
+export const startupIconFilename = (shouldUseDarkColors: boolean): string =>
+  shouldUseDarkColors ? "icon-dark.png" : "icon-light.png";

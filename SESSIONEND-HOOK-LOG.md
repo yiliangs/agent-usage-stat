@@ -55,6 +55,20 @@ Claude main transcripts and recursive subagent transcripts are also append-only 
 
 The hook observation files under `~/.agent-usage-stat/capture-health/` record the last observed attempt, last successful checkpoint, and last failure separately. Absence of a failure does not prove that a host invoked its hook.
 
+## Desktop capture monitor
+
+The portal combines local hook configuration with the observation files above. It reports:
+
+- `Observed` only after a configured hook has delivered a successful attempt.
+- `Unverified` when configuration is present but no attempt has been observed.
+- `Needs attention` when configuration is missing, disabled, unreadable, or the latest attempt failed.
+- `Batch sync` when hook capture is intentionally disabled by policy.
+- `Not detected` when the local provider data folder is absent.
+
+The monitor does not expire an observation based on elapsed time. A quiet agent and a host that stopped delivering hooks are indistinguishable without a new event. App launch and Sync now remain the recovery path in every state.
+
+Configuration inspection covers local Windows and macOS installations. WSL, containers, remote development hosts, and web-only agent environments are outside the supported monitor boundary.
+
 ## Same-terminal completion status
 
 Setup installs shell functions for `claude`, `codex`, and `claudex`. Each
