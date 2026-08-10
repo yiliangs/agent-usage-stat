@@ -1,5 +1,8 @@
+import { createIcons, Settings } from 'lucide'
 import { buildTokenTraffic, robustTokenTrafficScale } from './token-traffic.js'
 import { buildProjectColorIndex, projectSeriesFor } from './timeline-colors.js'
+
+createIcons({ icons: { Settings } })
 
 const DAY = 86_400_000
 const RANGE_DAYS = { '07D': 7, '14D': 14, '30D': 30, '90D': 90 }
@@ -982,6 +985,11 @@ function applyPortalView() {
     button.classList.toggle('active', active)
     button.setAttribute('aria-selected', String(active))
   })
+  const settingsLink = $('[data-capture-monitor-link]')
+  const settingsActive = state.view === 'settings'
+  settingsLink.classList.toggle('active', settingsActive)
+  if (settingsActive) settingsLink.setAttribute('aria-current', 'page')
+  else settingsLink.removeAttribute('aria-current')
   document.body.classList.toggle('settings-active', state.view === 'settings')
 }
 
@@ -1057,8 +1065,9 @@ function renderCaptureMonitor(providers) {
 
   const aggregate = captureMonitorAggregate(providers)
   const link = $('[data-capture-monitor-link]')
-  link.className = `capture-monitor-link ${aggregate.status}`
+  link.dataset.captureStatus = aggregate.status
   $('#globalCaptureStatus').textContent = aggregate.label.toUpperCase()
+  link.ariaLabel = `Open Settings: Capture ${aggregate.label}`
   link.title = aggregate.detail
   $('#captureMonitorRepair').hidden = aggregate.status !== 'needs_attention'
 }
@@ -1129,8 +1138,9 @@ async function loadSettings() {
     renderSettings()
   } catch (error) {
     const link = $('[data-capture-monitor-link]')
-    link.className = 'capture-monitor-link not_detected'
+    link.dataset.captureStatus = 'not_detected'
     $('#globalCaptureStatus').textContent = 'UNAVAILABLE'
+    link.ariaLabel = 'Open Settings: Capture unavailable'
     link.title = 'Capture health could not be loaded.'
     setSettingsStatus(error.message || 'Settings could not load.', true)
     console.error(error.stack || error)

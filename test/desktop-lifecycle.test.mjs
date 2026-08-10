@@ -83,6 +83,52 @@ test("the dashboard exposes a corner status for background synchronization", asy
   assert.match(script, /SYNC FAILED/);
 });
 
+test("the settings control names its destination and uses a Lucide icon", async () => {
+  const html = await readFile(join(process.cwd(), "portal", "index.html"), "utf8");
+  const script = await readFile(join(process.cwd(), "portal", "portal.js"), "utf8");
+
+  assert.match(
+    html,
+    /<button class="capture-monitor-link[^>]*data-capture-monitor-link[^>]*aria-label="Open Settings: Checking"[^>]*>.*?<i[^>]*data-lucide="settings"[^>]*><\/i>\s*<span class="capture-monitor-label">Settings<\/span>.*?<\/button>/s,
+  );
+  assert.match(html, /\.capture-monitor-link\s*\{[^}]*border:\s*1px solid/s);
+  assert.match(script, /import \{ createIcons, Settings \} from 'lucide'/);
+});
+
+test("the settings control stays active while its page is selected", async () => {
+  const html = await readFile(join(process.cwd(), "portal", "index.html"), "utf8");
+  const script = await readFile(join(process.cwd(), "portal", "portal.js"), "utf8");
+
+  assert.match(
+    html,
+    /\.capture-monitor-link:hover,\s*\.capture-monitor-link\.active\s*\{[^}]*background:\s*var\(--ink\);/s,
+  );
+  assert.match(script, /settingsLink\.classList\.toggle\('active', settingsActive\)/);
+  assert.match(script, /settingsLink\.setAttribute\('aria-current', 'page'\)/);
+  assert.match(script, /link\.dataset\.captureStatus = aggregate\.status/);
+  assert.doesNotMatch(script, /link\.className = `capture-monitor-link/);
+});
+
+test("the capture settings button uses a geometrically centered attention mark", async () => {
+  const html = await readFile(join(process.cwd(), "portal", "index.html"), "utf8");
+  const script = await readFile(join(process.cwd(), "portal", "portal.js"), "utf8");
+
+  assert.match(html, /<span class="capture-monitor-attention" aria-hidden="true"><\/span>/);
+  assert.match(
+    html,
+    /\.capture-monitor-attention\s*\{[^}]*display:\s*none;[^}]*width:\s*16px;[^}]*height:\s*16px;[^}]*border-radius:\s*50%;[^}]*color:\s*var\(--status-error-ink\);/s,
+  );
+  assert.match(
+    html,
+    /\.capture-monitor-attention::before,\s*\.capture-monitor-attention::after\s*\{[^}]*left:\s*50%;[^}]*background:\s*currentColor;[^}]*transform:\s*translateX\(-50%\);/s,
+  );
+  assert.match(
+    html,
+    /\.capture-monitor-link\[data-capture-status="needs_attention"\] \.capture-monitor-attention\s*\{[^}]*display:\s*block;[^}]*background:\s*var\(--status-error\);/s,
+  );
+  assert.match(script, /link\.ariaLabel = `Open Settings: Capture \$\{aggregate\.label\}`/);
+});
+
 test("the dashboard uses the theme-aware logo for both its header and favicon", async () => {
   const html = await readFile(join(process.cwd(), "portal", "index.html"), "utf8");
   const logo = await readFile(join(process.cwd(), "assets", "logo.svg"), "utf8");

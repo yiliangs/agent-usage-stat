@@ -12,5 +12,8 @@
   },
   "devDependencies": {
     "vite": "^5.4.11"
+  },
+  "dependencies": {
+    "lucide": "^1.31.0"
   }
 }

@@ -40,6 +40,7 @@
       --project-4: #008300;
       --status-good: #35765f;
       --status-error: #a3483a;
+      --status-error-ink: #fffaf5;
       --cache-read: #8e8b83;
       --token-dark: #5f5e59;
       --token-mid: #8f8d86;
@@ -162,22 +163,64 @@
     }
 
     .capture-monitor-link {
-      width: calc(100% + 34px);
-      min-height: 68px;
-      margin: 0 -17px;
-      border: 0;
-      background: transparent;
+      position: relative;
+      min-width: 128px;
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid var(--line-dark);
+      background: var(--paper-hi);
       color: inherit;
-      text-align: left;
+      padding: 0 13px;
+      font-family: var(--sans);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .11em;
+      text-transform: uppercase;
       cursor: pointer;
     }
-    .capture-monitor-link:hover { background: rgba(var(--ink-rgb), .045); }
-    .capture-monitor-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
-    .capture-monitor-link .micro,
-    .capture-monitor-link b { display: block; padding-left: 17px; }
-    .capture-monitor-link.needs_attention b { color: var(--status-error); }
-    .capture-monitor-link.unverified b { color: var(--accent-dark); }
-    .capture-monitor-link.observed b { color: var(--status-good); }
+    .capture-monitor-link:hover,
+    .capture-monitor-link.active { border-color: var(--ink); background: var(--ink); color: var(--paper-hi); }
+    .capture-monitor-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .capture-monitor-link .lucide { width: 15px; height: 15px; stroke-width: 1.75; }
+    .capture-monitor-attention {
+      display: none;
+      position: absolute;
+      top: -7px;
+      right: -7px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      color: var(--status-error-ink);
+      box-shadow: 0 0 0 2px var(--paper-hi);
+    }
+    .capture-monitor-attention::before,
+    .capture-monitor-attention::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      width: 2px;
+      background: currentColor;
+      transform: translateX(-50%);
+    }
+    .capture-monitor-attention::before { top: 3px; height: 6px; border-radius: 1px; }
+    .capture-monitor-attention::after { top: 11px; height: 2px; border-radius: 50%; }
+    .capture-monitor-link[data-capture-status="needs_attention"] .capture-monitor-attention { display: block; background: var(--status-error); }
+    .capture-monitor-link:hover .capture-monitor-attention,
+    .capture-monitor-link.active .capture-monitor-attention { box-shadow: 0 0 0 2px var(--ink); }
+    .capture-monitor-status {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
 
     .control-band {
       min-height: 49px;
@@ -441,12 +484,6 @@
       background: var(--accent);
       display: inline-block;
     }
-    .capture-monitor-link.needs_attention .status-dot { background: var(--status-error); }
-    .capture-monitor-link.unverified .status-dot { background: var(--accent); }
-    .capture-monitor-link.observed .status-dot { background: var(--status-good); }
-    .capture-monitor-link.off .status-dot,
-    .capture-monitor-link.not_detected .status-dot { background: var(--muted); }
-
     .module-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2394,8 +2431,11 @@
         <div><span class="micro">Machine</span><b>CHI-W11-01</b></div>
         <div><span class="micro">Snapshot</span><b>24 JUL 2026</b></div>
         <div>
-          <button class="capture-monitor-link not_detected" type="button" data-capture-monitor-link aria-label="Open capture monitor in Settings">
-            <span class="micro"><span class="status-dot"></span>Capture</span><b id="globalCaptureStatus">CHECKING</b>
+          <button class="capture-monitor-link" type="button" data-capture-monitor-link data-capture-status="not_detected" aria-label="Open Settings: Checking">
+            <i data-lucide="settings" aria-hidden="true"></i>
+            <span class="capture-monitor-label">Settings</span>
+            <span class="capture-monitor-attention" aria-hidden="true"></span>
+            <b class="capture-monitor-status" id="globalCaptureStatus">CHECKING</b>
           </button>
         </div>
       </div>
