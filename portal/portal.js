@@ -1,6 +1,7 @@
 import { createIcons, Settings } from 'lucide'
 import { buildTokenTraffic, robustTokenTrafficScale } from './token-traffic.js'
 import { buildProjectColorIndex, projectSeriesFor } from './timeline-colors.js'
+import { selectPortalView } from './portal-navigation.js'
 
 createIcons({ icons: { Settings } })
 
@@ -12,6 +13,7 @@ const state = {
   current: [],
   range: '30D',
   view: 'overview',
+  settingsReturnView: null,
   spendView: 'heatmap',
   projectView: 'overview',
   tokenTrafficView: 'chart',
@@ -2030,7 +2032,12 @@ $$('.ranges .chip').forEach((chip) => chip.addEventListener('click', () => {
 }))
 
 $$('[data-portal-view]').forEach((button) => button.addEventListener('click', () => {
-  state.view = button.dataset.portalView
+  const navigation = selectPortalView({
+    currentView: state.view,
+    settingsReturnView: state.settingsReturnView,
+  }, button.dataset.portalView)
+  state.view = navigation.currentView
+  state.settingsReturnView = navigation.settingsReturnView
   window.history.replaceState(null, '', `#${state.view}`)
   applyPortalView()
   if (state.view === 'settings') void loadSettings()

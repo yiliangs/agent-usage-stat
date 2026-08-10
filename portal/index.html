@@ -181,7 +181,7 @@
       text-transform: uppercase;
       cursor: pointer;
     }
-    .capture-monitor-link:hover,
+    .capture-monitor-link:hover { border-color: var(--ink); background: rgba(var(--ink-rgb), .06); color: var(--ink); }
     .capture-monitor-link.active { border-color: var(--ink); background: var(--ink); color: var(--paper-hi); }
     .capture-monitor-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .capture-monitor-link .lucide { width: 15px; height: 15px; stroke-width: 1.75; }
@@ -208,7 +208,6 @@
     .capture-monitor-attention::before { top: 3px; height: 6px; border-radius: 1px; }
     .capture-monitor-attention::after { top: 11px; height: 2px; border-radius: 50%; }
     .capture-monitor-link[data-capture-status="needs_attention"] .capture-monitor-attention { display: block; background: var(--status-error); }
-    .capture-monitor-link:hover .capture-monitor-attention,
     .capture-monitor-link.active .capture-monitor-attention { box-shadow: 0 0 0 2px var(--ink); }
     .capture-monitor-status {
       position: absolute;
