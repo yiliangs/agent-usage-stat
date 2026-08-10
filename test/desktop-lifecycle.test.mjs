@@ -95,14 +95,19 @@ test("the settings control names its destination and uses a Lucide icon", async 
   assert.match(script, /import \{ createIcons, Settings \} from 'lucide'/);
 });
 
-test("the settings control stays active while its page is selected", async () => {
+test("the settings control distinguishes hover from the active page", async () => {
   const html = await readFile(join(process.cwd(), "portal", "index.html"), "utf8");
   const script = await readFile(join(process.cwd(), "portal", "portal.js"), "utf8");
 
   assert.match(
     html,
-    /\.capture-monitor-link:hover,\s*\.capture-monitor-link\.active\s*\{[^}]*background:\s*var\(--ink\);/s,
+    /\.capture-monitor-link:hover\s*\{[^}]*background:\s*rgba\(var\(--ink-rgb\),\s*\.06\);[^}]*color:\s*var\(--ink\);/s,
   );
+  assert.match(
+    html,
+    /\.capture-monitor-link\.active\s*\{[^}]*background:\s*var\(--ink\);[^}]*color:\s*var\(--paper-hi\);/s,
+  );
+  assert.doesNotMatch(html, /\.capture-monitor-link:hover,\s*\.capture-monitor-link\.active/);
   assert.match(script, /settingsLink\.classList\.toggle\('active', settingsActive\)/);
   assert.match(script, /settingsLink\.setAttribute\('aria-current', 'page'\)/);
   assert.match(script, /link\.dataset\.captureStatus = aggregate\.status/);
