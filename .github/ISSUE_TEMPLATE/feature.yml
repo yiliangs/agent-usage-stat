@@ -1,0 +1,25 @@
+name: Feature request
+description: Record a new capability or behavior
+title: ""
+labels:
+  - type/feature
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Requested outcome
+      description: Describe the capability from the user's perspective.
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: Why it matters
+      description: State the current limitation or value of the requested outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Established constraints
+      description: Include only constraints already known to be factual.

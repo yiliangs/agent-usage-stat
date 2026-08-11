@@ -1,0 +1,23 @@
+name: Bounded task
+description: Record maintenance, documentation, or other defined work
+title: ""
+labels:
+  - type/chore
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Required outcome
+      description: State what must be true when the task is complete.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Record the established reason, constraints, and relevant references.
+  - type: textarea
+    id: verification
+    attributes:
+      label: Required verification
+      description: Include only verification explicitly required by the request or repository.

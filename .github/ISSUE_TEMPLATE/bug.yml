@@ -1,0 +1,33 @@
+name: Bug report
+description: Record incorrect existing behavior
+title: ""
+labels:
+  - type/bug
+body:
+  - type: markdown
+    attributes:
+      value: Describe what you observed. Keep suspected causes separate from facts.
+  - type: textarea
+    id: observation
+    attributes:
+      label: Observed behavior
+      description: What happened, including the relevant input or action.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and context
+      description: Include error text, screenshots, versions, frequency, or other directly observed facts.
+  - type: textarea
+    id: diagnosis
+    attributes:
+      label: Suspected diagnosis
+      description: Optional. Clearly identify this as a hypothesis rather than an observation.
