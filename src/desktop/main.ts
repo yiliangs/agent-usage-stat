@@ -53,8 +53,8 @@ import { buildDesktopSettingsState } from "./settings-state.js";
 
 const WINDOWS_APP_ID = "com.squirrel.AgentUsageStat.AgentUsageStat";
 const windowIconPath = (): string => join(
-  app.getAppPath(),
-  "assets",
+  app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "dist"),
+  "icons",
   startupIconFilename(nativeTheme.shouldUseDarkColors),
 );
 

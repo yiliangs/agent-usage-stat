@@ -20,17 +20,16 @@
   "type": "module",
   "main": "./dist/desktop/main.js",
   "scripts": {
-    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json && npm run build:portal",
-    "build:helper": "node scripts/build-helper.mjs",
-    "build:icons": "node scripts/build-icons.mjs",
-    "build:app": "npm run build && npm run build:icons && npm run build:helper",
-    "start": "npm run build:app && electron-forge start",
-    "package": "npm run build:app && electron-forge package",
-    "make": "npm run build:app && electron-forge make",
-    "build:portal": "npm --prefix portal run build",
+    "build": "node scripts/build-app.mjs",
+    "start": "npm run build && electron-forge start",
+    "package": "npm run build && electron-forge package",
+    "make": "npm run build && electron-forge make",
     "dev": "tsc --watch",
+    "data": "node portal/scripts/build-data.mjs",
+    "dev:portal": "npm run build && npm run data && vite --config portal/vite.config.ts",
+    "preview:portal": "vite preview --config portal/vite.config.ts --port 4173",
     "test": "npm run build && node --test test/*.test.mjs",
-    "test:desktop": "npm run build:app && node scripts/test-desktop.mjs"
+    "test:desktop": "npm run build && node scripts/test-desktop.mjs"
   },
   "keywords": [
     "claude-code",
@@ -64,9 +63,11 @@
     "@types/prompts": "^2.4.9",
     "electron": "^43.3.0",
     "esbuild": "^0.28.1",
+    "lucide": "^1.31.0",
     "png-to-ico": "^3.0.2",
     "postject": "^1.0.0-alpha.6",
     "sharp": "^0.35.3",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^5.4.11"
   }
 }

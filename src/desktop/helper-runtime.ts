@@ -298,7 +298,7 @@ export class HelperRuntime {
       : "agent-usage-stat-helper";
     return app.isPackaged
       ? join(process.resourcesPath, name)
-      : join(app.getAppPath(), "build", "helper", name);
+      : join(app.getAppPath(), "dist", "helper", name);
   }
 
   private writeVersionState(): Promise<void> {

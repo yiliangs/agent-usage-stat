@@ -4,10 +4,10 @@ The portal is the packaged renderer for the Agent Usage Stat desktop application
 
 ```bash
 npm install
-npm run dev
+npm run dev:portal
 ```
 
-Development uses Vite on port 4179. Production assets are built into `dist/portal/` and loaded through the desktop application's `aus://` protocol. Production does not start a localhost server.
+Run these commands from the repository root. The renderer shares the application's dependency manifest and build path. Development uses Vite on port 4179. Production assets are built into `dist/portal/` and loaded through the desktop application's `aus://` protocol. Production does not start a localhost server.
 
 Key files:
 

@@ -15,7 +15,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const outRelative = `out/desktop-smoke-${process.pid}`;
+const outRelative = `dist/desktop-smoke-${process.pid}`;
 const out = join(root, outRelative);
 const forgeCli = join(
   root,
@@ -166,7 +166,10 @@ try {
     `desktop smoke ok: ${process.platform}/${process.arch} -> ${outRelative}\n`,
   );
 } finally {
-  await rm(home, { recursive: true, force: true });
+  await Promise.all([
+    rm(home, { recursive: true, force: true }),
+    rm(out, { recursive: true, force: true }),
+  ]);
 }
 
 function launchUntilTrace(

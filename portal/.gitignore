@@ -1,9 +1,0 @@
-node_modules
-dist
-*.local
-.vite
-
-# Generated usage snapshot — contains real project paths, costs, locations.
-# Regenerate locally with `npm run data` (reads the logbook). Never commit to
-# this public repo.
-public/data/

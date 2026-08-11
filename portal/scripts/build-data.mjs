@@ -19,7 +19,7 @@ const SHARD_CONCURRENCY = 8;
 
 export async function buildPortalData(options = {}) {
   const root = options.root || (await canonicalRoot());
-  const outDir = resolve(options.outDir || resolve(here, "../public/data"));
+  const outDir = resolve(options.outDir || resolve(here, "../../dist/dev-portal/data"));
   const shardDir = root ? resolve(root, "logbook.d") : null;
 
   if (!shardDir || !existsSync(shardDir)) {
