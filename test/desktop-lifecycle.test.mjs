@@ -205,27 +205,26 @@ test("Windows packaging includes branded installation and a portable archive", (
   const squirrel = config.makers.find((maker) => maker.name.includes("squirrel"));
   const zip = config.makers.find((maker) => maker.name.includes("maker-zip"));
 
+  assert.equal(typeof config.hooks.postMake, "function");
   assert.equal(squirrel.config.name, "AgentUsageStat");
   assert.equal(squirrel.config.exe, "Agent Usage Stat.exe");
   assert.equal(existsSync(squirrel.config.loadingGif), true);
   assert.equal(existsSync(squirrel.config.setupIcon), true);
-  assert.equal(config.packagerConfig.ignore("/assets"), false);
-  assert.equal(config.packagerConfig.ignore("/assets/logo.png"), true);
-  assert.equal(config.packagerConfig.ignore("/assets/logo.svg"), false);
-  assert.equal(config.packagerConfig.ignore("/assets/icon.png"), false);
-  assert.equal(config.packagerConfig.ignore("/assets/icon-light.png"), false);
-  assert.equal(config.packagerConfig.ignore("/assets/icon-dark.png"), false);
-  assert.equal(config.packagerConfig.ignore("/assets/icon-source.svg"), true);
+  assert.equal(config.packagerConfig.ignore("/assets"), true);
+  assert.equal(config.packagerConfig.ignore("/dist/desktop/main.js"), false);
+  assert.equal(config.packagerConfig.ignore("/dist/icons"), true);
+  assert.equal(config.packagerConfig.ignore("/dist/helper"), true);
+  assert.equal(config.packagerConfig.ignore("/dist/forge"), true);
   assert.equal(existsSync(join(process.cwd(), "assets", "icon-source.svg")), false);
   assert.equal(existsSync(join(process.cwd(), "assets", "logo.svg")), true);
-  assert.equal(existsSync(join(process.cwd(), "assets", "icon-light.png")), true);
-  assert.equal(existsSync(join(process.cwd(), "assets", "icon-dark.png")), true);
+  assert.equal(existsSync(join(process.cwd(), "dist", "icons", "icon-light.png")), true);
+  assert.equal(existsSync(join(process.cwd(), "dist", "icons", "icon-dark.png")), true);
   assert.equal(existsSync(join(process.cwd(), "assets", "mark-source.svg")), false);
   assert.equal(existsSync(join(process.cwd(), "assets", "logo.png")), false);
   assert.equal(existsSync(join(process.cwd(), "assets", "icon-source.png")), false);
   assert.equal(zip.platforms.includes("win32"), true);
   assert.equal(
     squirrel.config.loadingGif,
-    join(process.cwd(), "assets", "install-loading.gif"),
+    join(process.cwd(), "dist", "icons", "install-loading.gif"),
   );
 });

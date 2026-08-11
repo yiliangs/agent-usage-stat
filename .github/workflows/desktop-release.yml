@@ -12,7 +12,7 @@ jobs:
   windows:
     runs-on: windows-latest
     env:
-      AGENT_USAGE_STAT_FORGE_OUT: out/release
+      AGENT_USAGE_STAT_FORGE_OUT: dist/release
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -21,7 +21,6 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            portal/package-lock.json
       - name: Verify tag version
         run: node -e "const v=require('./package.json').version; if(process.env.GITHUB_REF_NAME!=='v'+v) throw new Error('Tag must equal v'+v)"
       - name: Require Windows signing credentials
@@ -46,7 +45,6 @@ jobs:
           )
           "WINDOWS_CERTIFICATE_FILE=$certificatePath" | Out-File -FilePath $env:GITHUB_ENV -Append
       - run: npm ci
-      - run: npm ci --prefix portal
       - run: npm test
       - run: npm run test:desktop
       - run: npm run make
@@ -56,14 +54,14 @@ jobs:
         with:
           name: windows-release
           path: |
-            out/release/make/squirrel.windows/x64/*
-            out/release/make/zip/win32/x64/*.zip
+            dist/release/make/squirrel.windows/x64/*
+            dist/release/make/zip/win32/x64/*.zip
           if-no-files-found: error
 
   macos:
     runs-on: macos-latest
     env:
-      AGENT_USAGE_STAT_FORGE_OUT: out/release
+      AGENT_USAGE_STAT_FORGE_OUT: dist/release
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -72,7 +70,6 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            portal/package-lock.json
       - name: Verify tag version
         run: node -e "const v=require('./package.json').version; if(process.env.GITHUB_REF_NAME!=='v'+v) throw new Error('Tag must equal v'+v)"
       - name: Require macOS signing credentials
@@ -108,7 +105,6 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path"
           echo "APPLE_SIGNING_ENABLED=1" >> "$GITHUB_ENV"
       - run: npm ci
-      - run: npm ci --prefix portal
       - run: npm test
       - run: npm run test:desktop
       - run: npm run make
@@ -120,8 +116,8 @@ jobs:
         with:
           name: macos-release
           path: |
-            out/release/make/**/*.dmg
-            out/release/make/**/*.zip
+            dist/release/make/**/*.dmg
+            dist/release/make/**/*.zip
           if-no-files-found: error
 
   publish:

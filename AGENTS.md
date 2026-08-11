@@ -8,7 +8,6 @@ Agent Usage Stat is a standalone desktop analytics application for Claude Code, 
 npm test
 npm run test:desktop
 npm run build
-npm run build:portal
 npm start
 npm run make
 node dist/helper.js capture --session <id>

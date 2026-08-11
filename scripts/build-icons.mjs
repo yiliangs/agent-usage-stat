@@ -8,22 +8,21 @@ import pngToIco from "png-to-ico";
 import sharp from "sharp";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const assets = join(root, "assets");
-const logoSource = join(assets, "logo.svg");
-const work = join(root, "build", "icons");
+const logoSource = join(root, "assets", "logo.svg");
+const output = join(root, "dist", "icons");
+const work = join(output, "work");
 const windowsSizes = [16, 24, 32, 48, 64, 128, 256];
 const logoSvg = await readFile(logoSource, "utf8");
 const lightLogoSource = themedLogoSource(logoSvg, "light");
 const darkLogoSource = themedLogoSource(logoSvg, "dark");
 
-await rm(work, { recursive: true, force: true });
+await rm(output, { recursive: true, force: true });
 await mkdir(work, { recursive: true });
 
 const lightIcon = await sharp(lightLogoSource).resize(1024, 1024).png().toBuffer();
 await Promise.all([
-  writeFile(join(assets, "icon.png"), lightIcon),
-  writeFile(join(assets, "icon-light.png"), lightIcon),
-  sharp(darkLogoSource).resize(1024, 1024).png().toFile(join(assets, "icon-dark.png")),
+  writeFile(join(output, "icon-light.png"), lightIcon),
+  sharp(darkLogoSource).resize(1024, 1024).png().toFile(join(output, "icon-dark.png")),
 ]);
 const windowsPngs = await Promise.all(
   windowsSizes.map(async (size) => {
@@ -32,8 +31,8 @@ const windowsPngs = await Promise.all(
     return path;
   }),
 );
-await writeFile(join(assets, "icon.ico"), await pngToIco(windowsPngs));
-await buildInstallerAnimation(join(assets, "install-loading.gif"));
+await writeFile(join(output, "icon.ico"), await pngToIco(windowsPngs));
+await buildInstallerAnimation(join(output, "install-loading.gif"));
 
 if (process.platform === "darwin") {
   const iconset = join(work, "icon.iconset");
@@ -48,10 +47,11 @@ if (process.platform === "darwin") {
       .png()
       .toFile(join(iconset, `icon_${size}x${size}@2x.png`));
   }
-  await run("iconutil", ["-c", "icns", iconset, "-o", join(assets, "icon.icns")]);
+  await run("iconutil", ["-c", "icns", iconset, "-o", join(output, "icon.icns")]);
 }
 
-process.stdout.write(`icons built in ${assets}\n`);
+await rm(work, { recursive: true, force: true });
+process.stdout.write(`icons built in ${output}\n`);
 
 function themedLogoSource(source, theme) {
   const themed = source.replace("<svg ", `<svg data-render-theme="${theme}" `);

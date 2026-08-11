@@ -9,7 +9,7 @@ import { build } from "esbuild";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-const buildRoot = join(root, "build", "helper");
+const buildRoot = join(root, "dist", "helper");
 const bundlePath = join(buildRoot, "helper.cjs");
 const blobPath = join(buildRoot, "helper.blob");
 const executableName = process.platform === "win32"
@@ -72,6 +72,11 @@ if (process.platform === "darwin") {
   await run("codesign", ["--sign", "-", executablePath]);
 }
 
+await Promise.all([
+  rm(bundlePath, { force: true }),
+  rm(blobPath, { force: true }),
+  rm(configPath, { force: true }),
+]);
 process.stdout.write(`${executablePath}\n`);
 
 function run(command, args, options = {}) {

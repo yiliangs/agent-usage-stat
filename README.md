@@ -2,12 +2,6 @@
 
 A private desktop analytics app for understanding how Claude Code, OpenAI Codex, and GitHub Copilot CLI use tokens, time, and API-equivalent cost.
 
-![Agent Usage Stat overview](screenshot.png)
-
-## Weekly and monthly session timeline
-
-![Weekly and monthly session usage maps](screenshot-timeline.png)
-
 Agent Usage Stat turns local coding-agent transcripts into one searchable usage ledger. Compare providers and models, follow spend and token volume, inspect projects and sessions, and see when work happened. Prompt and response text never enters the ledger.
 
 ## Supported
@@ -37,32 +31,10 @@ To combine usage from multiple computers, choose a folder in Google Drive, OneDr
 
 Every view uses the same date window, so cost, token, project, and session totals stay comparable as you move through the app.
 
-<table>
-  <tr>
-    <td width="50%">
-      <a href="screenshot-spend.png"><img src="screenshot-spend.png" alt="Spend analytics tab"></a><br>
-      <strong>Spend</strong><br>
-      Follow API-equivalent value across time, projects, machines, and individual sessions.
-    </td>
-    <td width="50%">
-      <a href="screenshot-tokens.png"><img src="screenshot-tokens.png" alt="Token analytics tab"></a><br>
-      <strong>Tokens</strong><br>
-      Inspect token traffic, daily volume, composition, and cache effectiveness.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <a href="screenshot-projects.png"><img src="screenshot-projects.png" alt="Project analytics tab"></a><br>
-      <strong>Projects</strong><br>
-      Compare spend, tokens, duration, machine count, activity, and dominant model by project.
-    </td>
-    <td width="50%">
-      <a href="screenshot-sessions.png"><img src="screenshot-sessions.png" alt="Searchable sessions tab"></a><br>
-      <strong>Sessions</strong><br>
-      Search and sort every recorded session, then open its usage anatomy for detail.
-    </td>
-  </tr>
-</table>
+- **Spend:** Follow API-equivalent value across time, projects, machines, and individual sessions.
+- **Tokens:** Inspect token traffic, daily volume, composition, and cache effectiveness.
+- **Projects:** Compare spend, tokens, duration, machine count, activity, and dominant model by project.
+- **Sessions:** Search and sort every recorded session, then open its usage anatomy for detail.
 
 ## Data and privacy
 
@@ -108,7 +80,6 @@ Node.js 20 or newer is required for development only.
 
 ```bash
 npm install
-npm install --prefix portal
 npm test
 npm run test:desktop
 npm start
@@ -118,7 +89,7 @@ npm run make
 - `npm test` runs the core and portal regression suite.
 - `npm run test:desktop` packages the application and exercises the standalone helper, first-run hook installation, custom protocol, refresh, and renderer.
 - `npm start` builds and launches the development desktop application.
-- `npm run make` creates platform installers under `out/desktop/make/`.
+- `npm run make` creates platform installers under `dist/forge/make/`.
 
 Tagged releases are built for Windows and macOS by `.github/workflows/desktop-release.yml`. Published releases require signing credentials. Local `npm run make` artifacts are unsigned development builds; published releases are signed, and macOS releases are notarized.
 

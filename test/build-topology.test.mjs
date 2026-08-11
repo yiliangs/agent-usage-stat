@@ -1,0 +1,66 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import test from "node:test";
+
+const root = process.cwd();
+
+test("the repository exposes one dependency manifest and one build entry point", () => {
+  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const alternateBuilds = Object.keys(manifest.scripts)
+    .filter((name) => name.startsWith("build:"));
+
+  assert.equal(existsSync(join(root, "portal", "package.json")), false);
+  assert.equal(existsSync(join(root, "portal", "package-lock.json")), false);
+  assert.deepEqual(alternateBuilds, []);
+  assert.equal(manifest.scripts.build, "node scripts/build-app.mjs");
+});
+
+test("the source tree contains no generated build products", () => {
+  assert.deepEqual(readdirSync(join(root, "assets")).sort(), ["logo.svg"]);
+  assert.equal(existsSync(join(root, "portal", "node_modules")), false);
+  assert.equal(existsSync(join(root, "portal", "public")), false);
+});
+
+test("the repository root contains no disposable preview artifacts", () => {
+  const disposable = readdirSync(root)
+    .filter((name) =>
+      /^readme-preview(?:\.|$)/i.test(name) ||
+      /^screenshot(?:[-.]|$)/i.test(name) ||
+      /\.(?:tgz|tmp|bak)$/i.test(name)
+    )
+    .sort();
+
+  assert.deepEqual(disposable, []);
+});
+
+test("the canonical build writes every application artifact under dist", () => {
+  const helperName = process.platform === "win32"
+    ? "agent-usage-stat-helper.exe"
+    : "agent-usage-stat-helper";
+  const expected = [
+    join("dist", "desktop", "main.js"),
+    join("dist", "helper.js"),
+    join("dist", "portal", "index.html"),
+    join("dist", "helper", helperName),
+    join("dist", "icons", "icon-light.png"),
+    join("dist", "icons", "icon-dark.png"),
+  ];
+
+  for (const relativePath of expected) {
+    assert.equal(existsSync(join(root, relativePath)), true, relativePath);
+  }
+  assert.equal(existsSync(join(root, "build")), false);
+  assert.equal(existsSync(join(root, "out")), false);
+});
+
+test("the canonical artifact tree contains no intermediate build stages", () => {
+  const helperName = process.platform === "win32"
+    ? "agent-usage-stat-helper.exe"
+    : "agent-usage-stat-helper";
+  const helperFiles = readdirSync(join(root, "dist", "helper")).sort();
+
+  assert.deepEqual(helperFiles, [helperName]);
+  assert.equal(existsSync(join(root, "dist", "icons", "work")), false);
+  assert.equal(existsSync(join(root, "dist", "desktop", "main.d.ts")), false);
+});

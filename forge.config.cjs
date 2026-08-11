@@ -1,8 +1,24 @@
 const path = require("node:path");
+const { readdir, rm } = require("node:fs/promises");
 
 const helperName = process.platform === "win32"
   ? "agent-usage-stat-helper.exe"
   : "agent-usage-stat-helper";
+const artifactRoot = path.join(__dirname, "dist");
+const iconRoot = path.join(artifactRoot, "icons");
+const forgeOutDir = path.resolve(
+  __dirname,
+  process.env.AGENT_USAGE_STAT_FORGE_OUT || "dist/forge",
+);
+const forgeOutRelative = path.relative(artifactRoot, forgeOutDir);
+if (
+  !forgeOutRelative ||
+  forgeOutRelative.startsWith("..") ||
+  path.isAbsolute(forgeOutRelative) ||
+  forgeOutRelative.includes(path.sep)
+) {
+  throw new Error("Forge output must be one directory directly under dist/");
+}
 const windowsCertificateFile = process.env.WINDOWS_CERTIFICATE_FILE;
 const macSigningEnabled = process.env.APPLE_SIGNING_ENABLED === "1";
 const macNotarizationEnabled = Boolean(
@@ -12,16 +28,20 @@ const macNotarizationEnabled = Boolean(
 );
 
 module.exports = {
-  outDir: process.env.AGENT_USAGE_STAT_FORGE_OUT || "out/desktop",
+  outDir: forgeOutDir,
   packagerConfig: {
     asar: true,
     executableName: "Agent Usage Stat",
     icon: path.join(
       __dirname,
-      "assets",
+      "dist",
+      "icons",
       process.platform === "darwin" ? "icon.icns" : "icon.ico",
     ),
-    extraResource: [path.join(__dirname, "build", "helper", helperName)],
+    extraResource: [
+      path.join(artifactRoot, "helper", helperName),
+      iconRoot,
+    ],
     ...(process.platform === "darwin" && macSigningEnabled
       ? { osxSign: {} }
       : {}),
@@ -36,15 +56,36 @@ module.exports = {
       : {}),
     ignore(file) {
       if (!file) return false;
+      if (/^\/dist\/(?:helper|icons|forge|release|desktop-smoke-)(?:\/|$)/.test(file)) {
+        return true;
+      }
       const included =
         /^\/(dist|node_modules)(\/|$)/.test(file) ||
         /^\/package\.json$/.test(file) ||
-        /^\/assets(?:$|\/(?:icon(?:-(?:light|dark))?\.png|logo\.svg)$)/.test(file) ||
         /^\/portal(?:$|\/scripts(?:\/|$))/.test(file);
       return !included;
     },
   },
   rebuildConfig: {},
+  hooks: {
+    async postMake() {
+      const entries = await readdir(artifactRoot, { withFileTypes: true });
+      await Promise.all(entries
+        .filter((entry) => entry.name !== forgeOutRelative)
+        .map((entry) => rm(path.join(artifactRoot, entry.name), {
+          recursive: true,
+          force: true,
+        })));
+
+      const forgeEntries = await readdir(forgeOutDir, { withFileTypes: true });
+      await Promise.all(forgeEntries
+        .filter((entry) => entry.name !== "make")
+        .map((entry) => rm(path.join(forgeOutDir, entry.name), {
+          recursive: true,
+          force: true,
+        })));
+    },
+  },
   makers: [
     {
       name: "@electron-forge/maker-squirrel",
@@ -52,8 +93,8 @@ module.exports = {
         name: "AgentUsageStat",
         exe: "Agent Usage Stat.exe",
         setupExe: "Agent-Usage-Stat-Setup.exe",
-        setupIcon: path.join(__dirname, "assets", "icon.ico"),
-        loadingGif: path.join(__dirname, "assets", "install-loading.gif"),
+        setupIcon: path.join(iconRoot, "icon.ico"),
+        loadingGif: path.join(iconRoot, "install-loading.gif"),
         ...(windowsCertificateFile
           ? {
             certificateFile: windowsCertificateFile,
