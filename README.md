@@ -1,8 +1,14 @@
 # Agent Usage Stat
 
-A private desktop application for understanding how Claude Code, OpenAI Codex, and GitHub Copilot CLI use tokens, time, and API-equivalent cost.
+A private desktop analytics app for understanding how Claude Code, OpenAI Codex, and GitHub Copilot CLI use tokens, time, and API-equivalent cost.
 
-![Agent Usage Stat](screenshot.png)
+![Agent Usage Stat overview](screenshot.png)
+
+## Weekly and monthly session timeline
+
+![Weekly and monthly session usage maps](screenshot-timeline.png)
+
+Agent Usage Stat turns local coding-agent transcripts into one searchable usage ledger. Compare providers and models, follow spend and token volume, inspect projects and sessions, and see when work happened. Prompt and response text never enters the ledger.
 
 ## Supported
 
@@ -11,44 +17,70 @@ A private desktop application for understanding how Claude Code, OpenAI Codex, a
 - OpenAI Codex, including Codex sessions used through ChatGPT
 - GitHub Copilot CLI
 
-Agent Usage Stat does not read general ChatGPT or Claude.ai chats. All usage data stays on the local machine or in the folder already selected by the user.
+Agent Usage Stat does not read general ChatGPT or Claude.ai chats. All usage data stays on the local machine or in the folder selected by the user.
 
 ## Install
 
 Download the current installer from [GitHub Releases](https://github.com/yiliangs/agent-usage-stat/releases):
 
-- Windows: `Agent-Usage-Stat-Setup.exe`
+- Windows installer: `Agent-Usage-Stat-Setup.exe`
 - Windows portable: `Agent Usage Stat-win32-x64-*.zip`
 - macOS: `Agent-Usage-Stat.dmg`
 
 No separate Node.js or npm installation is required.
 
-The Windows installer shows installation activity, creates Start menu and desktop shortcuts, and opens the application when installation completes. On first launch, Agent Usage Stat asks where to keep the durable usage ledger and how sessions should be captured, then reconciles existing sessions and opens the desktop dashboard. The recommended local ledger is `%LOCALAPPDATA%\Agent Usage Stat\ledger` on Windows and `~/Library/Application Support/Agent Usage Stat/ledger` on macOS. Existing configured or shared ledgers are offered when found.
+On first launch, choose where to keep the durable usage ledger and how sessions should be captured. Agent Usage Stat then reconciles existing sessions and opens the dashboard. The recommended local ledger is `%LOCALAPPDATA%\Agent Usage Stat\ledger` on Windows and `~/Library/Application Support/Agent Usage Stat/ledger` on macOS.
 
-To combine usage from multiple computers, choose a folder in Google Drive, OneDrive, Dropbox, or another synchronized drive, then select the corresponding synchronized folder on each computer. The ledger contains usage totals, model names, project names, branches, and local project paths. It does not contain prompt or response text. Parsing and dashboard caches remain local and disposable.
+To combine usage from multiple computers, choose a folder in Google Drive, OneDrive, Dropbox, or another synchronized drive, then select the corresponding local folder on each computer.
 
-Continuous capture is recommended. It installs best-effort hooks for detected agents so usage can be checkpointed while you work and while the application is closed. Agent Usage Stat does not assume those hooks always fire: opening the application and choosing Sync now both reconcile every discoverable transcript. Codex requires one security confirmation after its hook is first installed. Open `/hooks` in Codex and trust the Agent Usage Stat hook when prompted.
+## Explore the data
 
-Batch sync installs no Agent Usage Stat hooks. It reconciles discoverable local transcripts whenever the application opens or Sync now is selected, but cannot recover a session deleted by an agent before the next sync. The default policy and per-agent overrides can be changed later from Settings.
+Every view uses the same date window, so cost, token, project, and session totals stay comparable as you move through the app.
 
-When continuous capture is active, closing the desktop window does not disable hooks. A small bundled helper records checkpoints without opening the application. Settings reports the last hook attempt and the last successful checkpoint separately; hook configuration is not presented as proof that a hook works on a particular machine.
+<table>
+  <tr>
+    <td width="50%">
+      <a href="screenshot-spend.png"><img src="screenshot-spend.png" alt="Spend analytics tab"></a><br>
+      <strong>Spend</strong><br>
+      Follow API-equivalent value across time, projects, machines, and individual sessions.
+    </td>
+    <td width="50%">
+      <a href="screenshot-tokens.png"><img src="screenshot-tokens.png" alt="Token analytics tab"></a><br>
+      <strong>Tokens</strong><br>
+      Inspect token traffic, daily volume, composition, and cache effectiveness.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <a href="screenshot-projects.png"><img src="screenshot-projects.png" alt="Project analytics tab"></a><br>
+      <strong>Projects</strong><br>
+      Compare spend, tokens, duration, machine count, activity, and dominant model by project.
+    </td>
+    <td width="50%">
+      <a href="screenshot-sessions.png"><img src="screenshot-sessions.png" alt="Searchable sessions tab"></a><br>
+      <strong>Sessions</strong><br>
+      Search and sort every recorded session, then open its usage anatomy for detail.
+    </td>
+  </tr>
+</table>
 
-## What it shows
+## Data and privacy
 
-- Spend and token trends
-- Claude Code, Codex, and Copilot comparisons
-- Model-vendor, project, machine, and session breakdowns
-- Cache read and write efficiency
-- Searchable session details
-- Weekly and monthly session timelines
+Each completed session becomes one JSON file under `<data-root>/logbook.d/`. This ledger is the only spend source and can be synchronized across Windows and macOS machines.
+
+The ledger contains usage totals, model names, project names, branches, machine names, and local project paths. It does not contain prompt or response text. Parsing and dashboard caches remain local and disposable.
 
 Costs are API-equivalent list-price estimates. They are not charges added to a ChatGPT, Claude, or Copilot subscription.
 
-Each completed session becomes one JSON file under `<data-root>/logbook.d/`. A synced data folder can combine several Windows and macOS machines.
+## Capture and settings
 
-Settings keeps common controls for the usage ledger and default capture policy visible. Changing the usage ledger folder merges existing history into the selected ledger without replacing newer records. The original ledger is preserved as a backup by default and is removed only when the user explicitly disables that option after a successful migration.
+Continuous capture is recommended. It installs best-effort hooks for detected agents so usage can be checkpointed while the application is closed. Opening the application and choosing **Sync now** also reconciles every discoverable transcript. Codex requires one security confirmation after its hook is first installed: open `/hooks` in Codex and trust the Agent Usage Stat hook when prompted.
 
-Advanced agent locations normally resolve from `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `COPILOT_HOME`, then fall back to each provider's standard per-user directory. Explicit overrides tell Agent Usage Stat where to scan and manage its hook; they never move or delete provider-owned data.
+Batch sync installs no Agent Usage Stat hooks. It reconciles discoverable local transcripts whenever the application opens or **Sync now** is selected, but it cannot recover a session deleted by an agent before the next sync.
+
+Settings reports the last hook attempt and the last successful checkpoint separately. The default capture policy and per-agent overrides can be changed at any time. Changing the ledger folder merges existing history into the selected ledger without replacing newer records, and preserves the original ledger as a backup by default.
+
+Advanced agent locations normally resolve from `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `COPILOT_HOME`, then fall back to each provider's standard per-user directory. Explicit overrides only change where Agent Usage Stat scans and manages its hook. They never move or delete provider-owned data.
 
 ## Application architecture
 
@@ -68,7 +100,7 @@ Agent Usage Stat desktop application
   -> PortalRuntime -> generated snapshot -> aus:// renderer
 ```
 
-The production application opens no localhost server. The renderer is sandboxed and reads packaged assets and generated data through the application protocol.
+The production application opens no localhost server. The sandboxed renderer reads packaged assets and generated data through the `aus://` application protocol.
 
 ## Development
 
@@ -88,11 +120,8 @@ npm run make
 - `npm start` builds and launches the development desktop application.
 - `npm run make` creates platform installers under `out/desktop/make/`.
 
-Tagged releases are built for Windows and macOS by `.github/workflows/desktop-release.yml`. The workflow requires signing credentials before it will publish anything:
+Tagged releases are built for Windows and macOS by `.github/workflows/desktop-release.yml`. Published releases require signing credentials. Local `npm run make` artifacts are unsigned development builds; published releases are signed, and macOS releases are notarized.
 
-- Windows: `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD`
-- macOS: `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`
-
-Local `npm run make` artifacts are unsigned development builds. Published releases are signed, and macOS releases are notarized. The root npm project is private and exposes no supported JavaScript library API or end-user CLI package.
+The npm package does not expose a supported JavaScript library API.
 
 Licensed under MIT.
