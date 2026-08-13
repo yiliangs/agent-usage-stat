@@ -13,7 +13,10 @@ import {
   type ProviderDataRootSource,
 } from "../utils/provider-data-roots.js";
 import { homeDir } from "../utils/paths.js";
-import type { ProviderName } from "../types/provider.js";
+import type {
+  ProviderName,
+  SessionProvider,
+} from "../types/provider.js";
 import {
   readCaptureHealth,
 } from "../utils/capture-health.js";
@@ -21,7 +24,10 @@ import {
   captureMonitor,
   type CaptureMonitor,
 } from "./capture-monitor.js";
-import { createAgentIntegrations } from "../integrations/agent-integrations.js";
+import {
+  createAgentIntegrations,
+  type AgentIntegration,
+} from "../integrations/agent-integrations.js";
 
 export interface ProviderLocationSetting {
   provider: ProviderName;
@@ -42,24 +48,35 @@ export interface DesktopSettingsState {
   providers: ProviderLocationSetting[];
 }
 
+export interface DesktopSettingsDependencies {
+  providers?: readonly SessionProvider[];
+  integrations?: readonly AgentIntegration[];
+}
+
 export async function buildDesktopSettingsState(
   config: AppConfig,
   ledger: ResolvedUsageRoot,
   environment: NodeJS.ProcessEnv = process.env,
   home = homeDir(),
+  dependencies: DesktopSettingsDependencies = {},
 ): Promise<DesktopSettingsState> {
   const roots = resolveProviderDataRoots(config, environment, home);
-  const providers = allProviders(config, environment, home);
-  const integrations = createAgentIntegrations(
-    home,
-    () => false,
-    environment,
-    config,
+  const providers = dependencies.providers ??
+    allProviders(config, environment, home);
+  const integrations = dependencies.integrations ??
+    createAgentIntegrations(home, () => false, environment, config);
+  const providersByName = new Map(
+    providers.map((provider) => [provider.name, provider]),
   );
-  const locations = await Promise.all(roots.map(async (root, index) => {
+  const integrationsByName = new Map(
+    integrations.map((integration) => [integration.provider, integration]),
+  );
+  const locations = await Promise.all(roots.map(async (root) => {
+    const provider = requireProvider(providersByName, root.provider);
+    const integration = requireProvider(integrationsByName, root.provider);
     let sessions = 0;
     try {
-      sessions = (await providers[index].findAllSessions()).length;
+      sessions = (await provider.findAllSessions()).length;
     } catch {
       // A settings diagnostic must not prevent the page from opening.
     }
@@ -67,7 +84,7 @@ export async function buildDesktopSettingsState(
     const available = existsSync(root.root);
     const [observation, hookConfiguration] = await Promise.all([
       readCaptureHealth(root.provider, environment),
-      integrations[index].inspect(),
+      integration.inspect(),
     ]);
     return {
       ...root,
@@ -89,4 +106,15 @@ export async function buildDesktopSettingsState(
     capturePolicy: resolvedCapturePolicy(config),
     providers: locations,
   };
+}
+
+function requireProvider<T>(
+  items: ReadonlyMap<ProviderName, T>,
+  provider: ProviderName,
+): T {
+  const item = items.get(provider);
+  if (!item) {
+    throw new Error(`Missing desktop settings collaborator: ${provider}`);
+  }
+  return item;
 }
