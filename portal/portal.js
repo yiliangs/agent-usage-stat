@@ -2,10 +2,18 @@ import { createIcons, Settings } from 'lucide'
 import { buildTokenTraffic, robustTokenTrafficScale } from './token-traffic.js'
 import { buildProjectColorIndex, projectSeriesFor } from './timeline-colors.js'
 import { selectPortalView } from './portal-navigation.js'
+import {
+  DAY,
+  createCalendarProjection,
+  familyOf,
+  makeIntervalBuckets,
+  normalizeSession,
+  summarizeProjects,
+  summarizeUsage,
+} from './usage-model.js'
 
 createIcons({ icons: { Settings } })
 
-const DAY = 86_400_000
 const RANGE_DAYS = { '07D': 7, '14D': 14, '30D': 30, '90D': 90 }
 const state = {
   sessions: [],
@@ -65,16 +73,14 @@ const fmt = {
 const LOCAL_TIME_ZONE = resolveLocalTimeZone()
 const LOCAL_LOCATION = locationLabelForTimeZone(LOCAL_TIME_ZONE)
 const localTimeZoneOptions = LOCAL_TIME_ZONE ? { timeZone: LOCAL_TIME_ZONE } : {}
-const localPartsFormatter = new Intl.DateTimeFormat('en-US', {
-  ...localTimeZoneOptions,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hourCycle: 'h23',
-})
+const {
+  parts: localParts,
+  dateKey: localDateKey,
+  hour: localHour,
+  minute: localMinute,
+  buckets: makeCalendarBuckets,
+  dailyUsage: dailyUsageRows,
+} = createCalendarProjection(LOCAL_TIME_ZONE)
 const trafficTimeFormatter = new Intl.DateTimeFormat('en-US', {
   ...localTimeZoneOptions,
   month: 'short',
@@ -96,38 +102,6 @@ function locationLabelForTimeZone(timeZone) {
   if (!timeZone || !timeZone.includes('/') || timeZone.startsWith('Etc/')) return 'N/A'
   const parts = timeZone.split('/')
   return parts[parts.length - 1].replaceAll('_', ' ').toUpperCase() || 'N/A'
-}
-
-function localParts(value) {
-  return Object.fromEntries(localPartsFormatter.formatToParts(value).filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]))
-}
-
-function localDateKey(value) {
-  const parts = localParts(value)
-  return `${parts.year}-${parts.month}-${parts.day}`
-}
-
-function localHour(value) {
-  return Number(localParts(value).hour)
-}
-
-function localMinute(value) {
-  const parts = localParts(value)
-  return Number(parts.hour) * 60 + Number(parts.minute) + Number(parts.second) / 60
-}
-
-function familyOf(model) {
-  const value = (model || '').toLowerCase()
-  if (value.includes('opus')) return 'Opus'
-  if (value.includes('sonnet')) return 'Sonnet'
-  if (value.includes('haiku')) return 'Haiku'
-  if (value.includes('fable')) return 'Fable'
-  if (value.endsWith('-sol')) return 'Sol'
-  if (value.endsWith('-terra')) return 'Terra'
-  if (value.endsWith('-luna')) return 'Luna'
-  if (value.includes('codex')) return 'Codex'
-  if (value.includes('gpt')) return 'GPT'
-  return 'Other'
 }
 
 function cssColor(variable, fallback) {
@@ -173,19 +147,6 @@ function shortModel(model) {
   return `${name.toUpperCase()}${version ? ` ${version}` : ''}`
 }
 
-function normalize(session, index) {
-  const time = Date.parse(session.end || session.start)
-  return {
-    ...session,
-    _i: index,
-    t: Number.isFinite(time) ? time : Date.parse(session.start),
-    project: session.project || 'Unassigned',
-    machine: session.machine || 'Unknown',
-    provider: session.provider || 'claude',
-    primaryModel: session.models?.[0] || 'unknown',
-  }
-}
-
 function currentWindow() {
   const generated = Date.parse(state.meta?.generatedAt || '')
   const latest = Math.max(...state.sessions.map((session) => session.t), Date.now())
@@ -199,22 +160,6 @@ function sessionsIn(start, end) {
   return state.sessions.filter((session) => session.t >= start && session.t <= end)
 }
 
-function totals(sessions) {
-  const tokens = sum(sessions, (session) => session.totalTokens || 0)
-  const cacheRead = sum(sessions, (session) => session.cacheRead || 0)
-  return {
-    cost: sum(sessions, (session) => session.cost || 0),
-    sessions: sessions.length,
-    tokens,
-    cacheRead,
-    input: sum(sessions, (session) => session.input || 0),
-    output: sum(sessions, (session) => session.output || 0),
-    cacheCreate: sum(sessions, (session) => session.cacheCreate || 0),
-    avgCost: sessions.length ? sum(sessions, (session) => session.cost || 0) / sessions.length : 0,
-    cacheRatio: tokens ? cacheRead / tokens : 0,
-  }
-}
-
 function deltaText(current, previous, invert = false) {
   if (!previous) return 'No prior-period baseline'
   const change = (current - previous) / Math.abs(previous)
@@ -223,65 +168,13 @@ function deltaText(current, previous, invert = false) {
   return `${Math.abs(change * 100).toFixed(Math.abs(change) < 0.1 ? 1 : 0)}% ${direction} prior period${favorable ? '' : ''}`
 }
 
-function makeBuckets(sessions, start, end, preferredCount = 30) {
-  const span = Math.max(DAY, end - start)
-  const count = clamp(preferredCount, 1, 180)
-  const width = span / count
-  const buckets = Array.from({ length: count }, (_, index) => ({
-    start: start + index * width,
-    end: start + (index + 1) * width,
-    cost: 0,
-    sessions: 0,
-    tokens: 0,
-    families: {},
-  }))
-  for (const session of sessions) {
-    const index = clamp(Math.floor((session.t - start) / width), 0, count - 1)
-    const bucket = buckets[index]
-    const family = familyOf(session.primaryModel)
-    bucket.cost += session.cost || 0
-    bucket.sessions += 1
-    bucket.tokens += session.totalTokens || 0
-    bucket.families[family] = (bucket.families[family] || 0) + (session.cost || 0)
-  }
-  return buckets
-}
-
-function makeCalendarBuckets(sessions, end, preferredCount = 30) {
-  const count = Math.max(1, Math.round(preferredCount))
-  const endDate = new Date(`${localDateKey(new Date(end))}T12:00:00Z`)
-  const dateKeys = Array.from({ length: count }, (_, index) => {
-    const date = new Date(endDate)
-    date.setUTCDate(endDate.getUTCDate() - (count - index - 1))
-    return date.toISOString().slice(0, 10)
-  })
-  const buckets = dateKeys.map((key) => ({
-    key,
-    start: Date.parse(`${key}T12:00:00Z`),
-    cost: 0,
-    sessions: 0,
-    tokens: 0,
-    families: {},
-  }))
-  const byDate = new Map(buckets.map((bucket) => [bucket.key, bucket]))
-  for (const session of sessions) {
-    const bucket = byDate.get(localDateKey(new Date(session.t)))
-    if (!bucket) continue
-    const family = familyOf(session.primaryModel)
-    bucket.cost += session.cost || 0
-    bucket.sessions += 1
-    bucket.tokens += session.totalTokens || 0
-    bucket.families[family] = (bucket.families[family] || 0) + (session.cost || 0)
-  }
-  return buckets
-}
-
 function render() {
   const period = currentWindow()
   const current = sessionsIn(period.start, period.end)
   const previous = sessionsIn(period.start - period.days * DAY, period.start)
-  const currentTotals = totals(current)
-  const previousTotals = totals(previous)
+  const currentTotals = summarizeUsage(current)
+  const previousTotals = summarizeUsage(previous)
+  const projectSummary = summarizeProjects(current)
   state.current = current
 
   renderHeader(period, current)
@@ -290,12 +183,12 @@ function render() {
   renderSpendField(current, period)
   renderCumulativeSpend(current, period)
   renderModels(current)
-  renderProjects(current)
-  renderConcentration(current)
-  renderTopology(current)
+  renderProjects(projectSummary)
+  renderConcentration(projectSummary)
+  renderTopology(current, projectSummary)
   renderTokens(currentTotals)
   renderWorkRhythm(state.sessions, period)
-  renderAnalysisViews(current, previous, period)
+  renderAnalysisViews(current, previous, period, projectSummary)
   applyProjectView()
   applyPortalView()
   bindPageInteractions()
@@ -343,7 +236,7 @@ function renderSummary(current, previous) {
 
 function renderCadence(sessions, window) {
   const bucketCount = clamp(Math.ceil((window.end - window.start) / DAY), 7, 30)
-  const buckets = makeBuckets(sessions, window.start, window.end, bucketCount)
+  const buckets = makeIntervalBuckets(sessions, window.start, window.end, bucketCount)
   const maxSessions = Math.max(1, ...buckets.map((bucket) => bucket.sessions))
   const grid = $('.cadence-grid')
   grid.style.gridTemplateColumns = `repeat(${Math.min(15, buckets.length)}, 1fr)`
@@ -540,25 +433,10 @@ function renderModels(sessions) {
   }).join('')
 }
 
-function projectRows(sessions) {
-  const projects = new Map()
-  for (const session of sessions) {
-    const project = projects.get(session.project) || { key: session.project, value: 0, families: {} }
-    const family = familyOf(session.primaryModel)
-    project.value += session.cost || 0
-    project.families[family] = (project.families[family] || 0) + (session.cost || 0)
-    projects.set(session.project, project)
-  }
-  return [...projects.values()].map((project) => ({
-    ...project,
-    family: Object.entries(project.families).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other',
-  })).sort((a, b) => b.value - a.value)
-}
-
-function renderAnalysisViews(current, previous, period) {
-  renderSpendAnalysis(current, previous, period)
-  renderTokenAnalysis(current, previous, period)
-  renderProjectAnalysis(current)
+function renderAnalysisViews(current, previous, period, projects) {
+  renderSpendAnalysis(current, previous, period, projects)
+  renderTokenAnalysis(current, previous, period, projects)
+  renderProjectAnalysis(projects)
   renderSessionAnalysis(current)
 }
 
@@ -569,27 +447,6 @@ function renderKpis(selector, items) {
       <b>${escapeHtml(item.value)}</b>
       <small>${escapeHtml(item.note || '')}</small>
     </div>`).join('')
-}
-
-function dailyUsageRows(sessions, period) {
-  const count = clamp(Math.ceil((period.end - period.start) / DAY), 7, 30)
-  const rows = makeCalendarBuckets(sessions, period.end, count).map((bucket) => ({
-    ...bucket,
-    input: 0,
-    output: 0,
-    cacheCreate: 0,
-    cacheRead: 0,
-  }))
-  const byDate = new Map(rows.map((row) => [row.key, row]))
-  for (const session of sessions) {
-    const row = byDate.get(localDateKey(new Date(session.t)))
-    if (!row) continue
-    row.input += session.input || 0
-    row.output += session.output || 0
-    row.cacheCreate += session.cacheCreate || 0
-    row.cacheRead += session.cacheRead || 0
-  }
-  return rows
 }
 
 function renderLineChart(selector, rows, read, formatValue) {
@@ -828,9 +685,9 @@ function renderComposition(selector, rows, total, formatValue = fmt.usd) {
     </div>`).join('') : '<p class="note">No recorded activity in this period.</p>'
 }
 
-function renderSpendAnalysis(current, previous, period) {
-  const value = totals(current)
-  const prior = totals(previous)
+function renderSpendAnalysis(current, previous, period, projects) {
+  const value = summarizeUsage(current)
+  const prior = summarizeUsage(previous)
   const activeDays = new Set(current.map((session) => localDateKey(new Date(session.t)))).size
   const maximum = current.slice().sort((a, b) => (b.cost || 0) - (a.cost || 0))[0]
   renderKpis('#spendKpis', [
@@ -843,13 +700,13 @@ function renderSpendAnalysis(current, previous, period) {
   renderLineChart('#spendTrend', days, (row) => row.cost, fmt.usd)
   const machines = group(current, (session) => session.machine, (session) => session.cost || 0)
   renderComposition('#spendMachines', machines, value.cost)
-  renderAnalysisBars('#spendProjects', projectRows(current).slice(0, 10).map((row) => ({ label: row.key, note: row.family, value: row.value, project: row.key, color: styleForFamily(row.family).base })), { format: fmt.usd })
+  renderAnalysisBars('#spendProjects', projects.byCost.slice(0, 10).map((project) => ({ label: project.project, note: project.family, value: project.cost, project: project.project, color: styleForFamily(project.family).base })), { format: fmt.usd })
   renderAnalysisBars('#spendSessions', current.slice().sort((a, b) => (b.cost || 0) - (a.cost || 0)).slice(0, 10).map((session) => ({ label: session.project, note: `${session.slug || session.sid || 'Session'} / ${shortModel(session.primaryModel)}`, value: session.cost || 0, sessionId: session._i, color: styleForFamily(familyOf(session.primaryModel)).base })), { format: fmt.usd })
 }
 
-function renderTokenAnalysis(current, previous, period) {
-  const value = totals(current)
-  const prior = totals(previous)
+function renderTokenAnalysis(current, previous, period, projects) {
+  const value = summarizeUsage(current)
+  const prior = summarizeUsage(previous)
   const tokensPerDollar = value.cost ? value.tokens / value.cost : 0
   renderKpis('#tokenKpis', [
     { label: 'Total tokens', value: fmt.compact(value.tokens), note: deltaText(value.tokens, prior.tokens) },
@@ -867,41 +724,10 @@ function renderTokenAnalysis(current, previous, period) {
     { key: 'Cache read', value: value.cacheRead, color: 'var(--token-pale)' },
   ]
   renderComposition('#tokenComposition', composition, value.tokens, fmt.compact)
-  const projects = aggregateProjects(current).sort((a, b) => b.tokens - a.tokens).slice(0, 10)
-  renderAnalysisBars('#tokenProjects', projects.map((project) => ({ label: project.project, note: project.family, value: project.tokens, project: project.project, color: styleForFamily(project.family).base })))
+  const byTokens = projects.all.slice().sort((a, b) => b.tokens - a.tokens).slice(0, 10)
+  renderAnalysisBars('#tokenProjects', byTokens.map((project) => ({ label: project.project, note: project.family, value: project.tokens, project: project.project, color: styleForFamily(project.family).base })))
   const cacheRows = days.filter((row) => row.tokens > 0).slice(-10).map((row) => ({ label: row.key.slice(5), note: `${fmt.compact(row.cacheRead)} cache-read tokens`, value: row.cacheRead / row.tokens }))
   renderAnalysisBars('#cacheDays', cacheRows, { format: fmt.pct })
-}
-
-function aggregateProjects(sessions) {
-  const rows = new Map()
-  for (const session of sessions) {
-    const row = rows.get(session.project) || {
-      project: session.project,
-      sessions: 0,
-      cost: 0,
-      tokens: 0,
-      durSec: 0,
-      machines: new Set(),
-      families: {},
-      last: 0,
-    }
-    const family = familyOf(session.primaryModel)
-    row.sessions += 1
-    row.cost += session.cost || 0
-    row.tokens += session.totalTokens || 0
-    row.durSec += session.durSec || 0
-    row.machines.add(session.machine)
-    row.families[family] = (row.families[family] || 0) + (session.cost || 0)
-    row.last = Math.max(row.last, session.t)
-    rows.set(session.project, row)
-  }
-  return [...rows.values()].map((row) => ({
-    ...row,
-    machineCount: row.machines.size,
-    avgCost: row.cost / Math.max(1, row.sessions),
-    family: Object.entries(row.families).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other',
-  }))
 }
 
 function formatDuration(seconds) {
@@ -929,9 +755,8 @@ function sortMark(key, sort) {
   return sort.key === key ? (sort.direction < 0 ? ' ↓' : ' ↑') : ''
 }
 
-function renderProjectAnalysis(sessions) {
-  const projects = aggregateProjects(sessions)
-  const sorted = sortRows(projects, state.projectSort, {
+function renderProjectAnalysis(projectSummary) {
+  const sorted = sortRows(projectSummary.all, state.projectSort, {
     project: (row) => row.project.toLowerCase(),
     sessions: (row) => row.sessions,
     cost: (row) => row.cost,
@@ -942,15 +767,15 @@ function renderProjectAnalysis(sessions) {
     machines: (row) => row.machineCount,
     last: (row) => row.last,
   })
-  const top = projects.slice().sort((a, b) => b.cost - a.cost)[0]
-  const busiest = projects.slice().sort((a, b) => b.sessions - a.sessions)[0]
+  const top = projectSummary.byCost[0]
+  const busiest = projectSummary.all.slice().sort((a, b) => b.sessions - a.sessions)[0]
   renderKpis('#projectKpis', [
-    { label: 'Projects', value: String(projects.length), note: 'Active in selected period' },
+    { label: 'Projects', value: String(projectSummary.all.length), note: 'Active in selected period' },
     { label: 'Top spender', value: fmt.usd(top?.cost || 0), note: top?.project || 'No activity' },
     { label: 'Busiest', value: `${busiest?.sessions || 0} sessions`, note: busiest?.project || 'No activity' },
-    { label: 'Average / project', value: fmt.usd(sum(projects, (row) => row.cost) / Math.max(1, projects.length)), note: 'API-equivalent value' },
+    { label: 'Average / project', value: fmt.usd(projectSummary.totalCost / Math.max(1, projectSummary.all.length)), note: 'API-equivalent value' },
   ])
-  $('#projectCount').textContent = `${projects.length} project${projects.length === 1 ? '' : 's'} / click a row for detail`
+  $('#projectCount').textContent = `${projectSummary.all.length} project${projectSummary.all.length === 1 ? '' : 's'} / click a row for detail`
   const columns = [
     ['project', 'Project'], ['sessions', 'Sessions'], ['cost', 'Spend'], ['tokens', 'Tokens'], ['avgCost', 'Avg / session'], ['durSec', 'Duration'], ['family', 'Top model'], ['machines', 'Boxes'], ['last', 'Last active'],
   ]
@@ -1184,17 +1009,17 @@ function setSettingsStatus(message, error = false) {
   status.classList.toggle('error', error)
 }
 
-function renderProjects(sessions) {
-  const rows = projectRows(sessions).slice(0, 5)
-  const max = rows[0]?.value || 1
-  $('.project-list').innerHTML = rows.map((row, index) => {
-    const style = styleForFamily(row.family)
+function renderProjects(projects) {
+  const rows = projects.byCost.slice(0, 5)
+  const max = rows[0]?.cost || 1
+  $('.project-list').innerHTML = rows.map((project, index) => {
+    const style = styleForFamily(project.family)
     return `
-    <div class="project-row project-filter" data-project="${escapeHtml(row.key)}" data-family="${escapeHtml(row.family)}" style="--series:${style.color}">
+    <div class="project-row project-filter" data-project="${escapeHtml(project.project)}" data-family="${escapeHtml(project.family)}" style="--series:${style.color}">
       <span class="rank">${String(index + 1).padStart(2, '0')}</span>
-      <span class="name">${escapeHtml(row.key)}<small><i></i>${escapeHtml(row.family.toUpperCase())}</small></span>
-      <span class="bar"><i style="width:${100 * row.value / max}%"></i></span>
-      <span class="money">${fmt.usd(row.value)}</span>
+      <span class="name">${escapeHtml(project.project)}<small><i></i>${escapeHtml(project.family.toUpperCase())}</small></span>
+      <span class="bar"><i style="width:${100 * project.cost / max}%"></i></span>
+      <span class="money">${fmt.usd(project.cost)}</span>
     </div>`
   }).join('')
 }
@@ -1239,30 +1064,30 @@ function segmentedConic(parts) {
   return `conic-gradient(${stops.join(', ')})`
 }
 
-function renderConcentration(sessions) {
-  const rows = projectRows(sessions)
-  const total = sum(rows, (row) => row.value)
+function renderConcentration(projects) {
+  const rows = projects.byCost
+  const total = projects.totalCost
   const top = rows.slice(0, 3)
   const styles = top.map((row) => styleForFamily(row.family))
-  const shares = top.map((row) => total ? row.value / total : 0)
+  const shares = top.map((project) => total ? project.cost / total : 0)
   const concentration = shares.reduce((value, share) => value + share, 0)
   $('.ring-label b').textContent = fmt.pct(concentration)
   $('.ring-label span:first-child').textContent = `Top ${top.length}`
   $('.ring-label span:last-child').textContent = 'of spend'
-  $('.note span:last-child').textContent = `${top.length} projects account for ${fmt.pct(concentration)} of period value. ${top[0] ? `${top[0].key} is the largest at ${fmt.usd(top[0].value)}.` : 'No project activity was recorded.'}`
+  $('.note span:last-child').textContent = `${top.length} projects account for ${fmt.pct(concentration)} of period value. ${top[0] ? `${top[0].project} is the largest at ${fmt.usd(top[0].cost)}.` : 'No project activity was recorded.'}`
   const ringParts = top.map((row, index) => ({ share: shares[index], color: styles[index].color }))
   const otherShare = Math.max(0, 1 - concentration)
   if (otherShare) ringParts.push({ share: otherShare, color: cssColor('--token-pale', '#d0cdc4') })
   $('.ring').style.background = segmentedConic(ringParts)
-  const detailed = top.map((row, index) => `
-    <div class="conc-row project-filter" data-project="${escapeHtml(row.key)}">
+  const detailed = top.map((project, index) => `
+    <div class="conc-row project-filter" data-project="${escapeHtml(project.project)}">
       <span class="rank">${String(index + 1).padStart(2, '0')}</span>
       <i style="--series:${styles[index].color}"></i>
-      <span class="name">${escapeHtml(row.key)}<small>${escapeHtml(row.family.toUpperCase())} DOMINANT</small></span>
+      <span class="name">${escapeHtml(project.project)}<small>${escapeHtml(project.family.toUpperCase())} DOMINANT</small></span>
       <span class="share">${fmt.pct(shares[index])}</span>
-      <span class="value">${fmt.usd(row.value)}</span>
+      <span class="value">${fmt.usd(project.cost)}</span>
     </div>`).join('')
-  const otherValue = Math.max(0, total - sum(top, (row) => row.value))
+  const otherValue = Math.max(0, total - sum(top, (project) => project.cost))
   $('.ring-key').innerHTML = detailed + `
     <div class="conc-row">
       <span class="rank">04</span><i style="--series:var(--token-pale)"></i>
@@ -1619,8 +1444,8 @@ function renderRhythmTable(dateKeys, segmentsByDate, observedThrough = null) {
   $('#rhythmTable').innerHTML = `<table><thead><tr><th>Date</th><th>Activity window</th><th>Sessions</th><th>Recorded tokens</th></tr></thead><tbody>${rows}</tbody></table>`
 }
 
-function renderTopology(sessions) {
-  const projects = projectRows(sessions).slice(0, 7)
+function renderTopology(sessions, projectSummary) {
+  const projects = projectSummary.byCost.slice(0, 7)
   const familyRows = group(sessions, (session) => familyOf(session.primaryModel), (session) => session.cost || 0)
   const families = familyRows.length > 4 ? [...familyRows.slice(0, 3).map((row) => row.key), 'Other'] : familyRows.map((row) => row.key)
   const visible = new Set(families.filter((family) => family !== 'Other'))
@@ -1628,7 +1453,7 @@ function renderTopology(sessions) {
     ? Object.entries(project.families).filter(([key]) => !visible.has(key)).reduce((total, [, value]) => total + value, 0)
     : project.families[family] || 0))
   const maxCell = Math.max(1, ...cells)
-  const grandTotal = sum(projectRows(sessions), (row) => row.value)
+  const grandTotal = projectSummary.totalCost
   const head = families.map((family) => {
     const style = styleForFamily(family)
     return `<th><span class="topology-head" style="--series:${style.color}"><i></i>${escapeHtml(family)}</span></th>`
@@ -1639,10 +1464,10 @@ function renderTopology(sessions) {
         ? Object.entries(project.families).filter(([key]) => !visible.has(key)).reduce((total, [, amount]) => total + amount, 0)
         : project.families[family] || 0
       if (!value) return '<td><button class="topology-cell empty" aria-label="No recorded value"></button></td>'
-      return `<td><button class="topology-cell topology-filter" data-project="${escapeHtml(project.key)}" data-family="${escapeHtml(family)}" style="--cell:${100 * value / maxCell}%" data-tip="${escapeHtml(project.key)} | ${family} | ${fmt.usd(value)}"><b>${fmt.usd(value)}</b></button></td>`
+      return `<td><button class="topology-cell topology-filter" data-project="${escapeHtml(project.project)}" data-family="${escapeHtml(family)}" style="--cell:${100 * value / maxCell}%" data-tip="${escapeHtml(project.project)} | ${family} | ${fmt.usd(value)}"><b>${fmt.usd(value)}</b></button></td>`
     }).join('')
     const dominant = Object.entries(project.families).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other'
-    return `<tr><th class="topology-project">${escapeHtml(project.key)}<small>${escapeHtml(dominant)} dominant</small></th>${cellsHtml}<td class="topology-total">${fmt.usd(project.value)}</td></tr>`
+    return `<tr><th class="topology-project">${escapeHtml(project.project)}<small>${escapeHtml(dominant)} dominant</small></th>${cellsHtml}<td class="topology-total">${fmt.usd(project.cost)}</td></tr>`
   }).join('')
   const foot = families.map((family) => {
     const value = family === 'Other'
@@ -1700,7 +1525,7 @@ function detailList(rows) {
 
 function openProjectDetail(project) {
   const sessions = state.current.filter((session) => session.project === project)
-  const value = totals(sessions)
+  const value = summarizeUsage(sessions)
   const models = group(sessions, (session) => familyOf(session.primaryModel), (session) => session.cost || 0)
   const providers = group(sessions, (session) => session.provider, () => 1)
   openDetail({
@@ -1722,7 +1547,7 @@ function openProjectDetail(project) {
 
 function openSessionDetail(session) {
   if (!session) return
-  const value = totals([session])
+  const value = summarizeUsage([session])
   const vendorRows = Object.entries(session.byVendor || {}).map(([vendor, usage]) => ({ label: vendor.toUpperCase(), value: `${fmt.usd(usage.cost || 0)} / ${fmt.compact(usage.tokens || 0)} tokens` }))
   const tokenRows = [
     { label: 'Input', value: fmt.compact(session.input || 0) },
@@ -1761,7 +1586,7 @@ function openTopologyDetail(project, family) {
     const sessionFamily = familyOf(session.primaryModel)
     return family === 'Other' ? !visible.has(sessionFamily) : sessionFamily === family
   })
-  const value = totals(sessions)
+  const value = summarizeUsage(sessions)
   openDetail({
     eyebrow: 'Project × model detail',
     title: `${project} / ${family}`,
@@ -1779,7 +1604,7 @@ function openTopologyDetail(project, family) {
 
 function openModelDetail(family) {
   const sessions = state.current.filter((session) => familyOf(session.primaryModel) === family)
-  const value = totals(sessions)
+  const value = summarizeUsage(sessions)
   const projects = group(sessions, (session) => session.project, (session) => session.cost || 0).slice(0, 6)
   openDetail({
     eyebrow: 'Model detail',
@@ -1801,7 +1626,7 @@ function openRhythmDetail(element) {
   const groupedIds = (element.dataset.sessionIds || '').split(',').filter(Boolean)
   if (groupedIds.length) {
     const sessions = groupedIds.map((id) => state.sessions.find((session) => String(session._i) === id)).filter(Boolean)
-    const value = totals(sessions)
+  const value = summarizeUsage(sessions)
     const startMinute = Number(element.dataset.startMinute)
     const endMinute = Number(element.dataset.endMinute)
     const clock = (minute) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`
@@ -1849,7 +1674,7 @@ function openRhythmDetail(element) {
 }
 
 function openMetricDetail(index) {
-  const current = totals(state.current)
+  const current = summarizeUsage(state.current)
   const definitions = [
     ['Session count', String(current.sessions), 'Recorded agent sessions in the selected period. The background hatch length compares this period with the previous period.'],
     ['Token volume', fmt.compact(current.tokens), 'Total input, output, cache-write, and cache-read tokens. Token types use ordered solid grayscale values rather than model colors.'],
@@ -1903,7 +1728,7 @@ function bindPageInteractions() {
       state.projectSort = state.projectSort.key === key
         ? { key, direction: -state.projectSort.direction }
         : { key, direction: key === 'project' || key === 'family' ? 1 : -1 }
-      renderProjectAnalysis(state.current)
+    renderProjectAnalysis(summarizeProjects(state.current))
       bindPageInteractions()
     }
   })
@@ -2009,7 +1834,7 @@ async function load() {
       }),
       fetch('./data/meta.json', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null),
     ])
-    state.sessions = sessions.map(normalize).filter((session) => Number.isFinite(session.t))
+    state.sessions = sessions.map(normalizeSession).filter((session) => Number.isFinite(session.t))
     state.rhythmProjectColors = null
     state.meta = meta
     const requestedView = window.location.hash.slice(1)
