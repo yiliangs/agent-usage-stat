@@ -8,9 +8,10 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import type { LogbookRecord } from "./logbook-writer.js";
-
-const SHARD_DIR = "logbook.d";
+import {
+  LOGBOOK_SHARD_DIR,
+  type LogbookRecord,
+} from "./usage-ledger.js";
 
 export interface LedgerMergeResult {
   copied: number;
@@ -27,10 +28,10 @@ export async function mergeUsageLedger(
   }
   assertIndependentRoots(sourceRoot, destinationRoot);
 
-  const sourceDir = join(sourceRoot, SHARD_DIR);
+  const sourceDir = join(sourceRoot, LOGBOOK_SHARD_DIR);
   if (!existsSync(sourceDir)) return { copied: 0, retained: 0 };
 
-  const destinationDir = join(destinationRoot, SHARD_DIR);
+  const destinationDir = join(destinationRoot, LOGBOOK_SHARD_DIR);
   await mkdir(destinationDir, { recursive: true });
 
   let copied = 0;
@@ -59,7 +60,7 @@ export async function mergeUsageLedger(
 }
 
 export async function usageLedgerHasRecords(root: string): Promise<boolean> {
-  const shardDir = join(root, SHARD_DIR);
+  const shardDir = join(root, LOGBOOK_SHARD_DIR);
   if (!existsSync(shardDir)) return false;
   return (await readdir(shardDir)).some((file) =>
     file.toLowerCase().endsWith(".json")
@@ -75,7 +76,7 @@ export function sameUsageRoot(left: string, right: string): boolean {
 /** Remove only the application-owned shard directory after verified migration. */
 export async function removeUsageLedger(root: string): Promise<void> {
   const resolvedRoot = resolve(root);
-  const shardDir = resolve(resolvedRoot, SHARD_DIR);
+  const shardDir = resolve(resolvedRoot, LOGBOOK_SHARD_DIR);
   if (dirname(shardDir) !== resolvedRoot) {
     throw new Error(`Refusing to remove ledger outside ${resolvedRoot}`);
   }

@@ -3,7 +3,11 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import ora from "ora";
 import { ConfigManager } from "../core/config-manager.js";
-import { LogbookWriter, type LogbookRecord } from "../core/logbook-writer.js";
+import { LogbookWriter } from "../core/logbook-writer.js";
+import {
+  LOGBOOK_SHARD_DIR,
+  type LogbookRecord,
+} from "../core/usage-ledger.js";
 import { allProviders } from "../providers/registry.js";
 import { resolveUsageRoot } from "../utils/usage-root.js";
 import type {
@@ -61,7 +65,7 @@ export class SyncCommand {
           try {
             const shardPath = join(
               root,
-              LogbookWriter.SHARD_DIR,
+              LOGBOOK_SHARD_DIR,
               `${found.sessionId}.json`,
             );
             const sourceFingerprint = await provider.fingerprintSession(found);

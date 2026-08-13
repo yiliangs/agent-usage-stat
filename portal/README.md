@@ -13,4 +13,5 @@ Key files:
 
 - `index.html`: application layout and visual system
 - `portal.js`: aggregation, navigation, charts, tables, and detail interactions
-- `scripts/build-data.mjs`: shard normalization for renderer data
+- `../src/desktop/portal-data.ts`: typed ledger-to-renderer snapshot builder
+- `scripts/build-data.mjs`: repository CLI adapter for that compiled builder
