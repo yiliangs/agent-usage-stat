@@ -14,10 +14,9 @@ import {
 import { expandHome } from "../../utils/paths.js";
 import type {
   ModelBreakdown,
-  SessionUsage,
   TurnUsage,
 } from "../../types/session.js";
-import type { ParsedTranscript } from "../../types/transcript.js";
+import type { ProviderSessionSnapshot } from "../../types/provider.js";
 import { displayModelName } from "./model-names.js";
 import {
   normalizeModelId,
@@ -71,12 +70,6 @@ interface StoredSnapshot {
   createdAt: string;
 }
 
-export interface ClaudeSnapshot {
-  sessionData: SessionUsage;
-  transcriptData: ParsedTranscript;
-  unknownModels: string[];
-}
-
 const SYNTHETIC_MODEL = "<synthetic>";
 const TAIL_BYTES = 64 * 1024;
 const LOCK_WAIT_ATTEMPTS = 250;
@@ -85,7 +78,7 @@ const LOCK_WAIT_ATTEMPTS = 250;
 export async function readClaudeSnapshot(
   transcriptPath: string,
   fallbackSessionId: string,
-): Promise<ClaudeSnapshot> {
+): Promise<ProviderSessionSnapshot> {
   const expanded = resolve(expandHome(transcriptPath));
   if (!existsSync(expanded)) {
     throw new Error(`Transcript file not found: ${transcriptPath}`);
@@ -300,7 +293,7 @@ function applyMetadata(state: StoredSnapshot, message: TranscriptMessage): void 
   }
 }
 
-function toSnapshot(state: StoredSnapshot): ClaudeSnapshot {
+function toSnapshot(state: StoredSnapshot): ProviderSessionSnapshot {
   const breakdowns = toBreakdowns(state.totalsByModel);
   const sum = (pick: (item: ModelBreakdown) => number): number =>
     breakdowns.reduce((total, item) => total + pick(item), 0);

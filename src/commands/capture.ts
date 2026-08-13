@@ -81,16 +81,17 @@ export class CaptureCommand {
       }
 
       spinner.text = "Computing usage...";
-      const sessionData = await provider.calculateUsage(
+      const snapshot = await provider.readSession(
         transcriptPath,
         sessionId ?? "",
       );
+      const { sessionData, unknownModels } = snapshot;
+      let { transcriptData } = snapshot;
       sessionId = sessionData.sessionId || sessionId;
 
-      const unknown = provider.getUnknownModels();
-      if (unknown.length > 0) {
+      if (unknownModels.length > 0) {
         logHookEvent(
-          `pricing miss provider=${provider.name} models=${unknown.join(",")} billed at $0`,
+          `pricing miss provider=${provider.name} models=${unknownModels.join(",")} billed at $0`,
         );
       }
 
@@ -103,14 +104,10 @@ export class CaptureCommand {
       }
 
       spinner.text = "Reading session metadata...";
-      const transcriptData = await provider.parseTranscript(
-        transcriptPath,
-        sessionId,
-      );
       const cwd = hookData?.cwd || transcriptData.cwd;
       if (cwd && (!transcriptData.gitBranch || transcriptData.gitBranch === "HEAD")) {
         const branch = await this.resolveCurrentBranch(cwd);
-        if (branch) transcriptData.gitBranch = branch;
+        if (branch) transcriptData = { ...transcriptData, gitBranch: branch };
       }
 
       const shardPath = await this.logbookWriter.append(root, {

@@ -12,8 +12,10 @@ if (!sessionId || !transcriptPath) {
 }
 
 const provider = await detectProvider(transcriptPath);
-const sessionData = await provider.calculateUsage(transcriptPath, sessionId);
-const transcriptData = await provider.parseTranscript(transcriptPath, sessionId);
+const { sessionData, transcriptData } = await provider.readSession(
+  transcriptPath,
+  sessionId,
+);
 const config = await new ConfigManager().loadConfig();
 const root = resolveUsageRoot(config).root;
 const path = await new LogbookWriter().append(root, {

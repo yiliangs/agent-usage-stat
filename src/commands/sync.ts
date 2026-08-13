@@ -92,21 +92,21 @@ export class SyncCommand {
 
         const { found, sourceFingerprint } = result;
         try {
-          const sessionData = await provider.calculateUsage(
+          const snapshot = await provider.readSession(
             found.transcriptPath,
             found.sessionId,
           );
+          let { sessionData } = snapshot;
           if (sessionData.sessionId !== found.sessionId) {
             throw new Error(
               `provider returned session ${sessionData.sessionId} for ${found.sessionId}`,
             );
           }
           if (sessionData.totalTokens <= 0) continue;
-          sessionData.sourceFingerprint ??= sourceFingerprint;
-          const transcriptData = await provider.parseTranscript(
-            found.transcriptPath,
-            sessionData.sessionId,
-          );
+          if (!sessionData.sourceFingerprint) {
+            sessionData = { ...sessionData, sourceFingerprint };
+          }
+          const { transcriptData } = snapshot;
           await this.writer.append(root, { sessionData, transcriptData });
           updated++;
         } catch (error) {

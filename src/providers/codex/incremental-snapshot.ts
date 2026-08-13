@@ -13,10 +13,9 @@ import {
 import { expandHome } from "../../utils/paths.js";
 import type {
   ModelBreakdown,
-  SessionUsage,
   TurnUsage,
 } from "../../types/session.js";
-import type { ParsedTranscript } from "../../types/transcript.js";
+import type { ProviderSessionSnapshot } from "../../types/provider.js";
 import { displayModelName } from "./model-names.js";
 import {
   LONG_CONTEXT_THRESHOLD,
@@ -78,16 +77,10 @@ interface StoredSnapshot {
   createdAt: string;
 }
 
-export interface CodexSnapshot {
-  sessionData: SessionUsage;
-  transcriptData: ParsedTranscript;
-  unknownModels: string[];
-}
-
 interface MemoEntry {
   size: number;
   mtimeMs: number;
-  snapshot: CodexSnapshot;
+  snapshot: ProviderSessionSnapshot;
 }
 
 const memo = new Map<string, MemoEntry>();
@@ -97,7 +90,7 @@ const LOCK_WAIT_ATTEMPTS = 250;
 export async function readCodexSnapshot(
   transcriptPath: string,
   fallbackSessionId: string,
-): Promise<CodexSnapshot> {
+): Promise<ProviderSessionSnapshot> {
   const expanded = resolve(expandHome(transcriptPath));
   if (!existsSync(expanded)) {
     throw new Error(`Transcript file not found: ${transcriptPath}`);
@@ -410,7 +403,7 @@ function applyMetadata(state: StoredSnapshot, record: CodexRolloutRecord): void 
   }
 }
 
-function toSnapshot(state: StoredSnapshot): CodexSnapshot {
+function toSnapshot(state: StoredSnapshot): ProviderSessionSnapshot {
   const breakdowns = toBreakdowns(state.totalsByModel);
   const sum = (pick: (item: ModelBreakdown) => number): number =>
     breakdowns.reduce((total, item) => total + pick(item), 0);

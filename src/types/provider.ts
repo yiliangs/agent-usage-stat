@@ -25,6 +25,13 @@ export interface FoundSession {
   mtimeMs: number;
 }
 
+/** One internally consistent view of a provider transcript at read time. */
+export interface ProviderSessionSnapshot {
+  readonly sessionData: SessionUsage;
+  readonly transcriptData: ParsedTranscript;
+  readonly unknownModels: readonly string[];
+}
+
 export interface SessionProvider {
   /** Discriminator persisted to the logbook shard via SessionUsage. */
   readonly name: ProviderName;
@@ -41,24 +48,9 @@ export interface SessionProvider {
   /** Cheap provider-specific fingerprint of every billing input for a session. */
   fingerprintSession(session: FoundSession): Promise<string>;
 
-  /**
-   * Sum the session's billing events from its transcript and price them.
-   * Must set `provider` and per-model `displayName` on the result.
-   */
-  calculateUsage(
+  /** Derive billing, metadata, and pricing misses from one transcript read. */
+  readSession(
     transcriptPath: string,
-    sessionId: string,
-  ): Promise<SessionUsage>;
-
-  /** Models priced at $0 during the last calculateUsage (stale price table). */
-  getUnknownModels(): string[];
-
-  /**
-   * Session metadata (slug, timestamps, message counts, cwd, branch).
-   * `fallbackId` seeds the slug when the transcript carries none.
-   */
-  parseTranscript(
-    transcriptPath: string,
-    fallbackId?: string,
-  ): Promise<ParsedTranscript>;
+    fallbackSessionId: string,
+  ): Promise<ProviderSessionSnapshot>;
 }
