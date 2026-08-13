@@ -2,8 +2,9 @@
 // Produced by a provider (src/types/provider.ts) — provider-neutral on the
 // way out: renderers and the logbook writer never branch on the provider.
 
-/** Which host tool produced the session. */
-export type ProviderName = "claude" | "codex" | "copilot";
+import type { ProviderName } from "../core/provider-definition.js";
+
+export type { ProviderName };
 
 export interface ModelBreakdown {
   /** Normalized model id — aggregation key, logbook `models` entry. */

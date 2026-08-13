@@ -3,6 +3,7 @@ import { copyFile, mkdir, readFile, writeFile } from "fs/promises";
 import { spawnSync } from "child_process";
 import { basename, dirname, join } from "path";
 import { homeDir } from "../utils/paths.js";
+import { PROVIDER_NAMES } from "./provider-definition.js";
 
 const BLOCK_START = "# >>> Agent Usage Stat terminal message >>>";
 const BLOCK_END = "# <<< Agent Usage Stat terminal message <<<";
@@ -10,7 +11,7 @@ const BLOCK_PATTERN = new RegExp(
   `(?:\\r?\\n)?${escapeRegExp(BLOCK_START)}[\\s\\S]*?${escapeRegExp(BLOCK_END)}(?:\\r?\\n)?`,
   "g",
 );
-const COMMANDS = ["claude", "codex", "copilot", "claudex"] as const;
+const COMMANDS = [...PROVIDER_NAMES, "claudex"] as const;
 export type WrappedCommand = (typeof COMMANDS)[number];
 
 export type ShellProfileKind = "powershell" | "zsh" | "bash";

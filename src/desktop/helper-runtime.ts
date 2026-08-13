@@ -18,6 +18,7 @@ import {
   installedHelperStatePath,
 } from "../core/application-paths.js";
 import { ConfigManager } from "../core/config-manager.js";
+import { PROVIDER_NAMES } from "../core/provider-definition.js";
 import {
   resolvedCapturePolicy,
   resolvedCaptureStrategy,
@@ -315,16 +316,15 @@ function sameProviderDataRoots(
   right: Record<string, string>,
 ): boolean {
   if (!left) return false;
-  return ["claude", "codex", "copilot"].every(
+  return PROVIDER_NAMES.every(
     (provider) => left[provider] === right[provider],
   );
 }
 
 function sameCapturePolicy(left: CapturePolicy, right: CapturePolicy): boolean {
   return left.default === right.default &&
-    ["claude", "codex", "copilot"].every((provider) =>
-      left.providers?.[provider as ProviderName] ===
-        right.providers?.[provider as ProviderName]
+    PROVIDER_NAMES.every((provider) =>
+      left.providers?.[provider] === right.providers?.[provider]
     );
 }
 

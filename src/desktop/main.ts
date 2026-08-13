@@ -18,6 +18,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { resolveUsageRootFromDisk } from "../utils/usage-root.js";
 import { ConfigManager } from "../core/config-manager.js";
+import { isProviderName } from "../core/provider-definition.js";
 import {
   desktopSetupStatePath,
   installedHelperPath,
@@ -535,10 +536,6 @@ async function handlePortalRequest(
     const message = error instanceof Error ? error.message : String(error);
     return settingsJson({ error: message }, 500);
   }
-}
-
-function isProviderName(value: unknown): value is ProviderName {
-  return value === "claude" || value === "codex" || value === "copilot";
 }
 
 function settingsJson(value: unknown, status = 200): Response {

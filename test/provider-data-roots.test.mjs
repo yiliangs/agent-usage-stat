@@ -5,7 +5,15 @@ import {
   resolveProviderDataRoot,
   resolveProviderDataRoots,
 } from "../dist/utils/provider-data-roots.js";
-import { detectProvider } from "../dist/providers/registry.js";
+import {
+  detectProvider,
+  providerByName,
+} from "../dist/providers/registry.js";
+import {
+  isProviderName,
+  PROVIDER_NAMES,
+} from "../dist/core/provider-definition.js";
+import { createAgentIntegrations } from "../dist/integrations/agent-integrations.js";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 
@@ -53,11 +61,59 @@ test("provider data roots distinguish default, environment, and custom paths", (
   );
 });
 
-test("provider data roots preserve registry order", () => {
-  assert.deepEqual(
-    resolveProviderDataRoots({}, {}, resolve("home")).map((item) => item.provider),
-    ["claude", "codex", "copilot"],
-  );
+test("provider inventory covers roots, factories, detectors, integrations, and validation", async () => {
+  const expectedNames = ["claude", "codex", "copilot"];
+  const expectedDetectionRecords = {
+    claude: { type: "user" },
+    codex: { type: "session_meta" },
+    copilot: { type: "session.start" },
+  };
+  const home = resolve("provider-inventory-home");
+  const roots = resolveProviderDataRoots({}, {}, home);
+  const integrations = createAgentIntegrations(home, () => false, {}, {});
+  const transcripts = await mkdtemp(join(tmpdir(), "agent-usage-stat-inventory-"));
+
+  try {
+    assert.deepEqual(PROVIDER_NAMES, expectedNames);
+    assert.deepEqual(
+      roots.map((item) => item.provider),
+      expectedNames,
+    );
+    assert.deepEqual(
+      roots.map((item) => item.environmentVariable),
+      ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME"],
+    );
+    assert.deepEqual(
+      roots.map((item) => item.root),
+      [join(home, ".claude"), join(home, ".codex"), join(home, ".copilot")],
+    );
+    assert.deepEqual(
+      integrations.map((integration) => [integration.provider, integration.label]),
+      [
+        ["claude", "Claude Code"],
+        ["codex", "Codex"],
+        ["copilot", "GitHub Copilot CLI"],
+      ],
+    );
+
+    for (const [index, provider] of PROVIDER_NAMES.entries()) {
+      assert.equal(isProviderName(provider), true);
+      assert.equal(providerByName(provider, roots[index].root).name, provider);
+
+      const transcript = join(transcripts, `${provider}.jsonl`);
+      await writeFile(
+        transcript,
+        `${JSON.stringify(expectedDetectionRecords[provider])}\n`,
+      );
+      assert.equal((await detectProvider(transcript)).name, provider);
+    }
+
+    for (const value of [undefined, null, "", "github-copilot", 0, {}]) {
+      assert.equal(isProviderName(value), false);
+    }
+  } finally {
+    await rm(transcripts, { recursive: true, force: true });
+  }
 });
 
 test("provider detection falls back to a configured custom root", async () => {

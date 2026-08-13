@@ -1,4 +1,8 @@
 import { open } from "fs/promises";
+import {
+  isProviderName,
+  PROVIDER_NAMES,
+} from "../core/provider-definition.js";
 import { ClaudeProvider } from "./claude/provider.js";
 import { CodexProvider } from "./codex/provider.js";
 import { CopilotProvider } from "./copilot/provider.js";
@@ -13,28 +17,24 @@ import { resolveProviderDataRoots } from "../utils/provider-data-roots.js";
 import { isAbsolute, relative, resolve } from "node:path";
 
 interface ProviderRegistration {
-  name: ProviderName;
   create: (root?: string) => SessionProvider;
   transcriptRecordTypes: readonly string[];
 }
 
-const PROVIDERS: readonly ProviderRegistration[] = [
-  {
-    name: "claude",
+const PROVIDERS: Record<ProviderName, ProviderRegistration> = {
+  claude: {
     create: (root) => new ClaudeProvider(root),
     transcriptRecordTypes: ["user", "assistant"],
   },
-  {
-    name: "codex",
+  codex: {
     create: (root) => new CodexProvider(root),
     transcriptRecordTypes: ["session_meta", "turn_context"],
   },
-  {
-    name: "copilot",
+  copilot: {
     create: (root) => new CopilotProvider(root),
     transcriptRecordTypes: ["session.start"],
   },
-];
+};
 
 export interface ResolvedSession {
   provider: SessionProvider;
@@ -46,11 +46,10 @@ export function providerByName(
   name: ProviderName,
   root?: string,
 ): SessionProvider {
-  const registration = PROVIDERS.find((provider) => provider.name === name);
-  if (!registration) {
+  if (!isProviderName(name)) {
     throw new Error(`Unsupported provider: ${String(name)}`);
   }
-  return registration.create(root);
+  return PROVIDERS[name].create(root);
 }
 
 /** Every installed provider implementation, used by provider-neutral workflows. */
@@ -88,12 +87,12 @@ export async function detectProvider(
     if (!line.trim()) continue;
     try {
       const record = JSON.parse(line) as { type?: string };
-      const registration = PROVIDERS.find((provider) =>
+      const provider = PROVIDER_NAMES.find((name) =>
         record.type
-          ? provider.transcriptRecordTypes.includes(record.type)
+          ? PROVIDERS[name].transcriptRecordTypes.includes(record.type)
           : false,
       );
-      if (registration) return registration.create();
+      if (provider) return PROVIDERS[provider].create();
     } catch {
       // Keep scanning; a partial final line can appear in the head chunk.
     }

@@ -1,4 +1,5 @@
 import crossSpawn from "cross-spawn";
+import { PROVIDER_NAMES } from "../core/provider-definition.js";
 import {
   createAgentRun,
   pruneExpiredRuns,
@@ -11,12 +12,7 @@ import type {
   SettledRun,
 } from "../utils/capture-run.js";
 
-const AGENTS = new Set<AgentCommandName>([
-  "claude",
-  "codex",
-  "copilot",
-  "claudex",
-]);
+const AGENTS = new Set<AgentCommandName>([...PROVIDER_NAMES, "claudex"]);
 
 interface AgentExit {
   code: number | null;

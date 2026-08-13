@@ -1,12 +1,12 @@
 import chalk from "chalk";
 import { ConfigManager } from "../core/config-manager.js";
+import { isProviderName } from "../core/provider-definition.js";
 import { resolveUsageRoot } from "../utils/usage-root.js";
 import {
   resolvedCapturePolicy,
   type AppConfig,
   type CaptureStrategy,
 } from "../types/config.js";
-import type { ProviderName } from "../types/provider.js";
 
 export interface ConfigOptions {
   show?: boolean;
@@ -67,8 +67,11 @@ export class ConfigCommand {
       console.log(chalk.green(`Capture policy updated: ${value}`));
       return;
     }
-    const match = /^capturePolicy\.(claude|codex|copilot)$/.exec(key || "");
-    if (!match) {
+    const policyPrefix = "capturePolicy.";
+    const provider = key?.startsWith(policyPrefix)
+      ? key.slice(policyPrefix.length)
+      : undefined;
+    if (!isProviderName(provider)) {
       throw new Error(
         'Use --set dataRoot="<path>", capturePolicy="continuous|batch", or capturePolicy.<agent>="continuous|batch|default"',
       );
@@ -76,7 +79,6 @@ export class ConfigCommand {
     if (!["continuous", "batch", "default"].includes(value)) {
       throw new Error('Provider capture policy must be "continuous", "batch", or "default"');
     }
-    const provider = match[1] as ProviderName;
     const config = await this.configManager.loadConfig();
     const providers = { ...config.capturePolicy?.providers };
     if (value === "default") delete providers[provider];
