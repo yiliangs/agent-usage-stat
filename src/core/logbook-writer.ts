@@ -222,7 +222,7 @@ export class LogbookWriter {
     const durationMs =
       transcriptData.endTime.getTime() - transcriptData.startTime.getTime();
     const durationSec = Math.max(0, Math.floor(durationMs / 1000));
-    const models = (sessionData.modelBreakdowns || []).map((m) => m.modelName);
+    const models = sessionData.modelBreakdowns.map((model) => model.modelName);
 
     return {
       timestamp: transcriptData.endTime.toISOString(),
@@ -236,25 +236,25 @@ export class LogbookWriter {
       end_time: transcriptData.endTime.toISOString(),
       duration_seconds: durationSec,
       duration_human: formatDuration(durationSec),
-      input_tokens: sessionData.inputTokens ?? 0,
-      output_tokens: sessionData.outputTokens ?? 0,
-      cache_creation_tokens: sessionData.cacheCreationTokens ?? 0,
-      cache_read_tokens: sessionData.cacheReadTokens ?? 0,
-      total_tokens: sessionData.totalTokens ?? 0,
-      total_cost_usd: Number((sessionData.totalCost ?? 0).toFixed(6)),
+      input_tokens: sessionData.inputTokens,
+      output_tokens: sessionData.outputTokens,
+      cache_creation_tokens: sessionData.cacheCreationTokens,
+      cache_read_tokens: sessionData.cacheReadTokens,
+      total_tokens: sessionData.totalTokens,
+      total_cost_usd: Number(sessionData.totalCost.toFixed(6)),
       models,
-      model_breakdowns: (sessionData.modelBreakdowns || []).map((breakdown) => ({
+      model_breakdowns: sessionData.modelBreakdowns.map((breakdown) => ({
         model: breakdown.modelName,
         vendor: vendorForModel(breakdown.modelName),
         input_tokens: breakdown.inputTokens,
         output_tokens: breakdown.outputTokens,
-        cache_creation_tokens: breakdown.cacheCreationTokens ?? 0,
-        cache_read_tokens: breakdown.cacheReadTokens ?? 0,
+        cache_creation_tokens: breakdown.cacheCreationTokens,
+        cache_read_tokens: breakdown.cacheReadTokens,
         total_tokens:
           breakdown.inputTokens +
           breakdown.outputTokens +
-          (breakdown.cacheCreationTokens ?? 0) +
-          (breakdown.cacheReadTokens ?? 0),
+          breakdown.cacheCreationTokens +
+          breakdown.cacheReadTokens,
         total_cost_usd: Number(breakdown.cost.toFixed(6)),
       })),
       turns: sessionData.turns?.map((turn) => ({
@@ -267,7 +267,7 @@ export class LogbookWriter {
         cache_read_tokens: turn.cacheReadTokens,
         total_tokens: turn.totalTokens,
         total_cost_usd: Number(turn.totalCost.toFixed(6)),
-        models: turn.modelsUsed,
+        models: turn.modelBreakdowns.map((model) => model.modelName),
       })),
       source_fingerprint: sessionData.sourceFingerprint,
       provider: sessionData.provider,

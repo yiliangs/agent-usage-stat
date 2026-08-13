@@ -12,6 +12,10 @@ import {
   writeFile,
 } from "fs/promises";
 import { expandHome } from "../../utils/paths.js";
+import {
+  buildSessionUsage,
+  buildTurnUsage,
+} from "../../core/usage-summary.js";
 import type {
   ModelBreakdown,
   TurnUsage,
@@ -255,19 +259,12 @@ function applyLines(state: StoredSnapshot, content: string, isMain: boolean): vo
       continue;
     }
     const breakdown = breakdownFor(model, input, output, cacheWrite, cacheRead, cost);
-    state.turns.push({
+    state.turns.push(buildTurnUsage({
       id: id || message.uuid || message.requestId || `claude-response-${state.turns.length + 1}`,
       startTime: message.timestamp,
       endTime: message.timestamp,
-      inputTokens: input,
-      outputTokens: output,
-      cacheCreationTokens: cacheWrite,
-      cacheReadTokens: cacheRead,
-      totalTokens: input + output + cacheWrite + cacheRead,
-      totalCost: cost,
-      modelsUsed: [model],
       modelBreakdowns: [breakdown],
-    });
+    }));
   }
   state.seenBillingKeys = [...seen];
   state.unknownModels = [...unknown];
@@ -295,30 +292,17 @@ function applyMetadata(state: StoredSnapshot, message: TranscriptMessage): void 
 
 function toSnapshot(state: StoredSnapshot): ProviderSessionSnapshot {
   const breakdowns = toBreakdowns(state.totalsByModel);
-  const sum = (pick: (item: ModelBreakdown) => number): number =>
-    breakdowns.reduce((total, item) => total + pick(item), 0);
-  const input = sum((item) => item.inputTokens);
-  const output = sum((item) => item.outputTokens);
-  const cacheWrite = sum((item) => item.cacheCreationTokens ?? 0);
-  const cacheRead = sum((item) => item.cacheReadTokens ?? 0);
   const created = new Date(state.createdAt);
   return {
-    sessionData: {
+    sessionData: buildSessionUsage({
       provider: "claude",
       sessionId: state.sessionId,
-      inputTokens: input,
-      outputTokens: output,
-      cacheCreationTokens: cacheWrite,
-      cacheReadTokens: cacheRead,
-      totalTokens: input + output + cacheWrite + cacheRead,
-      totalCost: sum((item) => item.cost),
-      modelsUsed: breakdowns.map((item) => item.modelName),
       modelBreakdowns: breakdowns,
       turns: state.temporalComplete
         ? [...state.turns].sort((a, b) => Date.parse(a.endTime) - Date.parse(b.endTime))
         : undefined,
       sourceFingerprint: state.sourceFingerprint,
-    },
+    }),
     transcriptData: {
       sessionSlug: state.sessionSlug || state.sessionId.slice(0, 8) || "unknown-session",
       firstPrompt: state.firstPrompt || "No prompt available",

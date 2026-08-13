@@ -8,12 +8,12 @@ export type ProviderName = "claude" | "codex" | "copilot";
 export interface ModelBreakdown {
   /** Normalized model id — aggregation key, logbook `models` entry. */
   modelName: string;
-  /** Human-readable name, set by the provider; falls back to modelName. */
-  displayName?: string;
+  /** Human-readable name supplied by the provider. */
+  displayName: string;
   inputTokens: number;
   outputTokens: number;
-  cacheCreationTokens?: number;
-  cacheReadTokens?: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   cost: number;
 }
 
@@ -28,7 +28,6 @@ export interface TurnUsage {
   cacheReadTokens: number;
   totalTokens: number;
   totalCost: number;
-  modelsUsed: string[];
   modelBreakdowns: ModelBreakdown[];
 }
 
@@ -37,15 +36,12 @@ export interface SessionUsage {
   sessionId: string;
   inputTokens: number;
   outputTokens: number;
-  cacheCreationTokens?: number;
-  cacheReadTokens?: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   totalTokens: number;
   totalCost: number;
-  lastActivity?: string;
-  modelsUsed?: string[];
-  modelBreakdowns?: ModelBreakdown[];
+  modelBreakdowns: ModelBreakdown[];
   turns?: TurnUsage[];
   /** Provider-source fingerprint used for idempotent reconciliation. */
-  sourceFingerprint?: string;
-  projectPath?: string;
+  sourceFingerprint: string;
 }

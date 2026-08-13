@@ -4,6 +4,7 @@ import type { ProviderSessionSnapshot } from "../../types/provider.js";
 import type { ModelBreakdown } from "../../types/session.js";
 import type { ParsedTranscript } from "../../types/transcript.js";
 import { expandHome } from "../../utils/paths.js";
+import { buildSessionUsage } from "../../core/usage-summary.js";
 import {
   displayModelName,
   normalizeModelId,
@@ -52,28 +53,13 @@ export async function readCopilotSnapshot(
   );
   breakdowns.sort((a, b) => b.cost - a.cost);
 
-  const sum = (pick: (item: ModelBreakdown) => number): number =>
-    breakdowns.reduce((total, item) => total + pick(item), 0);
-  const inputTokens = sum((item) => item.inputTokens);
-  const outputTokens = sum((item) => item.outputTokens);
-  const cacheCreationTokens = sum((item) => item.cacheCreationTokens || 0);
-  const cacheReadTokens = sum((item) => item.cacheReadTokens || 0);
-
   return {
-    sessionData: {
+    sessionData: buildSessionUsage({
       provider: "copilot",
       sessionId,
-      inputTokens,
-      outputTokens,
-      cacheCreationTokens,
-      cacheReadTokens,
-      totalTokens:
-        inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens,
-      totalCost: sum((item) => item.cost),
-      modelsUsed: breakdowns.map((item) => item.modelName),
       modelBreakdowns: breakdowns,
       sourceFingerprint: await fingerprintTranscriptFile(expanded),
-    },
+    }),
     transcriptData: toTranscript(events, sessionId),
     unknownModels: [...unknownModels],
   };

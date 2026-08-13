@@ -11,6 +11,10 @@ import {
   writeFile,
 } from "fs/promises";
 import { expandHome } from "../../utils/paths.js";
+import {
+  buildSessionUsage,
+  buildTurnUsage,
+} from "../../core/usage-summary.js";
 import type {
   ModelBreakdown,
   TurnUsage,
@@ -405,12 +409,6 @@ function applyMetadata(state: StoredSnapshot, record: CodexRolloutRecord): void 
 
 function toSnapshot(state: StoredSnapshot): ProviderSessionSnapshot {
   const breakdowns = toBreakdowns(state.totalsByModel);
-  const sum = (pick: (item: ModelBreakdown) => number): number =>
-    breakdowns.reduce((total, item) => total + pick(item), 0);
-  const inputTokens = sum((item) => item.inputTokens);
-  const outputTokens = sum((item) => item.outputTokens);
-  const cacheCreationTokens = sum((item) => item.cacheCreationTokens ?? 0);
-  const cacheReadTokens = sum((item) => item.cacheReadTokens ?? 0);
   const turns = Object.values(state.turns)
     .map(toTurnUsage)
     .filter((turn) => turn.totalTokens > 0)
@@ -419,20 +417,13 @@ function toSnapshot(state: StoredSnapshot): ProviderSessionSnapshot {
   const startTime = safeDate(state.startTime, state.createdAt);
   const endTime = safeDate(state.endTime, state.createdAt);
   return {
-    sessionData: {
+    sessionData: buildSessionUsage({
       provider: "codex",
       sessionId: state.sessionId,
-      inputTokens,
-      outputTokens,
-      cacheCreationTokens,
-      cacheReadTokens,
-      totalTokens: inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens,
-      totalCost: sum((item) => item.cost),
-      modelsUsed: breakdowns.map((item) => item.modelName),
       modelBreakdowns: breakdowns,
       turns,
       sourceFingerprint: state.sourceFingerprint,
-    },
+    }),
     transcriptData: {
       sessionSlug: slugify(firstPrompt, state.sessionId),
       firstPrompt,
@@ -492,25 +483,12 @@ function toBreakdowns(totals: Record<string, ModelTotals>): ModelBreakdown[] {
 
 function toTurnUsage(turn: StoredTurn): TurnUsage {
   const breakdowns = toBreakdowns(turn.totalsByModel);
-  const sum = (pick: (item: ModelBreakdown) => number): number =>
-    breakdowns.reduce((total, item) => total + pick(item), 0);
-  const inputTokens = sum((item) => item.inputTokens);
-  const outputTokens = sum((item) => item.outputTokens);
-  const cacheCreationTokens = sum((item) => item.cacheCreationTokens ?? 0);
-  const cacheReadTokens = sum((item) => item.cacheReadTokens ?? 0);
-  return {
+  return buildTurnUsage({
     id: turn.id,
     startTime: turn.startTime,
     endTime: turn.endTime || turn.startTime,
-    inputTokens,
-    outputTokens,
-    cacheCreationTokens,
-    cacheReadTokens,
-    totalTokens: inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens,
-    totalCost: sum((item) => item.cost),
-    modelsUsed: breakdowns.map((item) => item.modelName),
     modelBreakdowns: breakdowns,
-  };
+  });
 }
 
 function costFor(
