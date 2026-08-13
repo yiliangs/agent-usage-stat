@@ -114,3 +114,60 @@ test("local provider inspectors recognize their installed hook files", async () 
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test("settings joins provider collaborators by identity instead of array position", async () => {
+  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-settings-order-"));
+  const providerNames = ["claude", "codex", "copilot"];
+  const roots = Object.fromEntries(
+    providerNames.map((provider) => [provider, join(home, provider)]),
+  );
+  await Promise.all(
+    Object.values(roots).map((root) => mkdir(root, { recursive: true })),
+  );
+
+  const providers = providerNames.map((name, index) => ({
+    name,
+    findSession: async () => { throw new Error("unused"); },
+    findAllSessions: async () => Array.from({ length: index + 1 }, () => ({})),
+    fingerprintSession: async () => "unused",
+    readSession: async () => { throw new Error("unused"); },
+  })).reverse();
+  const hookStatuses = {
+    claude: "configured",
+    codex: "missing",
+    copilot: "disabled",
+  };
+  const integrations = providerNames.map((provider) => ({
+    provider,
+    label: provider,
+    isInstalled: () => true,
+    inspect: async () => hookStatuses[provider],
+    install: async () => ({ needsTrust: false }),
+    remove: async () => undefined,
+  })).reverse();
+
+  try {
+    const state = await buildDesktopSettingsState(
+      { providerDataRoots: roots },
+      { root: join(home, "ledger"), source: "default" },
+      { ...process.env, HOME: home, USERPROFILE: home },
+      home,
+      { providers, integrations },
+    );
+
+    assert.deepEqual(
+      state.providers.map((provider) => ({
+        provider: provider.provider,
+        sessions: provider.sessions,
+        monitor: provider.captureMonitor.reason,
+      })),
+      [
+        { provider: "claude", sessions: 1, monitor: "awaiting_first_attempt" },
+        { provider: "codex", sessions: 2, monitor: "hook_missing" },
+        { provider: "copilot", sessions: 3, monitor: "hooks_disabled" },
+      ],
+    );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});

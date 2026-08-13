@@ -13,10 +13,10 @@
 
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { join, posix, win32 } from "path";
+import { LOGBOOK_SHARD_DIR } from "../core/usage-ledger.js";
 import { homeDir, expandHome, configFilePath } from "./paths.js";
 
 const SHARED_DIR_NAME = "agent-usage-stat";
-const SHARD_DIR_NAME = "logbook.d";
 
 export type UsageRootSource = "config" | "detected" | "default";
 
@@ -83,7 +83,7 @@ export function resolveUsageRootFromDisk(): ResolvedUsageRoot {
 export function detectSharedUsageRoot(): string | null {
   for (const mount of driveMountCandidates()) {
     const root = join(mount, SHARED_DIR_NAME);
-    if (existsSync(join(root, SHARD_DIR_NAME))) {
+    if (existsSync(join(root, LOGBOOK_SHARD_DIR))) {
       return root;
     }
   }

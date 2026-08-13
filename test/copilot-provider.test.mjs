@@ -72,7 +72,8 @@ test("Copilot shutdown usage becomes one normalized provider session", async () 
     const found = await provider.findSession(sessionId.slice(0, 8));
     assert.equal(found.sessionId, sessionId);
 
-    const usage = await provider.calculateUsage(transcript, sessionId);
+    const snapshot = await provider.readSession(transcript, sessionId);
+    const { sessionData: usage, transcriptData: parsed, unknownModels } = snapshot;
     assert.equal(usage.provider, "copilot");
     assert.equal(usage.inputTokens, 1000);
     assert.equal(usage.outputTokens, 100);
@@ -80,7 +81,10 @@ test("Copilot shutdown usage becomes one normalized provider session", async () 
     assert.equal(usage.cacheReadTokens, 2000);
     assert.equal(usage.totalTokens, 3600);
     assert.equal(usage.totalCost, 0.001725);
-    assert.deepEqual(usage.modelsUsed, ["gpt-5.4-mini"]);
+    assert.deepEqual(
+      usage.modelBreakdowns.map((breakdown) => breakdown.modelName),
+      ["gpt-5.4-mini"],
+    );
     assert.deepEqual(usage.modelBreakdowns, [
       {
         modelName: "gpt-5.4-mini",
@@ -92,8 +96,8 @@ test("Copilot shutdown usage becomes one normalized provider session", async () 
         cost: 0.001725,
       },
     ]);
+    assert.deepEqual(unknownModels, []);
 
-    const parsed = await provider.parseTranscript(transcript, sessionId);
     assert.equal(parsed.firstPrompt, "Inspect the build");
     assert.equal(parsed.projectName, "sample-project");
     assert.equal(parsed.cwd, join(home, "sample-project"));
@@ -137,11 +141,50 @@ test("Copilot uses native per-model billed AI units when Fast mode keeps the sam
 
   try {
     const provider = new CopilotProvider(home);
-    const usage = await provider.calculateUsage(transcript, sessionId);
+    const { sessionData: usage, unknownModels } = await provider.readSession(
+      transcript,
+      sessionId,
+    );
 
     assert.equal(usage.totalTokens, 3600);
-    assert.equal(usage.modelsUsed[0], "claude-opus-4-8");
+    assert.equal(usage.modelBreakdowns[0].modelName, "claude-opus-4-8");
     assert.equal(Number(usage.totalCost.toFixed(6)), 0.02325);
+    assert.deepEqual(unknownModels, []);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("Copilot returns unknown pricing models in the same immutable snapshot", async () => {
+  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-copilot-unknown-"));
+  const sessionId = "99999999-9999-4999-8999-999999999999";
+  const transcript = join(home, "events.jsonl");
+  const event = (type, data) => JSON.stringify({ type, data });
+  await writeFile(
+    transcript,
+    [
+      event("session.start", { sessionId }),
+      event("session.shutdown", {
+        modelMetrics: {
+          "future-model-preview": {
+            tokenDetails: {
+              input: { tokenCount: 10 },
+              output: { tokenCount: 2 },
+            },
+          },
+        },
+      }),
+    ].join("\n") + "\n",
+  );
+
+  try {
+    const snapshot = await new CopilotProvider(home).readSession(
+      transcript,
+      sessionId,
+    );
+    assert.equal(snapshot.sessionData.totalTokens, 12);
+    assert.equal(snapshot.sessionData.totalCost, 0);
+    assert.deepEqual(snapshot.unknownModels, ["future-model-preview"]);
   } finally {
     await rm(home, { recursive: true, force: true });
   }

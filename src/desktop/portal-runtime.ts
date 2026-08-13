@@ -1,9 +1,10 @@
 import { app, protocol } from "electron";
 import { mkdir, readFile, stat } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { LOGBOOK_SHARD_DIR } from "../core/usage-ledger.js";
 import { resolveUsageRootFromDisk } from "../utils/usage-root.js";
 import type { HelperRuntime } from "./helper-runtime.js";
+import { buildPortalData } from "./portal-data.js";
 
 const APP_SCHEME = "aus";
 const APP_HOST = "app";
@@ -24,12 +25,6 @@ export interface PortalRefreshResult {
   generatedAt: string;
   sessions: number;
   totalCost: number;
-}
-
-interface PortalMeta {
-  generatedAt?: string;
-  sessions?: number;
-  totalCost?: number;
 }
 
 export type PortalRequestHandler = (
@@ -142,34 +137,22 @@ export class PortalRuntime {
 
   private async performRefresh(): Promise<PortalRefreshResult> {
     const usageRoot = resolveUsageRootFromDisk().root;
-    await mkdir(join(usageRoot, "logbook.d"), { recursive: true });
+    await mkdir(join(usageRoot, LOGBOOK_SHARD_DIR), { recursive: true });
     const helper = await this.helperRuntime.run(["sync", "--quiet"]);
     if (helper.code !== 0) {
       throw new Error(helper.stderr.trim() || "Usage synchronization failed.");
     }
 
-    const builderPath = join(
-      app.getAppPath(),
-      "portal",
-      "scripts",
-      "build-data.mjs",
-    );
-    const builder = await import(pathToFileURL(builderPath).href) as {
-      buildPortalData(options: {
-        root: string;
-        outDir: string;
-      }): Promise<PortalMeta>;
-    };
-    const meta = await builder.buildPortalData({
+    const meta = await buildPortalData({
       root: usageRoot,
       outDir: this.dataRoot(),
     });
 
     return {
       updated: helper.updated,
-      generatedAt: meta.generatedAt || new Date().toISOString(),
-      sessions: meta.sessions ?? 0,
-      totalCost: meta.totalCost ?? 0,
+      generatedAt: meta.generatedAt,
+      sessions: meta.sessions,
+      totalCost: meta.totalCost,
     };
   }
 

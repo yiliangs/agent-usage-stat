@@ -4,6 +4,7 @@ import chalk from "chalk";
 import prompts from "prompts";
 import ora from "ora";
 import { ConfigManager } from "../core/config-manager.js";
+import { LOGBOOK_SHARD_DIR } from "../core/usage-ledger.js";
 import { expandHome, homeDir } from "../utils/paths.js";
 import { resolveUsageRoot } from "../utils/usage-root.js";
 import {
@@ -119,7 +120,7 @@ export class SetupCommand {
         dataRoot,
       };
 
-      await mkdir(join(dataRoot, "logbook.d"), { recursive: true });
+      await mkdir(join(dataRoot, LOGBOOK_SHARD_DIR), { recursive: true });
       await this.configManager.saveConfig(config);
       spinner.text = "Usage folder ready...";
 

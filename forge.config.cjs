@@ -61,8 +61,7 @@ module.exports = {
       }
       const included =
         /^\/(dist|node_modules)(\/|$)/.test(file) ||
-        /^\/package\.json$/.test(file) ||
-        /^\/portal(?:$|\/scripts(?:\/|$))/.test(file);
+        /^\/package\.json$/.test(file);
       return !included;
     },
   },

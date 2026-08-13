@@ -12,7 +12,6 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { UsageCalculator } from "../dist/providers/claude/usage-calculator.js";
 import { ClaudeProvider } from "../dist/providers/claude/provider.js";
 
 function assistant(
@@ -70,8 +69,9 @@ test("Claude checkpoints process only appended transcript bytes across the sessi
 
   try {
     const provider = new ClaudeProvider();
-    const first = await provider.calculateUsage(path, sessionId);
-    assert.equal(first.totalTokens, 3_300);
+    const first = await provider.readSession(path, sessionId);
+    assert.equal(first.sessionData.totalTokens, 3_300);
+    assert.deepEqual(first.unknownModels, []);
 
     const appended = assistant("main-two", {
       input_tokens: 3_000,
@@ -79,16 +79,16 @@ test("Claude checkpoints process only appended transcript bytes across the sessi
     }, "claude-sonnet-4-6", "2026-08-09T10:00:03.000Z") + "\n";
     await appendFile(path, appended + '{"type":"user"');
 
-    const second = await provider.calculateUsage(path, sessionId);
-    const transcript = await provider.parseTranscript(path, sessionId);
-    assert.equal(second.totalTokens, 6_600);
-    assert.deepEqual(second.turns.map((turn) => turn.id), [
+    const second = await provider.readSession(path, sessionId);
+    assert.equal(second.sessionData.totalTokens, 6_600);
+    assert.deepEqual(second.sessionData.turns.map((turn) => turn.id), [
       "main-one",
       "sub-one",
       "main-two",
     ]);
-    assert.equal(transcript.firstPrompt, "First prompt");
-    assert.equal(transcript.projectName, "demo");
+    assert.equal(second.transcriptData.firstPrompt, "First prompt");
+    assert.equal(second.transcriptData.projectName, "demo");
+    assert.deepEqual(second.unknownModels, []);
 
     const [cacheFile] = (await readdir(join(cache, "claude")))
       .filter((name) => name.endsWith(".json"));
@@ -122,14 +122,20 @@ test("Claude Opus 5 aliases use current Anthropic pricing", async () => {
   );
 
   try {
-    const calculator = new UsageCalculator();
-    const result = await calculator.calculate(path, sessionId);
+    const provider = new ClaudeProvider();
+    const { sessionData: result, unknownModels } = await provider.readSession(
+      path,
+      sessionId,
+    );
 
     assert.equal(result.totalTokens, 3_500);
     assert.equal(Number(result.totalCost.toFixed(6)), 0.0202);
-    assert.deepEqual(result.modelsUsed, ["claude-opus-5"]);
+    assert.deepEqual(
+      result.modelBreakdowns.map((breakdown) => breakdown.modelName),
+      ["claude-opus-5"],
+    );
     assert.equal(result.modelBreakdowns[0].displayName, "Claude Opus 5");
-    assert.deepEqual(calculator.getUnknownModels(), []);
+    assert.deepEqual(unknownModels, []);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -158,13 +164,17 @@ test("Claude prices each Opus response using its recorded speed", async () => {
   );
 
   try {
-    const calculator = new UsageCalculator();
-    const usage = await calculator.calculate(path, sessionId);
+    const provider = new ClaudeProvider();
+    const { sessionData: usage, unknownModels } = await provider.readSession(
+      path,
+      sessionId,
+    );
 
     assert.equal(usage.turns.length, 2);
     assert.equal(Number(usage.turns[0].totalCost.toFixed(6)), 0.0202);
     assert.equal(Number(usage.turns[1].totalCost.toFixed(6)), 0.0404);
     assert.equal(Number(usage.totalCost.toFixed(6)), 0.0606);
+    assert.deepEqual(unknownModels, []);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -192,9 +202,13 @@ test("Claude preserves historical Fast pricing for earlier supported Opus models
     await writeFile(path, assistant(`resp_${model}`, usage, model), "utf8");
 
     try {
-      const calculator = new UsageCalculator();
-      const result = await calculator.calculate(path, sessionId);
+      const provider = new ClaudeProvider();
+      const { sessionData: result, unknownModels } = await provider.readSession(
+        path,
+        sessionId,
+      );
       assert.equal(Number(result.totalCost.toFixed(6)), expected, model);
+      assert.deepEqual(unknownModels, []);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -238,8 +252,11 @@ test("Claude preserves response-scoped usage timestamps across days", async () =
   );
 
   try {
-    const calculator = new UsageCalculator();
-    const usage = await calculator.calculate(path, sessionId);
+    const provider = new ClaudeProvider();
+    const { sessionData: usage, unknownModels } = await provider.readSession(
+      path,
+      sessionId,
+    );
 
     assert.deepEqual(
       usage.turns.map((turn) => ({
@@ -264,6 +281,7 @@ test("Claude preserves response-scoped usage timestamps across days", async () =
       Number(usage.turns.reduce((sum, turn) => sum + turn.totalCost, 0).toFixed(6)),
       Number(usage.totalCost.toFixed(6)),
     );
+    assert.deepEqual(unknownModels, []);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -299,8 +317,11 @@ test("Claude transcripts dedupe GPT responses and apply OpenAI request pricing",
   );
 
   try {
-    const calculator = new UsageCalculator();
-    const usage = await calculator.calculate(path, sessionId);
+    const provider = new ClaudeProvider();
+    const { sessionData: usage, unknownModels } = await provider.readSession(
+      path,
+      sessionId,
+    );
 
     assert.equal(usage.provider, "claude");
     assert.equal(usage.inputTokens, 101_000);
@@ -309,9 +330,12 @@ test("Claude transcripts dedupe GPT responses and apply OpenAI request pricing",
     assert.equal(usage.outputTokens, 1_100);
     assert.equal(usage.totalTokens, 324_500);
     assert.equal(Number(usage.totalCost.toFixed(6)), 1.5157);
-    assert.deepEqual(usage.modelsUsed, ["gpt-5.6-sol"]);
+    assert.deepEqual(
+      usage.modelBreakdowns.map((breakdown) => breakdown.modelName),
+      ["gpt-5.6-sol"],
+    );
     assert.equal(usage.modelBreakdowns[0].displayName, "GPT-5.6 Sol");
-    assert.deepEqual(calculator.getUnknownModels(), []);
+    assert.deepEqual(unknownModels, []);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

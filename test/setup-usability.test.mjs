@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import { detectInstalledAgents } from "../dist/commands/setup.js";
-import { buildPortalData } from "../portal/scripts/build-data.mjs";
+import { buildPortalData } from "../dist/desktop/portal-data.js";
 import { detectProvider } from "../dist/providers/registry.js";
 
 test("installed agents are inferred without a provider setting", async () => {

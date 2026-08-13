@@ -79,7 +79,7 @@ function fakeProvider(activity) {
       activity.fingerprints--;
       return `fingerprint:${session.sessionId}`;
     },
-    calculateUsage: async (_path, sessionId) => {
+    readSession: async (_path, sessionId) => {
       activity.calculations++;
       activity.maxCalculations = Math.max(
         activity.maxCalculations,
@@ -88,29 +88,31 @@ function fakeProvider(activity) {
       await delay(5);
       activity.calculations--;
       return {
-        provider: "claude",
-        sessionId,
-        inputTokens: 100,
-        outputTokens: 10,
-        cacheCreationTokens: 0,
-        cacheReadTokens: 0,
-        totalTokens: 110,
-        totalCost: 0.01,
-        modelsUsed: ["claude-opus-5"],
-        modelBreakdowns: [],
+        sessionData: {
+          provider: "claude",
+          sessionId,
+          inputTokens: 100,
+          outputTokens: 10,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 0,
+          totalTokens: 110,
+          totalCost: 0.01,
+          modelBreakdowns: [],
+          sourceFingerprint: `fingerprint:${sessionId}`,
+        },
+        transcriptData: {
+          sessionSlug: sessionId.slice(0, 8),
+          firstPrompt: "test",
+          startTime: new Date("2026-07-30T12:00:00.000Z"),
+          endTime: new Date("2026-07-30T12:01:00.000Z"),
+          userMessageCount: 1,
+          assistantMessageCount: 1,
+          totalMessages: 2,
+          projectName: "sync-test",
+        },
+        unknownModels: [],
       };
     },
-    getUnknownModels: () => [],
-    parseTranscript: async (_path, sessionId) => ({
-      sessionSlug: sessionId.slice(0, 8),
-      firstPrompt: "test",
-      startTime: new Date("2026-07-30T12:00:00.000Z"),
-      endTime: new Date("2026-07-30T12:01:00.000Z"),
-      userMessageCount: 1,
-      assistantMessageCount: 1,
-      totalMessages: 2,
-      projectName: "sync-test",
-    }),
   };
 }
 

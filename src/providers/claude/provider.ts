@@ -1,13 +1,11 @@
-import { UsageCalculator } from "./usage-calculator.js";
-import { TranscriptParser } from "./transcript-parser.js";
 import { SessionFinder } from "./session-finder.js";
 import { fingerprintSessionTranscript } from "./transcript-fingerprint.js";
+import { readClaudeSnapshot } from "./incremental-snapshot.js";
 import type {
   SessionProvider,
   FoundSession,
+  ProviderSessionSnapshot,
 } from "../../types/provider.js";
-import type { SessionUsage } from "../../types/session.js";
-import type { ParsedTranscript } from "../../types/transcript.js";
 
 /**
  * Claude Code sessions: transcripts under `~/.claude/projects/`, per-message
@@ -17,8 +15,6 @@ import type { ParsedTranscript } from "../../types/transcript.js";
 export class ClaudeProvider implements SessionProvider {
   readonly name = "claude" as const;
 
-  private calculator = new UsageCalculator();
-  private parser = new TranscriptParser();
   private finder: SessionFinder;
 
   constructor(claudeHome?: string) {
@@ -40,21 +36,10 @@ export class ClaudeProvider implements SessionProvider {
     );
   }
 
-  calculateUsage(
+  readSession(
     transcriptPath: string,
-    sessionId: string,
-  ): Promise<SessionUsage> {
-    return this.calculator.calculate(transcriptPath, sessionId);
-  }
-
-  getUnknownModels(): string[] {
-    return this.calculator.getUnknownModels();
-  }
-
-  parseTranscript(
-    transcriptPath: string,
-    fallbackId?: string,
-  ): Promise<ParsedTranscript> {
-    return this.parser.parseTranscript(transcriptPath, fallbackId);
+    fallbackSessionId: string,
+  ): Promise<ProviderSessionSnapshot> {
+    return readClaudeSnapshot(transcriptPath, fallbackSessionId);
   }
 }

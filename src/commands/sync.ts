@@ -3,7 +3,11 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import ora from "ora";
 import { ConfigManager } from "../core/config-manager.js";
-import { LogbookWriter, type LogbookRecord } from "../core/logbook-writer.js";
+import { LogbookWriter } from "../core/logbook-writer.js";
+import {
+  LOGBOOK_SHARD_DIR,
+  type LogbookRecord,
+} from "../core/usage-ledger.js";
 import { allProviders } from "../providers/registry.js";
 import { resolveUsageRoot } from "../utils/usage-root.js";
 import type {
@@ -61,7 +65,7 @@ export class SyncCommand {
           try {
             const shardPath = join(
               root,
-              LogbookWriter.SHARD_DIR,
+              LOGBOOK_SHARD_DIR,
               `${found.sessionId}.json`,
             );
             const sourceFingerprint = await provider.fingerprintSession(found);
@@ -92,21 +96,21 @@ export class SyncCommand {
 
         const { found, sourceFingerprint } = result;
         try {
-          const sessionData = await provider.calculateUsage(
+          const snapshot = await provider.readSession(
             found.transcriptPath,
             found.sessionId,
           );
+          let { sessionData } = snapshot;
           if (sessionData.sessionId !== found.sessionId) {
             throw new Error(
               `provider returned session ${sessionData.sessionId} for ${found.sessionId}`,
             );
           }
           if (sessionData.totalTokens <= 0) continue;
-          sessionData.sourceFingerprint ??= sourceFingerprint;
-          const transcriptData = await provider.parseTranscript(
-            found.transcriptPath,
-            sessionData.sessionId,
-          );
+          if (!sessionData.sourceFingerprint) {
+            sessionData = { ...sessionData, sourceFingerprint };
+          }
+          const { transcriptData } = snapshot;
           await this.writer.append(root, { sessionData, transcriptData });
           updated++;
         } catch (error) {

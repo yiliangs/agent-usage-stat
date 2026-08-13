@@ -1,4 +1,8 @@
 import { join, resolve } from "node:path";
+import {
+  isProviderName,
+  PROVIDER_NAMES,
+} from "../core/provider-definition.js";
 import type { AppConfig } from "../types/config.js";
 import type { ProviderName } from "../types/provider.js";
 import { expandHome, homeDir } from "./paths.js";
@@ -14,32 +18,28 @@ export interface ResolvedProviderDataRoot {
 }
 
 interface ProviderDataRootDefinition {
-  provider: ProviderName;
   label: string;
   environmentVariable: string;
   defaultDirectory: string;
 }
 
-const DEFINITIONS: readonly ProviderDataRootDefinition[] = [
-  {
-    provider: "claude",
+const DEFINITIONS = {
+  claude: {
     label: "Claude Code",
     environmentVariable: "CLAUDE_CONFIG_DIR",
     defaultDirectory: ".claude",
   },
-  {
-    provider: "codex",
+  codex: {
     label: "Codex",
     environmentVariable: "CODEX_HOME",
     defaultDirectory: ".codex",
   },
-  {
-    provider: "copilot",
+  copilot: {
     label: "Copilot CLI",
     environmentVariable: "COPILOT_HOME",
     defaultDirectory: ".copilot",
   },
-];
+} satisfies Record<ProviderName, ProviderDataRootDefinition>;
 
 export function resolveProviderDataRoot(
   provider: ProviderName,
@@ -47,8 +47,10 @@ export function resolveProviderDataRoot(
   environment: NodeJS.ProcessEnv = process.env,
   home = homeDir(),
 ): ResolvedProviderDataRoot {
-  const definition = DEFINITIONS.find((item) => item.provider === provider);
-  if (!definition) throw new Error(`Unsupported provider: ${provider}`);
+  if (!isProviderName(provider)) {
+    throw new Error(`Unsupported provider: ${String(provider)}`);
+  }
+  const definition = DEFINITIONS[provider];
 
   const custom = config.providerDataRoots?.[provider]?.trim();
   const fromEnvironment = environment[definition.environmentVariable]?.trim();
@@ -73,7 +75,7 @@ export function resolveProviderDataRoots(
   environment: NodeJS.ProcessEnv = process.env,
   home = homeDir(),
 ): ResolvedProviderDataRoot[] {
-  return DEFINITIONS.map((item) =>
-    resolveProviderDataRoot(item.provider, config, environment, home)
+  return PROVIDER_NAMES.map((provider) =>
+    resolveProviderDataRoot(provider, config, environment, home)
   );
 }

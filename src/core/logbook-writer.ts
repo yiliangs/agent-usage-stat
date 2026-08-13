@@ -4,78 +4,15 @@ import { join } from "path";
 import { hostname } from "os";
 import type { SessionUsage } from "../types/session.js";
 import type { ParsedTranscript } from "../types/transcript.js";
-import { vendorForModel, type ModelVendor } from "./model-vendor.js";
+import { vendorForModel } from "./model-vendor.js";
+import {
+  LOGBOOK_SHARD_DIR,
+  type LogbookRecord,
+} from "./usage-ledger.js";
 
 export interface UsageRecordData {
   sessionData: SessionUsage;
   transcriptData: ParsedTranscript;
-}
-
-/**
- * One column-named record per session, the JSON shard's shape. Field names
- * mirror the legacy logbook.csv header so the portal's build-data can normalize
- * CSV rows and shards through one code path. `models` is a real array here
- * (the CSV packed them into a ";"-joined string).
- */
-export interface LogbookRecord {
-  timestamp: string;
-  session_slug: string;
-  session_id: string;
-  project: string;
-  branch: string;
-  cwd: string;
-  machine: string;
-  start_time: string;
-  end_time: string;
-  duration_seconds: number;
-  duration_human: string;
-  input_tokens: number;
-  output_tokens: number;
-  cache_creation_tokens: number;
-  cache_read_tokens: number;
-  total_tokens: number;
-  total_cost_usd: number;
-  models: string[];
-  /**
-   * Per-model tokens, cost, and vendor. The calculators have always computed
-   * this; the shard used to keep only the model NAMES and throw the rest away,
-   * which made it impossible to split a session's spend by model vendor after
-   * the fact. Shards written before 2026-07-20 omit it — consumers fall back to
-   * deriving vendor from `models`, which is exact only while no session mixes
-   * vendors. Keep writing this so that stops being a precondition.
-   */
-  model_breakdowns?: LogbookModelRecord[];
-  /** Turn-scoped slices for accurate time attribution. Older shards omit it. */
-  turns?: LogbookTurnRecord[];
-  /** Fingerprint of the provider transcript used to build this snapshot. */
-  source_fingerprint?: string;
-  /** Which tool produced the session. Shards written before 2026-07-09 lack
-   *  the field — consumers default it to "claude". */
-  provider: string;
-}
-
-export interface LogbookModelRecord {
-  model: string;
-  vendor: ModelVendor;
-  input_tokens: number;
-  output_tokens: number;
-  cache_creation_tokens: number;
-  cache_read_tokens: number;
-  total_tokens: number;
-  total_cost_usd: number;
-}
-
-export interface LogbookTurnRecord {
-  turn_id: string;
-  start_time: string;
-  end_time: string;
-  input_tokens: number;
-  output_tokens: number;
-  cache_creation_tokens: number;
-  cache_read_tokens: number;
-  total_tokens: number;
-  total_cost_usd: number;
-  models: string[];
 }
 
 /**
@@ -92,15 +29,13 @@ export interface LogbookTurnRecord {
  * figures. The portal reads these shards directly through its data build step.
  */
 export class LogbookWriter {
-  static readonly SHARD_DIR = "logbook.d";
-
   /**
    * Write this session's shard and return its path. Throws on failure — the
    * old single CSV writer swallowed every error, which is exactly how the data
    * loss stayed invisible. The caller logs the outcome.
    */
   async append(root: string, data: UsageRecordData): Promise<string> {
-    const dir = join(root, LogbookWriter.SHARD_DIR);
+    const dir = join(root, LOGBOOK_SHARD_DIR);
     mkdirSync(dir, { recursive: true });
 
     let record = this.buildRecord(data);
@@ -222,7 +157,7 @@ export class LogbookWriter {
     const durationMs =
       transcriptData.endTime.getTime() - transcriptData.startTime.getTime();
     const durationSec = Math.max(0, Math.floor(durationMs / 1000));
-    const models = (sessionData.modelBreakdowns || []).map((m) => m.modelName);
+    const models = sessionData.modelBreakdowns.map((model) => model.modelName);
 
     return {
       timestamp: transcriptData.endTime.toISOString(),
@@ -236,25 +171,25 @@ export class LogbookWriter {
       end_time: transcriptData.endTime.toISOString(),
       duration_seconds: durationSec,
       duration_human: formatDuration(durationSec),
-      input_tokens: sessionData.inputTokens ?? 0,
-      output_tokens: sessionData.outputTokens ?? 0,
-      cache_creation_tokens: sessionData.cacheCreationTokens ?? 0,
-      cache_read_tokens: sessionData.cacheReadTokens ?? 0,
-      total_tokens: sessionData.totalTokens ?? 0,
-      total_cost_usd: Number((sessionData.totalCost ?? 0).toFixed(6)),
+      input_tokens: sessionData.inputTokens,
+      output_tokens: sessionData.outputTokens,
+      cache_creation_tokens: sessionData.cacheCreationTokens,
+      cache_read_tokens: sessionData.cacheReadTokens,
+      total_tokens: sessionData.totalTokens,
+      total_cost_usd: Number(sessionData.totalCost.toFixed(6)),
       models,
-      model_breakdowns: (sessionData.modelBreakdowns || []).map((breakdown) => ({
+      model_breakdowns: sessionData.modelBreakdowns.map((breakdown) => ({
         model: breakdown.modelName,
         vendor: vendorForModel(breakdown.modelName),
         input_tokens: breakdown.inputTokens,
         output_tokens: breakdown.outputTokens,
-        cache_creation_tokens: breakdown.cacheCreationTokens ?? 0,
-        cache_read_tokens: breakdown.cacheReadTokens ?? 0,
+        cache_creation_tokens: breakdown.cacheCreationTokens,
+        cache_read_tokens: breakdown.cacheReadTokens,
         total_tokens:
           breakdown.inputTokens +
           breakdown.outputTokens +
-          (breakdown.cacheCreationTokens ?? 0) +
-          (breakdown.cacheReadTokens ?? 0),
+          breakdown.cacheCreationTokens +
+          breakdown.cacheReadTokens,
         total_cost_usd: Number(breakdown.cost.toFixed(6)),
       })),
       turns: sessionData.turns?.map((turn) => ({
@@ -267,7 +202,7 @@ export class LogbookWriter {
         cache_read_tokens: turn.cacheReadTokens,
         total_tokens: turn.totalTokens,
         total_cost_usd: Number(turn.totalCost.toFixed(6)),
-        models: turn.modelsUsed,
+        models: turn.modelBreakdowns.map((model) => model.modelName),
       })),
       source_fingerprint: sessionData.sourceFingerprint,
       provider: sessionData.provider,

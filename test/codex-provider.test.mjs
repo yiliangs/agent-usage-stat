@@ -61,8 +61,9 @@ test("Codex snapshot cache processes appended complete lines and defers partial 
 
   try {
     const provider = new CodexProvider();
-    const first = await provider.calculateUsage(path, sessionId);
-    assert.equal(first.totalTokens, 1100);
+    const first = await provider.readSession(path, sessionId);
+    assert.equal(first.sessionData.totalTokens, 1100);
+    assert.deepEqual(first.unknownModels, []);
     assert.equal((await readdir(cache)).filter((x) => x.endsWith(".json")).length, 1);
 
     const completeSecondTurn = [
@@ -80,19 +81,20 @@ test("Codex snapshot cache processes appended complete lines and defers partial 
     ].join("\n") + "\n";
     await appendFile(path, completeSecondTurn + '{"type":"event_msg"');
 
-    const second = await provider.calculateUsage(path, sessionId);
-    const transcript = await provider.parseTranscript(path, sessionId);
-    assert.equal(second.totalTokens, 3300);
-    assert.equal(second.turns.length, 2);
-    assert.equal(transcript.assistantMessageCount, 1);
+    const second = await provider.readSession(path, sessionId);
+    assert.equal(second.sessionData.totalTokens, 3300);
+    assert.equal(second.sessionData.turns.length, 2);
+    assert.equal(second.transcriptData.assistantMessageCount, 1);
+    assert.deepEqual(second.unknownModels, []);
     const [cacheFile] = (await readdir(cache)).filter((x) => x.endsWith(".json"));
     const cacheState = JSON.parse(await readFile(join(cache, cacheFile), "utf8"));
     assert.ok(cacheState.lastReadBytes > 0);
     assert.ok(cacheState.lastReadBytes < (await stat(path)).size);
 
     await appendFile(path, ',"payload":{"type":"user_message","message":"Later"}}\n');
-    const thirdTranscript = await provider.parseTranscript(path, sessionId);
-    assert.equal(thirdTranscript.userMessageCount, 2);
+    const third = await provider.readSession(path, sessionId);
+    assert.equal(third.transcriptData.userMessageCount, 2);
+    assert.deepEqual(third.unknownModels, []);
   } finally {
     if (priorCacheRoot === undefined) {
       delete process.env.AGENT_USAGE_STAT_CACHE_ROOT;
@@ -195,8 +197,8 @@ test("Codex rollout usage is deduped, split by model, and long-context priced", 
 
   try {
     const provider = new CodexProvider();
-    const usage = await provider.calculateUsage(path, "fallback");
-    const transcript = await provider.parseTranscript(path, usage.sessionId);
+    const snapshot = await provider.readSession(path, "fallback");
+    const { sessionData: usage, transcriptData: transcript, unknownModels } = snapshot;
     const detected = await detectProvider(path);
 
     assert.equal(detected.name, "codex");
@@ -207,8 +209,11 @@ test("Codex rollout usage is deduped, split by model, and long-context priced", 
     assert.equal(usage.outputTokens, 1100);
     assert.equal(usage.totalTokens, 302100);
     assert.equal(Number(usage.totalCost.toFixed(6)), 1.4481);
-    assert.deepEqual(usage.modelsUsed, ["gpt-5.6-sol", "gpt-5.4"]);
-    assert.deepEqual(provider.getUnknownModels(), []);
+    assert.deepEqual(
+      usage.modelBreakdowns.map((breakdown) => breakdown.modelName),
+      ["gpt-5.6-sol", "gpt-5.4"],
+    );
+    assert.deepEqual(unknownModels, []);
     assert.equal(transcript.sessionSlug, "build-usage-analytics");
     assert.equal(transcript.projectName, "usage-stat");
     assert.equal(transcript.gitBranch, "main");
@@ -248,7 +253,10 @@ test("Codex prices the GPT-5.6 alias as Sol", async () => {
 
   try {
     const provider = new CodexProvider();
-    const usage = await provider.calculateUsage(path, "fallback");
+    const { sessionData: usage, unknownModels } = await provider.readSession(
+      path,
+      "fallback",
+    );
 
     assert.equal(usage.inputTokens, 500);
     assert.equal(usage.cacheCreationTokens, 1000);
@@ -256,9 +264,12 @@ test("Codex prices the GPT-5.6 alias as Sol", async () => {
     assert.equal(usage.outputTokens, 100);
     assert.equal(usage.totalTokens, 2100);
     assert.equal(Number(usage.totalCost.toFixed(6)), 0.012);
-    assert.deepEqual(usage.modelsUsed, ["gpt-5.6-sol"]);
+    assert.deepEqual(
+      usage.modelBreakdowns.map((breakdown) => breakdown.modelName),
+      ["gpt-5.6-sol"],
+    );
     assert.equal(usage.modelBreakdowns[0].displayName, "GPT-5.6 Sol");
-    assert.deepEqual(provider.getUnknownModels(), []);
+    assert.deepEqual(unknownModels, []);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -318,12 +329,16 @@ test("Codex applies Fast pricing only to turns recorded at the priority tier", a
 
   try {
     const provider = new CodexProvider();
-    const usage = await provider.calculateUsage(path, "fallback");
+    const { sessionData: usage, unknownModels } = await provider.readSession(
+      path,
+      "fallback",
+    );
 
     assert.equal(usage.turns.length, 2);
     assert.equal(Number(usage.turns[0].totalCost.toFixed(6)), 0.008);
     assert.equal(Number(usage.turns[1].totalCost.toFixed(6)), 0.02);
     assert.equal(Number(usage.totalCost.toFixed(6)), 0.028);
+    assert.deepEqual(unknownModels, []);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -367,8 +382,12 @@ test("Codex uses the documented Fast multiplier for each supported model", async
 
     try {
       const provider = new CodexProvider();
-      const usage = await provider.calculateUsage(path, "fallback");
+      const { sessionData: usage, unknownModels } = await provider.readSession(
+        path,
+        "fallback",
+      );
       assert.equal(Number(usage.totalCost.toFixed(6)), expected, model);
+      assert.deepEqual(unknownModels, []);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -421,8 +440,9 @@ test("Codex preserves the rollout identity when fork history repeats parent meta
 
   try {
     const provider = new CodexProvider();
-    const result = await provider.calculateUsage(path, forkId);
-    assert.equal(result.sessionId, forkId);
+    const result = await provider.readSession(path, forkId);
+    assert.equal(result.sessionData.sessionId, forkId);
+    assert.deepEqual(result.unknownModels, []);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -490,7 +510,10 @@ test("Codex preserves per-turn usage and timestamps across days", async () => {
 
   try {
     const provider = new CodexProvider();
-    const usage = await provider.calculateUsage(path, "fallback");
+    const { sessionData: usage, unknownModels } = await provider.readSession(
+      path,
+      "fallback",
+    );
 
     assert.deepEqual(
       usage.turns.map((turn) => ({
@@ -515,6 +538,7 @@ test("Codex preserves per-turn usage and timestamps across days", async () => {
       Number(usage.turns.reduce((sum, turn) => sum + turn.totalCost, 0).toFixed(6)),
       Number(usage.totalCost.toFixed(6)),
     );
+    assert.deepEqual(unknownModels, []);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -534,7 +558,6 @@ test("logbook never regresses when detached workers finish out of order", async 
       totalTokens: tokens,
       totalCost: cost,
       sourceFingerprint: `snapshot-${tokens}`,
-      modelsUsed: ["gpt-5.6-sol"],
       modelBreakdowns: [],
     },
     transcriptData: {

@@ -10,14 +10,11 @@ import {
 import { updateElectronApp } from "update-electron-app";
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync } from "node:fs";
-import {
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { resolveUsageRootFromDisk } from "../utils/usage-root.js";
 import { ConfigManager } from "../core/config-manager.js";
+import { isProviderName } from "../core/provider-definition.js";
 import {
   desktopSetupStatePath,
   installedHelperPath,
@@ -50,6 +47,10 @@ import { capturePolicyPrompt } from "./capture-policy.js";
 import type { CaptureStrategy } from "../types/config.js";
 import type { ProviderName } from "../types/provider.js";
 import { buildDesktopSettingsState } from "./settings-state.js";
+import {
+  isDesktopSmokeRequested,
+  runDesktopSmokeIfRequested,
+} from "./desktop-smoke.js";
 
 const WINDOWS_APP_ID = "com.squirrel.AgentUsageStat.AgentUsageStat";
 const windowIconPath = (): string => join(
@@ -70,7 +71,7 @@ const configManager = new ConfigManager();
 const portalRuntime = new PortalRuntime(helperRuntime, handlePortalRequest);
 
 const squirrelEvent = handleSquirrelEvent();
-const isSmokeTest = process.argv.includes("--desktop-smoke-test");
+const isSmokeTest = isDesktopSmokeRequested(process.argv);
 const hasSingleInstanceLock = !squirrelEvent && (
   isSmokeTest || app.requestSingleInstanceLock()
 );
@@ -111,7 +112,18 @@ async function start(): Promise<void> {
   if (isSmokeTest) {
     await helperRuntime.syncInstallation();
   }
-  if (await runSmokeTestIfRequested()) {
+  if (await runDesktopSmokeIfRequested(process.argv, {
+    application: app,
+    helperRuntime,
+    portalRuntime,
+    ensureSetup: async () => {
+      await ensureDesktopSetup(false);
+    },
+    createWindow: () => createWindow(PORTAL_URL, false),
+    runtimeIconPath: windowIconPath,
+    setupStatePath: desktopSetupStatePath,
+    trace: traceStartup,
+  })) {
     traceStartup("smoke-complete");
     app.quit();
     return;
@@ -537,10 +549,6 @@ async function handlePortalRequest(
   }
 }
 
-function isProviderName(value: unknown): value is ProviderName {
-  return value === "claude" || value === "codex" || value === "copilot";
-}
-
 function settingsJson(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
     status,
@@ -590,90 +598,6 @@ async function ensureDesktopSetup(interactive: boolean): Promise<boolean> {
       detail: "Open /hooks in Codex and trust the Agent Usage Stat hook.",
     });
   }
-  return true;
-}
-
-async function runSmokeTestIfRequested(): Promise<boolean> {
-  const flag = "--desktop-smoke-test";
-  const index = process.argv.indexOf(flag);
-  if (index < 0) return false;
-
-  const output = process.argv[index + 1];
-  if (!output) throw new Error(`${flag} requires an output path.`);
-  traceStartup("smoke-helper-begin");
-  const helper = await helperRuntime.run(["probe"]);
-  if (helper.code !== 0) throw new Error(helper.stderr || "Helper probe failed.");
-  traceStartup("smoke-helper-complete");
-  await ensureDesktopSetup(false);
-  traceStartup("smoke-setup-complete");
-  const refresh = await portalRuntime.refresh();
-  traceStartup("smoke-refresh-complete");
-  const window = await createWindow(PORTAL_URL, false);
-  traceStartup("smoke-window-complete");
-  const renderer = await window.webContents.executeJavaScript(`({
-    title: document.title,
-    hasTimeline: !!document.querySelector('[data-portal-view="sessions"]'),
-    favicon: document.querySelector('link[rel="icon"]')?.href ?? null,
-    logoLoaded: (() => {
-      const logo = document.querySelector('.mark img');
-      return logo instanceof HTMLImageElement && logo.complete && logo.naturalWidth > 0;
-    })(),
-    protocol: location.protocol
-  })`) as {
-    title: string;
-    hasTimeline: boolean;
-    favicon: string | null;
-    logoLoaded: boolean;
-    protocol: string;
-  };
-  const settings = await window.webContents.executeJavaScript(`(async () => {
-    document.querySelector('[data-portal-view="settings"]')?.click();
-    for (let index = 0; index < 50; index++) {
-      if (document.querySelectorAll('.provider-location').length === 3) break;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    const response = await fetch('./api/settings', { cache: 'no-store' });
-    const state = await response.json();
-    return {
-      api: response.ok,
-      visible: !document.querySelector('#settingsView')?.hidden,
-      commonRows: document.querySelectorAll('.settings-common .settings-row').length,
-      captureChannels: document.querySelectorAll('.capture-channel').length,
-      captureStatus: document.querySelector('#globalCaptureStatus')?.textContent ?? '',
-      advanced: !!document.querySelector('details.settings-advanced'),
-      providerRows: document.querySelectorAll('.provider-location').length,
-      providers: state.providers?.map((provider) => provider.provider) ?? [],
-      providerMonitorStatuses: state.providers?.map((provider) => provider.captureMonitor?.status) ?? [],
-    };
-  })()`) as {
-    api: boolean;
-    visible: boolean;
-    commonRows: number;
-    captureChannels: number;
-    captureStatus: string;
-    advanced: boolean;
-    providerRows: number;
-    providers: string[];
-    providerMonitorStatuses: string[];
-  };
-  traceStartup("smoke-renderer-complete");
-  const smokeJson = JSON.stringify({
-      application: app.getName(),
-      version: app.getVersion(),
-      packaged: app.isPackaged,
-      assets: existsSync(join(portalRuntime.assetsRoot(), "index.html")),
-      runtimeIcon: existsSync(windowIconPath()),
-      helper: JSON.parse(helper.stdout),
-      setup: existsSync(desktopSetupStatePath()),
-      refresh,
-      renderer,
-      settings,
-    }, null, 2);
-  const stagedOutput = `${output}.${process.pid}.tmp`;
-  await writeFile(stagedOutput, smokeJson, "utf8");
-  await rename(stagedOutput, output);
-  traceStartup("smoke-output-complete");
-  window.destroy();
   return true;
 }
 
