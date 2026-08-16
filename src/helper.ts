@@ -3,12 +3,12 @@
 import { isSea } from "node:sea";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { CaptureCommand } from "./commands/capture.js";
-import { ConfigCommand } from "./commands/config.js";
+// Only the detach shim is imported eagerly. It is the hot path, it pulls nothing
+// but node builtins, and AGENTS.md requires this file stay import-light. Every
+// other command reaches the full provider graph through chalk, ora, and
+// capture-run, so a static import here would load all of it on every hook
+// invocation just to dispatch to the shim and exit.
 import { runDetachShim } from "./commands/detach-shim.js";
-import { RunCommand } from "./commands/run.js";
-import { SetupCommand } from "./commands/setup.js";
-import { SyncCommand } from "./commands/sync.js";
 
 declare const __APP_VERSION__: string;
 
@@ -36,10 +36,13 @@ async function main(argv: string[]): Promise<void> {
     case "run":
       await run(commandArgs);
       return;
-    case "sync":
+    case "sync": {
+      const { SyncCommand } = await import("./commands/sync.js");
       await new SyncCommand().execute({ quiet: hasFlag(commandArgs, "--quiet") });
+    }
       return;
-    case "setup":
+    case "setup": {
+      const { SetupCommand } = await import("./commands/setup.js");
       await new SetupCommand().execute({
         dataRoot: optionValue(commandArgs, "--data-root"),
         terminalMessage: !hasFlag(commandArgs, "--no-terminal-message"),
@@ -47,13 +50,16 @@ async function main(argv: string[]): Promise<void> {
         migrateTerminal: hasFlag(commandArgs, "--migrate-terminal-wrappers"),
         uninstall: hasFlag(commandArgs, "--uninstall"),
       });
+    }
       return;
-    case "config":
+    case "config": {
+      const { ConfigCommand } = await import("./commands/config.js");
       await new ConfigCommand().execute({
         show: hasFlag(commandArgs, "--show"),
         set: optionValue(commandArgs, "--set"),
         reset: hasFlag(commandArgs, "--reset"),
       });
+    }
       return;
     case "--version":
     case "version":
@@ -85,6 +91,7 @@ async function capture(argv: string[]): Promise<void> {
     return;
   }
 
+  const { CaptureCommand } = await import("./commands/capture.js");
   await new CaptureCommand().execute({
     session: optionValue(argv, "--session"),
     inputFile: optionValue(argv, "--input-file"),
@@ -96,6 +103,7 @@ async function run(argv: string[]): Promise<void> {
   const [agent, ...agentArgs] = argv;
   if (!agent) throw new Error("Missing agent command.");
   const forwarded = agentArgs[0] === "--" ? agentArgs.slice(1) : agentArgs;
+  const { RunCommand } = await import("./commands/run.js");
   process.exitCode = await new RunCommand().execute(agent, forwarded);
 }
 
