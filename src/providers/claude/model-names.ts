@@ -26,6 +26,7 @@ const DISPLAY_NAMES: Record<string, string> = {
   // Current Claude generation (July 2026)
   "claude-fable-5": "Claude Fable 5",
   "claude-opus-5": "Claude Opus 5",
+  "claude-sonnet-5": "Claude Sonnet 5",
   "claude-opus-4-8": "Claude Opus 4.8",
   "claude-opus-4-7": "Claude Opus 4.7",
   "claude-sonnet-4-6": "Claude Sonnet 4.6",
@@ -47,6 +48,45 @@ const DISPLAY_NAMES: Record<string, string> = {
   "claude-3-haiku": "Claude 3 Haiku",
 };
 
+const VENDORS: Record<string, string> = { claude: "Claude", gpt: "GPT" };
+const FAMILIES = new Set([
+  "opus", "sonnet", "haiku", "fable", "sol", "terra", "luna",
+  "mini", "nano", "pro", "codex",
+]);
+
+/**
+ * Build a label for a model this table has never heard of.
+ *
+ * The table is curated and stays authoritative, but it only changes when
+ * somebody remembers to edit it, and nothing ties it to pricing.ts. A model
+ * released between edits used to render as its raw id. Deriving the obvious
+ * label from the id shape keeps a new release readable without an edit, and
+ * returns the id unchanged when the shape is not recognisable.
+ */
+export function deriveDisplayName(normalized: string): string | undefined {
+  const parts = normalized.split("-").filter(Boolean);
+  const vendor = VENDORS[parts[0]];
+  if (!vendor || parts.length < 2) return undefined;
+
+  const words: string[] = [vendor];
+  let version: string[] = [];
+  for (const part of parts.slice(1)) {
+    if (/^\d+$/.test(part)) {
+      version.push(part);
+      continue;
+    }
+    if (version.length) {
+      words.push(version.join("."));
+      version = [];
+    }
+    if (!FAMILIES.has(part)) return undefined;
+    words.push(part[0].toUpperCase() + part.slice(1));
+  }
+  if (version.length) words.push(version.join("."));
+  return words.length > 1 ? words.join(" ") : undefined;
+}
+
 export function displayModelName(model: string): string {
-  return DISPLAY_NAMES[normalizeModelId(model)] || model;
+  const normalized = normalizeModelId(model);
+  return DISPLAY_NAMES[normalized] || deriveDisplayName(normalized) || model;
 }
