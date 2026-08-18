@@ -4,6 +4,8 @@ A private desktop analytics app for understanding how Claude Code, OpenAI Codex,
 
 Agent Usage Stat turns local coding-agent transcripts into one searchable usage ledger. Compare providers and models, follow spend and token volume, inspect projects and sessions, and see when work happened. Prompt and response text never enters the ledger.
 
+![Agent Usage Stat overview, showing the daily expenditure field, session cadence, model structure, and project distribution for a 30-day window](readme-assets/product-overview.png)
+
 ## Supported
 
 - Windows and macOS
@@ -35,6 +37,18 @@ Every view uses the same date window, so cost, token, project, and session total
 - **Tokens:** Inspect token traffic, daily volume, composition, and cache effectiveness.
 - **Projects:** Compare spend, tokens, duration, machine count, activity, and dominant model by project.
 - **Sessions:** Search and sort every recorded session, then open its usage anatomy for detail.
+
+![Spend view, following API-equivalent value across time, projects, machines, and individual sessions](readme-assets/spend-analytics.png)
+
+![Tokens view, showing token traffic, daily volume, composition, and cache effectiveness](readme-assets/token-analytics.png)
+
+![Projects view, comparing spend, tokens, duration, machine count, activity, and dominant model by project](readme-assets/project-analytics.png)
+
+![Sessions view, a searchable and sortable record of every captured session](readme-assets/session-browser.png)
+
+Recorded sessions also have a wall-clock timeline, as a dense week schedule and as a compact month field. Blocks carry the shared model-family colours, and stronger shading indicates higher token velocity.
+
+![Session timeline in week view and month view](readme-assets/session-timeline.png)
 
 ## Data and privacy
 
