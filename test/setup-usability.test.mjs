@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import { detectInstalledAgents } from "../dist/commands/setup.js";
+import { installCodexHooks } from "../dist/integrations/codex-hooks.js";
 import { buildPortalData } from "../portal/scripts/build-data.mjs";
 import { detectProvider } from "../dist/providers/registry.js";
 
@@ -46,6 +47,30 @@ test("the provider is inferred from transcript content", async () => {
     assert.equal(provider.name, "claude");
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("standalone Codex hooks use the PowerShell command on Windows", async () => {
+  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-codex-hook-"));
+  const hooksPath = join(home, ".codex", "hooks.json");
+  const previousStandalone = process.env.AGENT_USAGE_STAT_STANDALONE;
+  process.env.AGENT_USAGE_STAT_STANDALONE = "1";
+
+  try {
+    await installCodexHooks(hooksPath);
+    const config = JSON.parse(await readFile(hooksPath, "utf8"));
+    const expected = `& "${process.execPath}" capture --detach --quiet`;
+
+    for (const event of ["Stop", "SubagentStop"]) {
+      assert.equal(config.hooks[event][0].hooks[0].commandWindows, expected);
+    }
+  } finally {
+    if (previousStandalone === undefined) {
+      delete process.env.AGENT_USAGE_STAT_STANDALONE;
+    } else {
+      process.env.AGENT_USAGE_STAT_STANDALONE = previousStandalone;
+    }
+    await rm(home, { recursive: true, force: true });
   }
 });
 
