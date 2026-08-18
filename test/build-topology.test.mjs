@@ -64,3 +64,20 @@ test("the canonical artifact tree contains no intermediate build stages", () => 
   assert.equal(existsSync(join(root, "dist", "icons", "work")), false);
   assert.equal(existsSync(join(root, "dist", "desktop", "main.d.ts")), false);
 });
+
+test("every local README image resolves to a file in the repository", () => {
+  // The visual tour was lost once when a build-path cleanup removed the loose
+  // root screenshots and stripped the README references with them. Product
+  // images live under readme-assets/, outside the root-artifact rule above.
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  const markdown = [...readme.matchAll(/!\[[^\]]*\]\(([^)\s]+)/g)];
+  const html = [...readme.matchAll(/<img\s[^>]*src=["']([^"']+)["']/gi)];
+  const referenced = [...new Set([...markdown, ...html].map(([, path]) => path))]
+    .filter((path) => !/^[a-z][a-z0-9+.-]*:/i.test(path));
+
+  assert.ok(referenced.length > 0, "README must keep its product images");
+  assert.deepEqual(
+    referenced.filter((path) => !existsSync(join(root, path))),
+    [],
+  );
+});
