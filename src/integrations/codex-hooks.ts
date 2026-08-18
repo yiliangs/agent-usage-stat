@@ -67,7 +67,7 @@ export async function installCodexHooks(hooksPath: string): Promise<boolean> {
   const handler: CommandHook = {
     type: "command",
     command: commands.unix,
-    commandWindows: commands.windows,
+    commandWindows: commands.powershell,
     timeout: 30,
     statusMessage: "Recording Codex usage",
   };
