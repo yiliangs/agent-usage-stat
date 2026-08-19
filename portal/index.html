@@ -97,8 +97,17 @@
     .mark {
       display: grid;
       place-items: center;
+      padding: 0;
+      border: 0;
       border-right: 1px solid var(--ink);
+      background: none;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
     }
+
+    .mark:hover img { opacity: .72; }
+    .mark:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 
     .mark img {
       display: block;
@@ -2419,9 +2428,9 @@
 <body data-palette="#ce604a,#00897d,#76569a,#2d804f,#405fa0,#a27b18,#aa4778,#007f9a">
   <main class="page">
     <header class="topbar">
-      <div class="mark" aria-label="Agent Usage Stat mark">
+      <button class="mark" type="button" data-portal-view="overview" aria-label="Agent Usage Stat, go to Overview">
         <img src="../assets/logo.svg" alt="">
-      </div>
+      </button>
       <div class="identity">
         <strong>AGENT USAGE STAT</strong>
         <span>Personal computational work atlas</span>

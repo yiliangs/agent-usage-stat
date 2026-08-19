@@ -62,6 +62,7 @@ export async function runDesktopSmokeIfRequested(
   trace("smoke-window-complete");
   const renderer = await inspectRenderer(window);
   const settings = await inspectSettings(window);
+  const home = await inspectHomeNavigation(window);
   trace("smoke-renderer-complete");
 
   const smokeJson = JSON.stringify({
@@ -75,6 +76,7 @@ export async function runDesktopSmokeIfRequested(
     refresh,
     renderer,
     settings,
+    home,
   }, null, 2);
   const stagedOutput = `${output}.${process.pid}.tmp`;
   await writeFile(stagedOutput, smokeJson, "utf8");
@@ -82,6 +84,24 @@ export async function runDesktopSmokeIfRequested(
   trace("smoke-output-complete");
   window.destroy();
   return true;
+}
+
+async function inspectHomeNavigation(window: BrowserWindow): Promise<{
+  view: string | null;
+  markSelectable: boolean;
+}> {
+  return window.webContents.executeJavaScript(`(async () => {
+    const mark = document.querySelector('.mark');
+    mark?.click();
+    for (let index = 0; index < 50; index++) {
+      if (!document.querySelector('#overviewView')?.hidden) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return {
+      view: document.querySelector('.portal-view:not([hidden])')?.dataset.view ?? null,
+      markSelectable: mark?.hasAttribute('aria-selected') ?? false,
+    };
+  })()`);
 }
 
 async function inspectRenderer(window: BrowserWindow): Promise<{
