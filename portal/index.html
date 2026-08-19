@@ -410,7 +410,9 @@
     .token-traffic-chart .traffic-bar-break path { fill: none; stroke: var(--ink); stroke-width: 1.15; vector-effect: non-scaling-stroke; }
     .token-traffic-y-axis .traffic-break-label { fill: var(--accent); font-size: 7px; letter-spacing: .08em; }
     .token-traffic-y-axis .traffic-y-break { fill: none; stroke: var(--accent); stroke-width: 1.15; }
-    .token-traffic-chart .traffic-axis-label { text-anchor: middle; }
+    /* No blanket text-anchor here: renderTokenTraffic anchors the first and
+       last labels to the chart edges, and a rule at this level would win over
+       the presentation attribute and push both labels off the plot. */
     .token-traffic-chart .traffic-hover-band { fill: rgba(var(--accent-rgb),.12); }
     .token-traffic-chart .traffic-crosshair { stroke: var(--accent); stroke-width: 1; vector-effect: non-scaling-stroke; }
     .token-traffic-chart .traffic-hit-field { fill: transparent; cursor: crosshair; }
@@ -1190,10 +1192,15 @@
 
     .project-list { margin-top: 12px; }
 
+    /* The rank, bar and value tracks are fixed, so the name track absorbs
+       every pixel the panel loses. Below roughly 230px of row that left it
+       narrower than one word, and `overflow-wrap: anywhere` turned a project
+       name into a vertical stack of single characters. The bar now yields
+       first, and the name truncates the way .conc-row's already does. */
     .project-row {
       display: grid;
-      grid-template-columns: 28px minmax(0, 1fr) 50px 84px;
-      gap: 10px;
+      grid-template-columns: 24px minmax(72px, 1fr) minmax(22px, 50px) 84px;
+      gap: 8px;
       align-items: center;
       min-height: 43px;
       border-top: 1px solid var(--line);
@@ -1202,16 +1209,25 @@
 
     .project-row:last-child { border-bottom: 1px solid var(--line); }
     .project-row .rank { font-family: var(--mono); color: var(--muted); font-size: 10px; }
-    .project-row .name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+    .project-row .name {
+      min-width: 0;
+      overflow: hidden;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .project-row .name small {
       display: flex;
       align-items: center;
       gap: 6px;
+      min-width: 0;
+      overflow: hidden;
       margin-top: 4px;
       color: var(--graphite);
       font-size: 9px;
       font-weight: 500;
       letter-spacing: .08em;
+      white-space: nowrap;
     }
     .project-row .name small i,
     .model-tag i {
@@ -1728,6 +1744,7 @@
       position: absolute;
       min-height: 4px;
       overflow: hidden;
+      container-type: inline-size;
       border: 1px solid rgba(var(--ink-rgb),.28);
       border-left-width: 3px;
       border-radius: 2px;
@@ -1752,6 +1769,12 @@
     .rhythm-event.brief small,
     .rhythm-event.compact span,
     .rhythm-event.compact small { display: none; }
+    /* Concurrent sessions divide a day column into lanes, so an event is
+       constrained on both axes. The classes above answer for height; these
+       answer for width, dropping the rate once it no longer fits on its line
+       and the project name once it can only wrap a character at a time. */
+    @container (max-width: 78px) { .rhythm-event small { display: none; } }
+    @container (max-width: 42px) { .rhythm-event span { display: none; } }
     .rhythm-event:hover,
     .rhythm-event:focus-visible {
       z-index: 20;
@@ -2498,7 +2521,7 @@
         <div class="hero-number">
           <span class="micro">API-equivalent value</span>
           <span class="value">$539.80</span>
-          <span class="delta"><i class="delta-mark"></i>4.3% below prior period</span>
+          <span class="delta"><i class="delta-mark"></i>−4.3% vs prior</span>
           <span class="magnitude-meter"><i></i></span>
           <span class="meter-label">Period value relative to previous</span>
         </div>
@@ -2588,9 +2611,9 @@
 
       <aside class="hero-right">
         <div class="metric-stack">
-          <div class="metric"><span class="micro">Sessions</span><b>28</b><small>+ 06 vs prior</small><span class="magnitude-meter"><i></i></span><span class="meter-label">Relative magnitude</span></div>
-          <div class="metric"><span class="micro">Tokens</span><b>15.25M</b><small>+ 12.6%</small><span class="magnitude-meter"><i></i></span><span class="meter-label">Relative magnitude</span></div>
-          <div class="metric"><span class="micro">Avg / session</span><b>$19.28</b><small>− 2.5%</small><span class="magnitude-meter"><i></i></span><span class="meter-label">Relative magnitude</span></div>
+          <div class="metric"><span class="micro">Sessions</span><b>28</b><small>+27% vs prior</small><span class="magnitude-meter"><i></i></span><span class="meter-label">Relative magnitude</span></div>
+          <div class="metric"><span class="micro">Tokens</span><b>15.25M</b><small>+12.6% vs prior</small><span class="magnitude-meter"><i></i></span><span class="meter-label">Relative magnitude</span></div>
+          <div class="metric"><span class="micro">Avg / session</span><b>$19.28</b><small>−2.5% vs prior</small><span class="magnitude-meter"><i></i></span><span class="meter-label">Relative magnitude</span></div>
           <div class="metric"><span class="micro">Cache read</span><b>81%</b><small>12.4M tokens</small><span class="magnitude-meter"><i></i></span><span class="meter-label">Relative magnitude</span></div>
         </div>
         <div class="model-field">

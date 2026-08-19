@@ -45,6 +45,8 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `portal/scripts/build-data.mjs`: browser artifact builder
 - `portal/index.html`: integrated analytics layout and visual system
 - `portal/portal.js`: client-side aggregation, navigation, charts, tables, and detail interactions
+- `portal/usage-format.js`: numeric formats, each bounded to the width of the slot it feeds
+- `scripts/measure-portal-layout.mjs`: renders the built portal in headless Chrome to catch overflowing panels
 
 ## Invariants
 
@@ -52,6 +54,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `provider` is the host tool; model vendor is a separate axis. Claude Code can route to GPT, so never pick a pricing table or a chart series by provider alone. Derive vendor per model via `src/core/model-vendor.ts`.
 - Persist `model_breakdowns` on every shard. Session totals alone cannot be split by vendor after the fact.
 - Never let a recomputation replace a recorded session with lower tokens or cost.
+- Every numeric format that feeds a single-line panel slot is bounded in `portal/usage-format.js` and declared in `SLOT_BUDGET`. Panels are sized once; the values they hold are not.
 - Parse JSONL line by line with per-line error isolation.
 - Normalize model bracket suffixes before pricing lookup.
 - Claude subagent usage includes recursively nested workflow transcripts.
