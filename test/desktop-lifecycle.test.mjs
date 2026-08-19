@@ -136,10 +136,10 @@ test("the capture settings button uses a geometrically centered attention mark",
 
 test("the dashboard uses the theme-aware logo for both its header and favicon", async () => {
   const html = await readFile(join(process.cwd(), "portal", "index.html"), "utf8");
-  const logo = await readFile(join(process.cwd(), "assets", "logo.svg"), "utf8");
+  const logo = await readFile(join(process.cwd(), "portal", "logo.svg"), "utf8");
 
-  assert.match(html, /<link rel="icon" type="image\/svg\+xml" href="\.\.\/assets\/logo\.svg">/);
-  assert.match(html, /class="mark"[^>]*>\s*<img src="\.\.\/assets\/logo\.svg"/);
+  assert.match(html, /<link rel="icon" type="image\/svg\+xml" href="\.\/logo\.svg">/);
+  assert.match(html, /class="mark"[^>]*>\s*<img src="\.\/logo\.svg"/);
   assert.match(logo, /@media \(prefers-color-scheme: dark\)/);
   assert.match(logo, /data-render-theme="dark"/);
   assert.match(logo, /\.bg \{ fill: #1c1c1a; \}/);
@@ -210,18 +210,18 @@ test("Windows packaging includes branded installation and a portable archive", (
   assert.equal(squirrel.config.exe, "Agent Usage Stat.exe");
   assert.equal(existsSync(squirrel.config.loadingGif), true);
   assert.equal(existsSync(squirrel.config.setupIcon), true);
-  assert.equal(config.packagerConfig.ignore("/assets"), true);
+  assert.equal(config.packagerConfig.ignore("/portal"), true);
   assert.equal(config.packagerConfig.ignore("/dist/desktop/main.js"), false);
   assert.equal(config.packagerConfig.ignore("/dist/icons"), true);
   assert.equal(config.packagerConfig.ignore("/dist/helper"), true);
   assert.equal(config.packagerConfig.ignore("/dist/forge"), true);
-  assert.equal(existsSync(join(process.cwd(), "assets", "icon-source.svg")), false);
-  assert.equal(existsSync(join(process.cwd(), "assets", "logo.svg")), true);
+  assert.equal(existsSync(join(process.cwd(), "portal", "icon-source.svg")), false);
+  assert.equal(existsSync(join(process.cwd(), "portal", "logo.svg")), true);
   assert.equal(existsSync(join(process.cwd(), "dist", "icons", "icon-light.png")), true);
   assert.equal(existsSync(join(process.cwd(), "dist", "icons", "icon-dark.png")), true);
-  assert.equal(existsSync(join(process.cwd(), "assets", "mark-source.svg")), false);
-  assert.equal(existsSync(join(process.cwd(), "assets", "logo.png")), false);
-  assert.equal(existsSync(join(process.cwd(), "assets", "icon-source.png")), false);
+  assert.equal(existsSync(join(process.cwd(), "portal", "mark-source.svg")), false);
+  assert.equal(existsSync(join(process.cwd(), "portal", "logo.png")), false);
+  assert.equal(existsSync(join(process.cwd(), "portal", "icon-source.png")), false);
   assert.equal(zip.platforms.includes("win32"), true);
   assert.equal(
     squirrel.config.loadingGif,
