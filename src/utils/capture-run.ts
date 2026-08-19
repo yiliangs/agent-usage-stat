@@ -49,7 +49,7 @@ export interface RecordedCaptureResult extends CaptureResultBase {
 
 export interface NoUsageCaptureResult extends CaptureResultBase {
   status: "no_usage";
-  reason: "zero_tokens";
+  reason: "zero_tokens" | "transcript_missing";
 }
 
 export interface FailedCaptureResult extends CaptureResultBase {
@@ -335,7 +335,8 @@ function isCaptureResult(
         typeof result.shard_path === "string"
       );
     case "no_usage":
-      return result.reason === "zero_tokens";
+      return result.reason === "zero_tokens" ||
+        result.reason === "transcript_missing";
     case "failed":
       return typeof result.message === "string";
     default:

@@ -1,11 +1,13 @@
 import { stdin } from "process";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
+import { resolve } from "path";
 import { unlink } from "fs/promises";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import chalk from "chalk";
 import ora from "ora";
 import { logHookEvent } from "../utils/hook-log.js";
+import { expandHome } from "../utils/paths.js";
 import {
   correlatedCaptureFromInput,
   publishCaptureOutcome,
@@ -69,6 +71,19 @@ export class CaptureCommand {
       logHookEvent(`data root ${root} (${source})`);
 
       if (transcriptPath) {
+        // The agent itself named this path in its hook payload, so its absence
+        // means the session never wrote a transcript: an empty session, not a
+        // capture failure. Agents emit end-of-session hooks for turnless
+        // sessions routinely, and recording those as failures poisons the
+        // capture health record while nothing is lost.
+        if (hookData && !existsSync(resolve(expandHome(transcriptPath)))) {
+          outcome = { status: "no_usage", reason: "transcript_missing" };
+          provider = await detectProvider(transcriptPath, config).catch(() => undefined);
+          await this.recordHookHealth(hookData, provider, outcome);
+          spinner.info("No transcript was written for this session.");
+          logHookEvent(`skip missing-transcript session=${sessionId ?? "?"}`);
+          return;
+        }
         provider = await detectProvider(transcriptPath, config);
       } else {
         const resolved = await findSession(options.session ?? sessionId, config);
