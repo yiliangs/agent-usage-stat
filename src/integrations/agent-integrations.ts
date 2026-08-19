@@ -26,6 +26,14 @@ import type { HookConfigurationStatus } from "./hook-status.js";
 export interface AgentIntegration {
   provider: ProviderName;
   label: string;
+  /** The file inspect() reads and install() writes, shown to users in repair guidance. */
+  hookConfigPath: string;
+  /**
+   * True when the hook file belongs to this application and install() rewrites
+   * it wholesale, so an unparseable file is repairable from the app. False when
+   * the file is agent-owned and install() refuses to clobber it.
+   */
+  ownsHookFile: boolean;
   isInstalled(): boolean;
   inspect(): Promise<HookConfigurationStatus>;
   install(): Promise<{ needsTrust: boolean }>;
@@ -44,6 +52,8 @@ const INTEGRATIONS = {
     return {
       provider: "claude",
       label: "Claude Code",
+      hookConfigPath: settings,
+      ownsHookFile: false,
       isInstalled: () => existsSync(root) || commandExists("claude"),
       inspect: () => inspectClaudeHook(settings),
       install: async () => {
@@ -58,6 +68,8 @@ const INTEGRATIONS = {
     return {
       provider: "codex",
       label: "Codex",
+      hookConfigPath: hooks,
+      ownsHookFile: false,
       isInstalled: () => existsSync(root) || commandExists("codex"),
       inspect: () => inspectCodexHooks(hooks),
       install: async () => ({
@@ -71,6 +83,8 @@ const INTEGRATIONS = {
     return {
       provider: "copilot",
       label: "GitHub Copilot CLI",
+      hookConfigPath: hooks,
+      ownsHookFile: true,
       isInstalled: () => existsSync(root) || commandExists("copilot"),
       inspect: () => inspectCopilotHook(hooks),
       install: async () => {

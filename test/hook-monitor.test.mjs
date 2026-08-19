@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { buildDesktopSettingsState } from "../dist/desktop/settings-state.js";
 import { installClaudeHook } from "../dist/integrations/claude-hooks.js";
 import { createAgentIntegrations } from "../dist/integrations/agent-integrations.js";
+import { captureMonitor } from "../dist/desktop/capture-monitor.js";
 import { recordCaptureHealth } from "../dist/utils/capture-health.js";
 
 test("capture monitor follows local hook configuration and observed delivery", async () => {
@@ -33,6 +34,7 @@ test("capture monitor follows local hook configuration and observed delivery", a
     assert.deepEqual(await readClaudeMonitor(), {
       status: "needs_attention",
       reason: "hook_missing",
+      repairable: true,
       observation: null,
     });
 
@@ -40,6 +42,7 @@ test("capture monitor follows local hook configuration and observed delivery", a
     assert.deepEqual(await readClaudeMonitor(), {
       status: "unverified",
       reason: "awaiting_first_attempt",
+      repairable: false,
       observation: null,
     });
 
@@ -49,6 +52,7 @@ test("capture monitor follows local hook configuration and observed delivery", a
     assert.deepEqual(await readClaudeMonitor(), {
       status: "needs_attention",
       reason: "hooks_disabled",
+      repairable: false,
       observation: null,
     });
 
@@ -169,5 +173,43 @@ test("settings joins provider collaborators by identity instead of array positio
     );
   } finally {
     await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("repair is offered exactly where a reinstall changes the outcome", () => {
+  const verdict = (configuration, ownsHookFile) =>
+    captureMonitor("continuous", true, configuration, null, ownsHookFile).repairable;
+
+  // A missing hook is what install() writes, so it is always repairable.
+  assert.equal(verdict("missing", false), true);
+  assert.equal(verdict("missing", true), true);
+
+  // An unreadable hook file is repairable only when the application owns it
+  // and a reinstall rewrites it; agent-owned files make install() throw.
+  assert.equal(verdict("invalid", true), true);
+  assert.equal(verdict("invalid", false), false);
+
+  // Disabled execution is an agent-side switch a reinstall must not override.
+  assert.equal(verdict("disabled", true), false);
+  assert.equal(verdict("disabled", false), false);
+
+  // A recorded delivery failure clears only on the next successful capture.
+  const failed = captureMonitor("continuous", true, "configured", {
+    provider: "claude",
+    lastAttemptAt: "2026-08-19T20:50:02.764Z",
+    lastAttemptEvent: "SessionEnd",
+    lastAttemptStatus: "failed",
+  }, false);
+  assert.equal(failed.reason, "last_attempt_failed");
+  assert.equal(failed.repairable, false);
+
+  // Copilot is the only integration whose hook file the application owns.
+  const integrations = createAgentIntegrations("/home", () => false, process.env, {});
+  assert.deepEqual(
+    integrations.map((integration) => [integration.provider, integration.ownsHookFile]),
+    [["claude", false], ["codex", false], ["copilot", true]],
+  );
+  for (const integration of integrations) {
+    assert.ok(integration.hookConfigPath.length > 0, `${integration.provider} names no hook file`);
   }
 });

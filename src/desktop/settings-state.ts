@@ -92,11 +92,13 @@ export async function buildDesktopSettingsState(
       sessions,
       captureStrategy: strategy,
       captureOverride: config.capturePolicy?.providers?.[root.provider] !== undefined,
+      hookConfigPath: integration.hookConfigPath,
       captureMonitor: captureMonitor(
         strategy,
         available,
         hookConfiguration,
         observation,
+        integration.ownsHookFile,
       ),
     };
   }));

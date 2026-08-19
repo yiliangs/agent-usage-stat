@@ -175,6 +175,72 @@ test("settings separate common controls from advanced agent locations", async ()
   assert.match(script, /Use default/);
 });
 
+test("an agent that needs attention states its cause and its remedy", async () => {
+  const html = await readFile(join(process.cwd(), "portal", "index.html"), "utf8");
+  const script = await readFile(join(process.cwd(), "portal", "portal.js"), "utf8");
+
+  // The summary tile is the first surface a user meets, and it sits outside the
+  // collapsed advanced section. A bare status word there is the reported defect.
+  const renderer = script.slice(script.indexOf("function renderCaptureMonitor"));
+  const tile = renderer.slice(0, renderer.indexOf("\nfunction "));
+  assert.match(tile, /class="capture-channel /);
+  assert.match(tile, /presentation\.title/);
+  assert.match(tile, /presentation\.detail/);
+  assert.match(tile, /presentation\.remedy/);
+  assert.match(tile, /capture-channel-remedy/);
+
+  // Every needs_attention reason owes the user either the Repair control or a
+  // concrete manual instruction; the ambiguous middle ground is the reported
+  // defect. Repairability itself is the backend's verdict (monitor.repairable),
+  // never re-derived in the portal.
+  const presentation = script.slice(script.indexOf("function captureMonitorPresentation"));
+  for (const reason of [
+    "hook_missing",
+    "hooks_disabled",
+    "settings_invalid",
+    "last_attempt_failed",
+  ]) {
+    const branch = presentation.slice(presentation.indexOf(`'${reason}'`));
+    const body = branch.slice(0, branch.indexOf("\n  }"));
+    assert.match(body, /remedy:/, `${reason} carries no remedy`);
+  }
+  assert.doesNotMatch(presentation, /repairable: (true|false)/,
+    "the portal must render the backend's repairable verdict, not declare its own");
+
+  // Manual fixes name the exact file and edit; the self-clearing state says
+  // that no action is needed instead of hinting at one.
+  assert.match(script, /Delete "disableAllHooks": true from \$\{configPath\}/);
+  assert.match(script, /Fix the JSON in that file/);
+  assert.match(script, /Choose Repair setup to rewrite it\./);
+  assert.match(script, /No action needed: this clears itself on the next successful checkpoint/);
+
+  // The control is gated on the backend verdict, not on the aggregate status.
+  assert.match(script, /hidden = !repairableProviders\(providers\)\.length/);
+  assert.match(script, /provider\.captureMonitor\.repairable/);
+  assert.doesNotMatch(script, /hidden = aggregate\.status !== 'needs_attention'/);
+
+  // The message after an action is derived from the state the action produced.
+  assert.match(script, /setSettingsStatus\(captureOutcomeMessage\(action, result\.providers\)\)/);
+  assert.match(script, /function captureOutcomeMessage/);
+  assert.match(script, /Repair ran\. Still needs attention/);
+
+  // A helper run costs seconds, so the button that started it shows progress.
+  assert.match(html, /id="captureMonitorRepair"[^>]*data-busy-label="Repairing…"/);
+  assert.match(script, /trigger\.textContent = trigger\.dataset\.busyLabel/);
+
+  // Prose wraps; the nowrap ellipsis rule governs the label and status slots only.
+  // The selectors stay scoped through .capture-channel so they outrank
+  // `.settings-row p`, which otherwise recolors and resizes every row paragraph.
+  assert.match(
+    html,
+    /\.capture-channel \.capture-channel-detail,\s*\n\s*\.capture-channel \.capture-channel-remedy \{/,
+  );
+  assert.match(html, /\.capture-channel \.capture-channel-remedy \{[^}]*color: var\(--ink\)/);
+  const nowrap = html.match(/\.capture-channel span,\s*\n\s*\.capture-channel strong \{[^}]*\}/s);
+  assert.ok(nowrap, "capture-channel single-line slot rule was not found");
+  assert.doesNotMatch(nowrap[0], /capture-channel-detail/);
+});
+
 test("Squirrel first run enters the application instead of quitting", () => {
   assert.equal(
     squirrelLifecycleEvent("win32", ["Agent Usage Stat.exe", "--squirrel-firstrun"]),
