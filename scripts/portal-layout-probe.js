@@ -10,6 +10,9 @@
  * metric cards, for instance, reserve their lower band for the magnitude
  * meter, so a wrapped comparison lands on top of it. `flow` slots are notes
  * with the leading built in; they may wrap but must still not be cut off.
+ * `trim` slots hold a name of unbounded length in a fixed row: one line is
+ * required and an ellipsis is the designed ending, so their text is allowed
+ * to run past the edge but never onto a second row.
  */
 (async () => {
   const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -28,7 +31,10 @@
     ["overview", ".metric small", "line", "metric comparison"],
     ["overview", ".model-pie-row", "line", "model share rows"],
     ["overview", ".heatmap-summary div b", "line", "heatmap summary value"],
+    ["overview", ".project-row .name", "trim", "ranked project name"],
+    ["overview", ".project-row .name small", "trim", "ranked project family"],
     ["overview", ".project-row .money", "line", "project spend"],
+    ["overview", ".conc-row .name", "trim", "concentration project name"],
     ["overview", ".conc-row .share", "line", "concentration share"],
     ["overview", ".conc-row .value", "line", "concentration value"],
     ["overview", ".rhythm-stat dd", "line", "rhythm window stats"],
@@ -108,15 +114,16 @@
         if (style.display === "none" || style.visibility === "hidden") continue;
         const result = measure(element);
         if (!result) continue;
-        const wrapped = mode === "line" && result.lines > 1;
-        if (!wrapped && result.clippedPx === 0) continue;
+        const wrapped = mode !== "flow" && result.lines > 1;
+        const clipped = mode === "trim" ? 0 : result.clippedPx;
+        if (!wrapped && clipped === 0) continue;
         findings.push({
           view,
           label,
           selector,
           text: element.textContent.trim().slice(0, 60),
           lines: result.lines,
-          clippedPx: result.clippedPx,
+          clippedPx: clipped,
           reason: wrapped ? "wrap" : "clip",
         });
       }

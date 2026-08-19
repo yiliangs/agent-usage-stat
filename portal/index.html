@@ -1192,10 +1192,15 @@
 
     .project-list { margin-top: 12px; }
 
+    /* The rank, bar and value tracks are fixed, so the name track absorbs
+       every pixel the panel loses. Below roughly 230px of row that left it
+       narrower than one word, and `overflow-wrap: anywhere` turned a project
+       name into a vertical stack of single characters. The bar now yields
+       first, and the name truncates the way .conc-row's already does. */
     .project-row {
       display: grid;
-      grid-template-columns: 28px minmax(0, 1fr) 50px 84px;
-      gap: 10px;
+      grid-template-columns: 24px minmax(72px, 1fr) minmax(22px, 50px) 84px;
+      gap: 8px;
       align-items: center;
       min-height: 43px;
       border-top: 1px solid var(--line);
@@ -1204,16 +1209,25 @@
 
     .project-row:last-child { border-bottom: 1px solid var(--line); }
     .project-row .rank { font-family: var(--mono); color: var(--muted); font-size: 10px; }
-    .project-row .name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+    .project-row .name {
+      min-width: 0;
+      overflow: hidden;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .project-row .name small {
       display: flex;
       align-items: center;
       gap: 6px;
+      min-width: 0;
+      overflow: hidden;
       margin-top: 4px;
       color: var(--graphite);
       font-size: 9px;
       font-weight: 500;
       letter-spacing: .08em;
+      white-space: nowrap;
     }
     .project-row .name small i,
     .model-tag i {
