@@ -2,6 +2,7 @@ import { createIcons, Settings } from 'lucide'
 import { buildTokenTraffic, robustTokenTrafficScale } from './token-traffic.js'
 import { buildProjectColorIndex, projectSeriesFor } from './timeline-colors.js'
 import { selectPortalView } from './portal-navigation.js'
+import { compact, pct, periodDelta, usd, usdHeadline } from './usage-format.js'
 import {
   DAY,
   createCalendarProjection,
@@ -55,19 +56,16 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)]
 const sum = (items, read) => items.reduce((total, item) => total + read(item), 0)
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
+// Numeric formats live in usage-format.js, where each one is bounded to the
+// width of the slot it feeds. Dates stay here; they have a fixed width.
 const fmt = {
-  usd: (value) => '$' + value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-  compact: (value) => {
-    const magnitude = Math.abs(value)
-    if (magnitude >= 1e9) return (value / 1e9).toFixed(2) + 'B'
-    if (magnitude >= 1e6) return (value / 1e6).toFixed(2) + 'M'
-    if (magnitude >= 1e3) return (value / 1e3).toFixed(1) + 'K'
-    return Math.round(value).toLocaleString('en-US')
-  },
+  usd,
+  usdHeadline,
+  compact,
+  pct,
   date: (value) => new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short' }).format(value).toUpperCase(),
   dateYear: (value) => new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short', year: 'numeric' }).format(value).toUpperCase(),
   time: (value) => new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }).format(value),
-  pct: (value) => Math.round(value * 100) + '%',
 }
 
 const LOCAL_TIME_ZONE = resolveLocalTimeZone()
@@ -160,14 +158,6 @@ function sessionsIn(start, end) {
   return state.sessions.filter((session) => session.t >= start && session.t <= end)
 }
 
-function deltaText(current, previous, invert = false) {
-  if (!previous) return 'No prior-period baseline'
-  const change = (current - previous) / Math.abs(previous)
-  const direction = change > 0 ? 'above' : 'below'
-  const favorable = invert ? change < 0 : change > 0
-  return `${Math.abs(change * 100).toFixed(Math.abs(change) < 0.1 ? 1 : 0)}% ${direction} prior period${favorable ? '' : ''}`
-}
-
 function render() {
   const period = currentWindow()
   const current = sessionsIn(period.start, period.end)
@@ -209,16 +199,16 @@ function renderHeader(window, current) {
 
 function renderSummary(current, previous) {
   $('.period-range strong').textContent = fmt.compact(current.tokens)
-  $('.hero-number .value').textContent = fmt.usd(current.cost)
+  $('.hero-number .value').textContent = fmt.usdHeadline(current.cost)
   const delta = $('.hero-number .delta')
-  delta.innerHTML = `<i class="delta-mark"></i>${deltaText(current.cost, previous.cost, true)}`
+  delta.innerHTML = `<i class="delta-mark"></i>${periodDelta(current.cost, previous.cost)}`
   $('.hero-number').style.setProperty('--meter', `${100 * current.cost / Math.max(1, current.cost + previous.cost)}%`)
 
   const metrics = $$('.metric')
   const values = [
-    [current.sessions.toLocaleString('en-US'), previous.sessions ? deltaText(current.sessions, previous.sessions) : 'No prior baseline'],
-    [fmt.compact(current.tokens), previous.tokens ? deltaText(current.tokens, previous.tokens) : 'No prior baseline'],
-    [fmt.usd(current.avgCost), previous.avgCost ? deltaText(current.avgCost, previous.avgCost, true) : 'No prior baseline'],
+    [current.sessions.toLocaleString('en-US'), periodDelta(current.sessions, previous.sessions)],
+    [fmt.compact(current.tokens), periodDelta(current.tokens, previous.tokens)],
+    [fmt.usdHeadline(current.avgCost), periodDelta(current.avgCost, previous.avgCost)],
     [fmt.pct(current.cacheRatio), `${fmt.compact(current.cacheRead)} tokens`],
   ]
   const meterValues = [
@@ -691,7 +681,7 @@ function renderSpendAnalysis(current, previous, period, projects) {
   const activeDays = new Set(current.map((session) => localDateKey(new Date(session.t)))).size
   const maximum = current.slice().sort((a, b) => (b.cost || 0) - (a.cost || 0))[0]
   renderKpis('#spendKpis', [
-    { label: 'Total spend', value: fmt.usd(value.cost), note: deltaText(value.cost, prior.cost, true) },
+    { label: 'Total spend', value: fmt.usd(value.cost), note: periodDelta(value.cost, prior.cost) },
     { label: 'Average / session', value: fmt.usd(value.avgCost), note: `${value.sessions} recorded sessions` },
     { label: 'Spend / active day', value: fmt.usd(value.cost / Math.max(1, activeDays)), note: `${activeDays} active day${activeDays === 1 ? '' : 's'}` },
     { label: 'Most expensive', value: fmt.usd(maximum?.cost || 0), note: maximum?.project || 'No sessions' },
@@ -709,7 +699,7 @@ function renderTokenAnalysis(current, previous, period, projects) {
   const prior = summarizeUsage(previous)
   const tokensPerDollar = value.cost ? value.tokens / value.cost : 0
   renderKpis('#tokenKpis', [
-    { label: 'Total tokens', value: fmt.compact(value.tokens), note: deltaText(value.tokens, prior.tokens) },
+    { label: 'Total tokens', value: fmt.compact(value.tokens), note: periodDelta(value.tokens, prior.tokens) },
     { label: 'Output', value: fmt.compact(value.output), note: fmt.pct(value.output / Math.max(1, value.tokens)) + ' of volume' },
     { label: 'Cache read', value: fmt.compact(value.cacheRead), note: fmt.pct(value.cacheRatio) + ' cache hit' },
     { label: 'Tokens / dollar', value: fmt.compact(tokensPerDollar), note: 'Recorded volume per API-equivalent dollar' },
