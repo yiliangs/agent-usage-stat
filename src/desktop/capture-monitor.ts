@@ -22,6 +22,14 @@ export type CaptureMonitorReason =
 export interface CaptureMonitor {
   status: CaptureMonitorStatus;
   reason: CaptureMonitorReason;
+  /**
+   * True when running Repair setup resolves this exact state: the hook is
+   * missing, or the unreadable hook file is application-owned and a reinstall
+   * rewrites it. Disabled hooks and unreadable agent-owned files need a user
+   * edit, and a recorded delivery failure clears only on the next successful
+   * capture, so no button can fix those.
+   */
+  repairable: boolean;
   observation: CaptureHealth | null;
 }
 
@@ -30,21 +38,26 @@ export function captureMonitor(
   available: boolean,
   configuration: HookConfigurationStatus,
   observation: CaptureHealth | null,
+  ownsHookFile = false,
 ): CaptureMonitor {
   if (strategy === "batch") {
-    return { status: "off", reason: "batch_capture", observation };
+    return { status: "off", reason: "batch_capture", repairable: false, observation };
   }
   if (!available) {
     return {
       status: "not_detected",
       reason: "agent_not_detected",
+      repairable: false,
       observation,
     };
   }
   if (configuration !== "configured") {
+    const reason = configurationReason(configuration);
     return {
       status: "needs_attention",
-      reason: configurationReason(configuration),
+      reason,
+      repairable: reason === "hook_missing" ||
+        (reason === "settings_invalid" && ownsHookFile),
       observation,
     };
   }
@@ -52,6 +65,7 @@ export function captureMonitor(
     return {
       status: "unverified",
       reason: "awaiting_first_attempt",
+      repairable: false,
       observation: null,
     };
   }
@@ -59,10 +73,11 @@ export function captureMonitor(
     return {
       status: "needs_attention",
       reason: "last_attempt_failed",
+      repairable: false,
       observation,
     };
   }
-  return { status: "observed", reason: "hook_observed", observation };
+  return { status: "observed", reason: "hook_observed", repairable: false, observation };
 }
 
 function configurationReason(

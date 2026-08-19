@@ -856,10 +856,10 @@ function renderSettings() {
     const captureStatus = provider.captureStrategy === 'continuous'
       ? 'Best-effort hook + app reconciliation'
       : 'App open + Sync now only'
-    const diagnostic = captureMonitorPresentation(provider.captureMonitor)
+    const diagnostic = captureMonitorPresentation(provider.captureMonitor, provider)
     return `<section class="provider-location ${provider.captureMonitor.status}">
       <div class="provider-identity"><h3>${escapeHtml(provider.label)}</h3><span class="provider-status">${escapeHtml(status)} / ${captureStatus}</span></div>
-      <div class="capture-diagnostic"><strong>${escapeHtml(diagnostic.title)}</strong><p>${escapeHtml(diagnostic.detail)}</p></div>
+      <div class="capture-diagnostic"><strong>${escapeHtml(diagnostic.title)}</strong><p>${escapeHtml(diagnostic.detail)}</p>${diagnostic.remedy ? `<p class="capture-remedy">${escapeHtml(diagnostic.remedy)}</p>` : ''}</div>
       <div class="settings-path">${escapeHtml(provider.root)}<span class="settings-path-meta">${escapeHtml(source)}</span></div>
       <div class="settings-segmented" aria-label="${escapeHtml(provider.label)} capture policy">
         <button class="settings-button${inherited ? ' active' : ''}" aria-pressed="${inherited}" data-settings-action="capture-policy" data-provider="${provider.provider}" data-inherit="true">Use default</button>
@@ -878,8 +878,11 @@ function renderSettings() {
 
 function renderCaptureMonitor(providers) {
   $('#captureMonitorSummary').innerHTML = providers.map((provider) => {
-    const presentation = captureMonitorPresentation(provider.captureMonitor)
-    return `<div class="capture-channel ${provider.captureMonitor.status}"><span>${escapeHtml(provider.label)}</span><strong>${escapeHtml(presentation.title)}</strong></div>`
+    const presentation = captureMonitorPresentation(provider.captureMonitor, provider)
+    const remedy = presentation.remedy
+      ? `<p class="capture-channel-remedy">${escapeHtml(presentation.remedy)}</p>`
+      : ''
+    return `<div class="capture-channel ${provider.captureMonitor.status}"><span>${escapeHtml(provider.label)}</span><strong>${escapeHtml(presentation.title)}</strong><p class="capture-channel-detail">${escapeHtml(presentation.detail)}</p>${remedy}</div>`
   }).join('')
 
   const aggregate = captureMonitorAggregate(providers)
@@ -888,7 +891,24 @@ function renderCaptureMonitor(providers) {
   $('#globalCaptureStatus').textContent = aggregate.label.toUpperCase()
   link.ariaLabel = `Open Settings: Capture ${aggregate.label}`
   link.title = aggregate.detail
-  $('#captureMonitorRepair').hidden = aggregate.status !== 'needs_attention'
+  // Shown only while a reinstall would change something, so the control never
+  // offers to fix a state it cannot reach.
+  $('#captureMonitorRepair').hidden = !repairableProviders(providers).length
+}
+
+function repairableProviders(providers) {
+  return providers.filter((provider) => provider.captureMonitor.repairable)
+}
+
+/** The sentence shown after an action, derived from the state it actually produced. */
+function captureOutcomeMessage(action, providers) {
+  if (action !== 'repair-capture') return 'Settings are current.'
+  const stranded = providers.filter((provider) => provider.captureMonitor.status === 'needs_attention')
+  if (!stranded.length) return 'Capture setup repaired.'
+  const named = stranded
+    .map((provider) => `${provider.label}: ${captureMonitorPresentation(provider.captureMonitor, provider).title.toLowerCase()}`)
+    .join('; ')
+  return `Repair ran. Still needs attention — ${named}.`
 }
 
 function captureMonitorAggregate(providers) {
@@ -908,7 +928,7 @@ function captureMonitorAggregate(providers) {
   return { status: 'off', label: 'Sync only', detail: 'No local continuous hooks are active.' }
 }
 
-function captureMonitorPresentation(monitor) {
+function captureMonitorPresentation(monitor, provider = null) {
   const observation = monitor.observation
   if (monitor.reason === 'batch_capture') {
     return { title: 'Batch sync', detail: 'Hook capture is intentionally off. App open and Sync now reconcile usage.' }
@@ -916,19 +936,44 @@ function captureMonitorPresentation(monitor) {
   if (monitor.reason === 'agent_not_detected') {
     return { title: 'Not detected', detail: 'No local agent data folder was found.' }
   }
+  // One rule, applied per reason: a button-fixable state gets the Repair
+  // control (monitor.repairable, decided by the backend that owns the files);
+  // anything else names the exact manual fix, or says plainly that none is
+  // needed. hookConfigPath is the file the inspector actually read.
+  const configPath = provider?.hookConfigPath || 'this agent’s hook settings file'
   if (monitor.reason === 'hook_missing') {
-    return { title: 'Needs attention', detail: 'Continuous capture is selected, but the local hook is missing.' }
+    return {
+      title: 'Needs attention',
+      detail: 'Continuous capture is selected, but the local hook is missing.',
+      remedy: 'Choose Repair setup to reinstall it.',
+    }
   }
   if (monitor.reason === 'hooks_disabled') {
-    return { title: 'Needs attention', detail: 'This agent’s local settings disable hook execution.' }
+    // Only Claude Code reports this reason: its settings.json carries a
+    // disableAllHooks switch that a hook reinstall must not override.
+    return {
+      title: 'Needs attention',
+      detail: 'This agent’s local settings disable hook execution.',
+      remedy: `Delete "disableAllHooks": true from ${configPath}, then reopen Settings.`,
+    }
   }
   if (monitor.reason === 'settings_invalid') {
-    return { title: 'Needs attention', detail: 'The local hook settings could not be read.' }
+    return {
+      title: 'Needs attention',
+      detail: `The hook settings in ${configPath} could not be read.`,
+      remedy: monitor.repairable
+        ? 'Choose Repair setup to rewrite it.'
+        : 'Fix the JSON in that file, then reopen Settings.',
+    }
   }
   if (monitor.reason === 'last_attempt_failed') {
     const at = monitorTime(observation?.lastAttemptAt)
     const failure = observation?.lastFailureMessage ? ` ${observation.lastFailureMessage}` : ''
-    return { title: 'Needs attention', detail: `Last hook attempt failed${at}.${failure} App sync remains available.` }
+    return {
+      title: 'Needs attention',
+      detail: `Last hook attempt failed${at}.${failure}`,
+      remedy: 'No action needed: this clears itself on the next successful checkpoint. Usage still arrives on app open and Sync now.',
+    }
   }
   if (monitor.reason === 'awaiting_first_attempt') {
     return { title: 'Waiting for first checkpoint', detail: 'Hook configuration is present, but no local delivery has been observed. Another settings scope or a managed policy may still block it.' }
@@ -966,8 +1011,8 @@ async function loadSettings() {
   }
 }
 
-async function performSettingsAction(action, detail = {}) {
-  setSettingsBusy(true)
+async function performSettingsAction(action, detail = {}, trigger = null) {
+  setSettingsBusy(true, trigger)
   setSettingsStatus('Applying settings…')
   try {
     const response = await fetch('./api/settings', {
@@ -982,17 +1027,29 @@ async function performSettingsAction(action, detail = {}) {
     if (['change-ledger', 'choose-provider', 'reset-provider'].includes(action)) {
       await load()
     }
-    setSettingsStatus('Settings are current.')
+    setSettingsStatus(captureOutcomeMessage(action, result.providers))
   } catch (error) {
     setSettingsStatus(error.message || 'Settings were not changed.', true)
     console.error(error.stack || error)
   } finally {
-    setSettingsBusy(false)
+    setSettingsBusy(false, trigger)
   }
 }
 
-function setSettingsBusy(busy) {
+function setSettingsBusy(busy, trigger = null) {
   $$('#settingsView [data-settings-action]').forEach((button) => { button.disabled = busy })
+  // A helper run costs seconds, and the page-foot status sits far below the
+  // control that started it, so the button itself carries the progress.
+  if (!trigger) return
+  if (busy) {
+    trigger.dataset.idleLabel = trigger.textContent
+    trigger.textContent = trigger.dataset.busyLabel || 'Working…'
+    trigger.setAttribute('aria-busy', 'true')
+    return
+  }
+  if (trigger.dataset.idleLabel) trigger.textContent = trigger.dataset.idleLabel
+  delete trigger.dataset.idleLabel
+  trigger.removeAttribute('aria-busy')
 }
 
 function setSettingsStatus(message, error = false) {
@@ -1873,7 +1930,7 @@ $('#settingsView').addEventListener('click', (event) => {
   if (button.dataset.strategy) detail.strategy = button.dataset.strategy
   if (button.dataset.inherit) detail.inherit = true
   if (button.dataset.provider) detail.provider = button.dataset.provider
-  void performSettingsAction(action, detail)
+  void performSettingsAction(action, detail, button)
 })
 
 $('#sessionSearch').addEventListener('input', (event) => {

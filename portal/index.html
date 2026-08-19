@@ -2007,6 +2007,20 @@
       font-size: 10px;
       font-weight: 600;
     }
+    /* Prose, not a bounded slot: the cause and the remedy wrap rather than truncate.
+       Scoped through .capture-channel so these outrank `.settings-row p`, which
+       otherwise imposes its own 11px graphite on every paragraph in the row. */
+    .capture-channel .capture-channel-detail,
+    .capture-channel .capture-channel-remedy {
+      margin: 5px 0 0;
+      min-width: 0;
+      font-family: var(--sans);
+      font-size: 9.5px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+    .capture-channel .capture-channel-detail { color: var(--graphite); }
+    .capture-channel .capture-channel-remedy { color: var(--ink); font-weight: 600; }
 
     .settings-advanced { margin-top: 22px; border: 1px solid var(--line-dark); background: var(--paper); }
     .settings-advanced > summary {
@@ -2059,6 +2073,7 @@
     .capture-diagnostic { grid-area: diagnostic; min-width: 0; }
     .capture-diagnostic strong { font-family: var(--sans); font-size: 11px; font-weight: 600; }
     .capture-diagnostic p { overflow-wrap: anywhere; }
+    .capture-diagnostic .capture-remedy { color: var(--ink); font-weight: 600; }
     .provider-status {
       display: inline-flex;
       align-items: center;
@@ -2823,7 +2838,7 @@
           <section class="settings-row">
             <div><h2>Capture monitor</h2><p>Local Windows and macOS configuration plus observed hook delivery for each agent.</p></div>
             <div class="capture-monitor-summary" id="captureMonitorSummary" aria-live="polite">Loading capture health…</div>
-            <button class="settings-button" id="captureMonitorRepair" data-settings-action="repair-capture" hidden>Repair setup</button>
+            <button class="settings-button" id="captureMonitorRepair" data-settings-action="repair-capture" data-busy-label="Repairing…" hidden>Repair setup</button>
           </section>
         </div>
 
@@ -2834,7 +2849,7 @@
             <div class="provider-locations" id="settingsProviderLocations"></div>
             <div class="settings-repair">
               <p class="settings-note">Reapply best-effort hooks if an agent updated or removed its configuration.</p>
-              <button class="settings-button" data-settings-action="repair-capture">Repair capture setup</button>
+              <button class="settings-button" data-settings-action="repair-capture" data-busy-label="Repairing…">Repair capture setup</button>
             </div>
           </div>
         </details>
