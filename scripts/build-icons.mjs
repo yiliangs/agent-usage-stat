@@ -8,7 +8,7 @@ import pngToIco from "png-to-ico";
 import sharp from "sharp";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const logoSource = join(root, "assets", "logo.svg");
+const logoSource = join(root, "portal", "logo.svg");
 const output = join(root, "dist", "icons");
 const work = join(output, "work");
 const windowsSizes = [16, 24, 32, 48, 64, 128, 256];

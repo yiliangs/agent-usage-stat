@@ -17,9 +17,16 @@ test("the repository exposes one dependency manifest and one build entry point",
 });
 
 test("the source tree contains no generated build products", () => {
-  assert.deepEqual(readdirSync(join(root, "assets")).sort(), ["logo.svg"]);
   assert.equal(existsSync(join(root, "portal", "node_modules")), false);
   assert.equal(existsSync(join(root, "portal", "public")), false);
+});
+
+test("the brand source is the portal's own asset", () => {
+  // The header mark, the favicon, and every OS icon come from this one file.
+  // It has to sit inside the Vite root, because a reference that leaves the
+  // root resolves during the build and 404s in the development server (#57).
+  assert.equal(existsSync(join(root, "portal", "logo.svg")), true);
+  assert.equal(existsSync(join(root, "assets")), false);
 });
 
 test("the repository root contains no disposable preview artifacts", () => {
