@@ -139,7 +139,7 @@ test("the dashboard uses the theme-aware logo for both its header and favicon", 
   const logo = await readFile(join(process.cwd(), "assets", "logo.svg"), "utf8");
 
   assert.match(html, /<link rel="icon" type="image\/svg\+xml" href="\.\.\/assets\/logo\.svg">/);
-  assert.match(html, /<div class="mark"[^>]*>\s*<img src="\.\.\/assets\/logo\.svg"/);
+  assert.match(html, /class="mark"[^>]*>\s*<img src="\.\.\/assets\/logo\.svg"/);
   assert.match(logo, /@media \(prefers-color-scheme: dark\)/);
   assert.match(logo, /data-render-theme="dark"/);
   assert.match(logo, /\.bg \{ fill: #1c1c1a; \}/);

@@ -807,10 +807,12 @@ function renderSessionAnalysis(sessions) {
 
 function applyPortalView() {
   $$('.portal-view').forEach((view) => { view.hidden = view.dataset.view !== state.view })
-  $$('[data-portal-view]').forEach((button) => {
-    const active = button.dataset.portalView === state.view
-    button.classList.toggle('active', active)
-    button.setAttribute('aria-selected', String(active))
+  $$('[data-portal-view]').forEach((trigger) => {
+    const active = trigger.dataset.portalView === state.view
+    trigger.classList.toggle('active', active)
+    if (trigger.getAttribute('role') === 'tab') trigger.setAttribute('aria-selected', String(active))
+    else if (active) trigger.setAttribute('aria-current', 'page')
+    else trigger.removeAttribute('aria-current')
   })
   const settingsLink = $('[data-capture-monitor-link]')
   const settingsActive = state.view === 'settings'

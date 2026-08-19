@@ -111,6 +111,9 @@ try {
     "unverified",
   ]);
 
+  assert.equal(smoke.home.view, "overview");
+  assert.equal(smoke.home.markSelectable, false);
+
   const installedHelper = process.platform === "win32"
     ? join(home, ".agent-usage-stat", "bin", "agent-usage-stat-helper.exe")
     : join(home, ".agent-usage-stat", "bin", "agent-usage-stat-helper");
