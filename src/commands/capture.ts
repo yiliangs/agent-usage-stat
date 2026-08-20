@@ -18,6 +18,7 @@ import {
 } from "../providers/registry.js";
 import { ConfigManager } from "../core/config-manager.js";
 import { LogbookWriter } from "../core/logbook-writer.js";
+import { projectNameForCwd } from "../core/project-name.js";
 import { initializePricingFeed } from "../core/pricing-feed.js";
 import { resolveUsageRoot } from "../utils/usage-root.js";
 import type { HookData } from "../types/session-hook.js";
@@ -135,7 +136,7 @@ export class CaptureCommand {
       });
       outcome = {
         status: "recorded",
-        project: transcriptData.projectName || "",
+        project: projectNameForCwd(transcriptData.cwd),
         total_tokens: sessionData.totalTokens,
         total_cost_usd: Number(sessionData.totalCost.toFixed(6)),
         shard_path: shardPath,

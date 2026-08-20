@@ -190,7 +190,7 @@ test("portal artifacts preserve the exact current and legacy ledger boundary", a
     assert.equal(sessionsRaw, JSON.stringify(expectedSessions));
 
     const expectedCache = {
-      version: 1,
+      version: 2,
       source: root,
       entries: {
         "01-current.json": {

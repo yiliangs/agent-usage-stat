@@ -1,5 +1,4 @@
 import { existsSync } from "fs";
-import { basename } from "path";
 import type { ProviderSessionSnapshot } from "../../types/provider.js";
 import type { ModelBreakdown } from "../../types/session.js";
 import type { ParsedTranscript } from "../../types/transcript.js";
@@ -125,7 +124,6 @@ function toTranscript(
     userMessageCount: users.length,
     assistantMessageCount: assistants.length,
     totalMessages: users.length + assistants.length,
-    projectName: cwd ? basename(cwd.replace(/[\\/]+$/, "")) : undefined,
     gitBranch: start.context?.branch,
     cwd,
   };

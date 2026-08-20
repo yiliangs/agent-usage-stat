@@ -215,7 +215,7 @@ test("Codex rollout usage is deduped, split by model, and long-context priced", 
     );
     assert.deepEqual(unknownModels, []);
     assert.equal(transcript.sessionSlug, "build-usage-analytics");
-    assert.equal(transcript.projectName, "usage-stat");
+    assert.equal(transcript.cwd, "C:\\work\\usage-stat");
     assert.equal(transcript.gitBranch, "main");
     assert.equal(transcript.userMessageCount, 1);
     assert.equal(transcript.assistantMessageCount, 1);
@@ -568,7 +568,7 @@ test("logbook never regresses when detached workers finish out of order", async 
       userMessageCount: 1,
       assistantMessageCount: 1,
       totalMessages: 2,
-      projectName: "usage-stat",
+      cwd: "C:\\work\\usage-stat",
     },
   });
 

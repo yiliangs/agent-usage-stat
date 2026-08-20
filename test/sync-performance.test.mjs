@@ -108,7 +108,7 @@ function fakeProvider(activity) {
           userMessageCount: 1,
           assistantMessageCount: 1,
           totalMessages: 2,
-          projectName: "sync-test",
+          cwd: "C:\\work\\sync-test",
         },
         unknownModels: [],
       };

@@ -87,7 +87,7 @@ test("Claude checkpoints process only appended transcript bytes across the sessi
       "main-two",
     ]);
     assert.equal(second.transcriptData.firstPrompt, "First prompt");
-    assert.equal(second.transcriptData.projectName, "demo");
+    assert.equal(second.transcriptData.cwd, "C:\\work\\demo");
     assert.deepEqual(second.unknownModels, []);
 
     const [cacheFile] = (await readdir(join(cache, "claude")))

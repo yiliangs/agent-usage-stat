@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { existsSync, mkdirSync } from "fs";
 import { homedir } from "os";
-import { basename, join, resolve } from "path";
+import { join, resolve } from "path";
 import {
   open,
   readFile,
@@ -432,7 +432,6 @@ function toSnapshot(state: StoredSnapshot): ProviderSessionSnapshot {
       userMessageCount: state.userMessageCount,
       assistantMessageCount: state.assistantMessageCount,
       totalMessages: state.userMessageCount + state.assistantMessageCount,
-      projectName: state.cwd ? basename(state.cwd.replace(/[\\/]+$/, "")) : undefined,
       gitBranch: state.gitBranch,
       cwd: state.cwd,
     },
