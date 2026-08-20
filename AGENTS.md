@@ -36,6 +36,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `src/desktop/main.ts`: Electron lifecycle, windows, menus, and user-facing setup flows
 - `src/desktop/helper-runtime.ts`: stable helper installation, execution, and first-run state
 - `src/desktop/portal-runtime.ts`: `aus://` protocol, refresh serialization, and analytics snapshots
+- `src/desktop/logbook-watcher.ts`: debounced shard-write observer behind the dashboard's auto-refresh
 - `src/helper.ts`: standalone headless helper entry
 - `src/commands/setup.ts`: setup flow and terminal-wrapper installation
 - `src/integrations/agent-integrations.ts`: the single registry for host detection and hook lifecycle

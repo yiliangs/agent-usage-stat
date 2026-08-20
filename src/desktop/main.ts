@@ -20,6 +20,7 @@ import {
   installedHelperPath,
 } from "../core/application-paths.js";
 import { HelperRuntime } from "./helper-runtime.js";
+import { LogbookWatcher } from "./logbook-watcher.js";
 import {
   PORTAL_ORIGIN,
   PORTAL_URL,
@@ -69,6 +70,7 @@ let mainWindow: BrowserWindow | null = null;
 const helperRuntime = new HelperRuntime();
 const configManager = new ConfigManager();
 const portalRuntime = new PortalRuntime(helperRuntime, handlePortalRequest);
+const logbookWatcher = new LogbookWatcher(autoRefreshPortal);
 
 const squirrelEvent = handleSquirrelEvent();
 const isSmokeTest = isDesktopSmokeRequested(process.argv);
@@ -98,6 +100,8 @@ app.on("activate", () => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+
+app.on("will-quit", () => logbookWatcher.stop());
 
 async function start(): Promise<void> {
   traceStartup("ready");
@@ -185,6 +189,7 @@ async function openFirstRunWindow(): Promise<void> {
     );
     await portalRuntime.refresh();
     await window.loadURL(firstRunPortalUrl(PORTAL_URL, setupReady));
+    await logbookWatcher.start(resolveUsageRootFromDisk().root);
     traceStartup("first-run-complete");
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -253,15 +258,36 @@ async function synchronizeCachedWindow(window: BrowserWindow): Promise<void> {
     await helperRuntime.syncInstallation();
     await ensureDesktopSetup(true);
     const result = await portalRuntime.refresh();
-    const detail = result.updated > 0
-      ? `${result.updated} SESSION${result.updated === 1 ? "" : "S"} UPDATED`
-      : "UP TO DATE";
-    await setPortalSyncState(window, "complete", detail);
+    await setPortalSyncState(window, "complete", syncDetail(result.updated));
     traceStartup("background-sync-complete");
   } catch (error) {
     await setPortalSyncState(window, "error", "SYNC FAILED").catch(() => undefined);
     traceStartup("background-sync-failed");
     console.error(error);
+  }
+  await logbookWatcher.start(resolveUsageRootFromDisk().root);
+}
+
+function syncDetail(updated: number): string {
+  return updated > 0
+    ? `${updated} SESSION${updated === 1 ? "" : "S"} UPDATED`
+    : "UP TO DATE";
+}
+
+/**
+ * Refresh an open dashboard when detached captures write new shards. Runs
+ * through the same corner-status flow as the launch sync, so the renderer
+ * re-renders in place instead of reloading out from under the user.
+ */
+async function autoRefreshPortal(): Promise<void> {
+  const window = mainWindow;
+  if (!window || window.isDestroyed()) return;
+  try {
+    await setPortalSyncState(window, "syncing", "SYNCING");
+    const result = await portalRuntime.refresh();
+    await setPortalSyncState(window, "complete", syncDetail(result.updated));
+  } catch {
+    await setPortalSyncState(window, "error", "SYNC FAILED").catch(() => undefined);
   }
 }
 
@@ -426,6 +452,7 @@ async function chooseDataFolder(reload = true): Promise<boolean> {
     await helperRuntime.resetSetup();
     if (!(await ensureDesktopSetup(true))) return false;
     await portalRuntime.refresh();
+    await logbookWatcher.start(resolveUsageRootFromDisk().root);
     if (reload) await mainWindow?.webContents.reload();
 
     if (hasExistingHistory && !keepOriginal) {
