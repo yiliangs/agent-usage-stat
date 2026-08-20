@@ -21,6 +21,11 @@ import {
   installCopilotHook,
   removeCopilotHook,
 } from "./copilot-hooks.js";
+import {
+  inspectOpencodeHook,
+  installOpencodeHook,
+  removeOpencodeHook,
+} from "./opencode-hooks.js";
 import type { HookConfigurationStatus } from "./hook-status.js";
 
 export interface AgentIntegration {
@@ -41,20 +46,34 @@ export interface AgentIntegration {
 }
 
 type CommandExists = (command: string) => boolean;
+
+/**
+ * Two roots, because a host may read its sessions from one directory and load
+ * its hooks from another. opencode does: sessions live under its XDG data
+ * directory and plugins under its XDG config directory. For every other host
+ * the two are the same path and nothing below can tell the difference.
+ */
+interface IntegrationRoots {
+  /** Where the host keeps sessions. Follows a custom data-root override. */
+  data: string;
+  /** Where the host loads hooks from. Never follows an override. */
+  hook: string;
+}
+
 type CreateAgentIntegration = (
-  root: string,
+  roots: IntegrationRoots,
   commandExists: CommandExists,
 ) => AgentIntegration;
 
 const INTEGRATIONS = {
-  claude: (root, commandExists) => {
-    const settings = join(root, "settings.json");
+  claude: ({ data, hook }, commandExists) => {
+    const settings = join(hook, "settings.json");
     return {
       provider: "claude",
       label: "Claude Code",
       hookConfigPath: settings,
       ownsHookFile: false,
-      isInstalled: () => existsSync(root) || commandExists("claude"),
+      isInstalled: () => existsSync(data) || commandExists("claude"),
       inspect: () => inspectClaudeHook(settings),
       install: async () => {
         await installClaudeHook(settings);
@@ -63,14 +82,14 @@ const INTEGRATIONS = {
       remove: () => removeClaudeHook(settings),
     };
   },
-  codex: (root, commandExists) => {
-    const hooks = join(root, "hooks.json");
+  codex: ({ data, hook }, commandExists) => {
+    const hooks = join(hook, "hooks.json");
     return {
       provider: "codex",
       label: "Codex",
       hookConfigPath: hooks,
       ownsHookFile: false,
-      isInstalled: () => existsSync(root) || commandExists("codex"),
+      isInstalled: () => existsSync(data) || commandExists("codex"),
       inspect: () => inspectCodexHooks(hooks),
       install: async () => ({
         needsTrust: await installCodexHooks(hooks),
@@ -78,20 +97,36 @@ const INTEGRATIONS = {
       remove: () => removeCodexHooks(hooks),
     };
   },
-  copilot: (root, commandExists) => {
-    const hooks = join(root, "hooks", "agent-usage-stat.json");
+  copilot: ({ data, hook }, commandExists) => {
+    const hooks = join(hook, "hooks", "agent-usage-stat.json");
     return {
       provider: "copilot",
       label: "GitHub Copilot CLI",
       hookConfigPath: hooks,
       ownsHookFile: true,
-      isInstalled: () => existsSync(root) || commandExists("copilot"),
+      isInstalled: () => existsSync(data) || commandExists("copilot"),
       inspect: () => inspectCopilotHook(hooks),
       install: async () => {
         await installCopilotHook(hooks);
         return { needsTrust: false };
       },
       remove: () => removeCopilotHook(hooks),
+    };
+  },
+  opencode: ({ data, hook }, commandExists) => {
+    const plugin = join(hook, "agent-usage-stat.js");
+    return {
+      provider: "opencode",
+      label: "opencode",
+      hookConfigPath: plugin,
+      ownsHookFile: true,
+      isInstalled: () => existsSync(data) || commandExists("opencode"),
+      inspect: () => inspectOpencodeHook(plugin),
+      install: async () => {
+        await installOpencodeHook(plugin);
+        return { needsTrust: false };
+      },
+      remove: () => removeOpencodeHook(plugin),
     };
   },
 } satisfies Record<ProviderName, CreateAgentIntegration>;
@@ -104,10 +139,12 @@ export function createAgentIntegrations(
   config: Pick<AppConfig, "providerDataRoots"> = {},
 ): AgentIntegration[] {
   const roots = resolveProviderDataRoots(config, environment, home);
-  const rootFor = (provider: ProviderName) =>
-    roots.find((item) => item.provider === provider)?.root || "";
+  const rootsFor = (provider: ProviderName): IntegrationRoots => {
+    const resolved = roots.find((item) => item.provider === provider);
+    return { data: resolved?.root || "", hook: resolved?.hookRoot || "" };
+  };
   return PROVIDER_NAMES.map((provider) =>
-    INTEGRATIONS[provider](rootFor(provider), commandExists)
+    INTEGRATIONS[provider](rootsFor(provider), commandExists)
   );
 }
 

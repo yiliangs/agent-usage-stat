@@ -28,6 +28,10 @@ test("provider data roots distinguish default, environment, and custom paths", (
       codex: join(home, "custom-codex"),
     },
   };
+  const opencodeEnvironment = {
+    XDG_DATA_HOME: join(home, "xdg-data"),
+    XDG_CONFIG_HOME: join(home, "xdg-config"),
+  };
 
   assert.deepEqual(
     resolveProviderDataRoot("claude", config, environment, home),
@@ -35,6 +39,7 @@ test("provider data roots distinguish default, environment, and custom paths", (
       provider: "claude",
       label: "Claude Code",
       root: join(home, "env-claude"),
+      hookRoot: join(home, "env-claude"),
       source: "environment",
       environmentVariable: "CLAUDE_CONFIG_DIR",
     },
@@ -45,6 +50,8 @@ test("provider data roots distinguish default, environment, and custom paths", (
       provider: "codex",
       label: "Codex",
       root: join(home, "custom-codex"),
+      // A redirected host reads its hooks from where it was redirected to.
+      hookRoot: join(home, "custom-codex"),
       source: "custom",
       environmentVariable: "CODEX_HOME",
     },
@@ -55,18 +62,53 @@ test("provider data roots distinguish default, environment, and custom paths", (
       provider: "copilot",
       label: "Copilot CLI",
       root: join(home, ".copilot"),
+      hookRoot: join(home, ".copilot"),
       source: "default",
       environmentVariable: "COPILOT_HOME",
+    },
+  );
+  // opencode is the one host that splits sessions from hooks, and each half
+  // follows its own XDG base.
+  assert.deepEqual(
+    resolveProviderDataRoot("opencode", config, opencodeEnvironment, home),
+    {
+      provider: "opencode",
+      label: "opencode",
+      root: join(home, "xdg-data", "opencode"),
+      hookRoot: join(home, "xdg-config", "opencode", "plugin"),
+      source: "default",
+      environmentVariable: "XDG_DATA_HOME",
+    },
+  );
+  // A custom root governs session records only: opencode still loads plugins
+  // from its own configuration directory.
+  assert.deepEqual(
+    resolveProviderDataRoot(
+      "opencode",
+      { providerDataRoots: { opencode: join(home, "custom-opencode") } },
+      opencodeEnvironment,
+      home,
+    ),
+    {
+      provider: "opencode",
+      label: "opencode",
+      root: join(home, "custom-opencode"),
+      hookRoot: join(home, "xdg-config", "opencode", "plugin"),
+      source: "custom",
+      environmentVariable: "XDG_DATA_HOME",
     },
   );
 });
 
 test("provider inventory covers roots, factories, detectors, integrations, and validation", async () => {
-  const expectedNames = ["claude", "codex", "copilot"];
+  const expectedNames = ["claude", "codex", "copilot", "opencode"];
   const expectedDetectionRecords = {
     claude: { type: "user" },
     codex: { type: "session_meta" },
     copilot: { type: "session.start" },
+    // opencode stores sessions in SQLite, so it has no wire record to sniff
+    // and is detected by containment in its data root instead.
+    opencode: null,
   };
   const home = resolve("provider-inventory-home");
   const roots = resolveProviderDataRoots({}, {}, home);
@@ -81,11 +123,25 @@ test("provider inventory covers roots, factories, detectors, integrations, and v
     );
     assert.deepEqual(
       roots.map((item) => item.environmentVariable),
-      ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME"],
+      ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME", "XDG_DATA_HOME"],
     );
     assert.deepEqual(
       roots.map((item) => item.root),
-      [join(home, ".claude"), join(home, ".codex"), join(home, ".copilot")],
+      [
+        join(home, ".claude"),
+        join(home, ".codex"),
+        join(home, ".copilot"),
+        join(home, ".local", "share", "opencode"),
+      ],
+    );
+    assert.deepEqual(
+      roots.map((item) => item.hookRoot),
+      [
+        join(home, ".claude"),
+        join(home, ".codex"),
+        join(home, ".copilot"),
+        join(home, ".config", "opencode", "plugin"),
+      ],
     );
     assert.deepEqual(
       integrations.map((integration) => [integration.provider, integration.label]),
@@ -93,6 +149,7 @@ test("provider inventory covers roots, factories, detectors, integrations, and v
         ["claude", "Claude Code"],
         ["codex", "Codex"],
         ["copilot", "GitHub Copilot CLI"],
+        ["opencode", "opencode"],
       ],
     );
 
@@ -100,11 +157,12 @@ test("provider inventory covers roots, factories, detectors, integrations, and v
       assert.equal(isProviderName(provider), true);
       assert.equal(providerByName(provider, roots[index].root).name, provider);
 
+      // opencode has no wire record to sniff; its detection runs through root
+      // containment and is covered in opencode-provider.test.mjs.
+      const record = expectedDetectionRecords[provider];
+      if (!record) continue;
       const transcript = join(transcripts, `${provider}.jsonl`);
-      await writeFile(
-        transcript,
-        `${JSON.stringify(expectedDetectionRecords[provider])}\n`,
-      );
+      await writeFile(transcript, `${JSON.stringify(record)}\n`);
       assert.equal((await detectProvider(transcript)).name, provider);
     }
 

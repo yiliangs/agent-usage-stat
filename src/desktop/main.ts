@@ -179,7 +179,7 @@ async function openFirstRunWindow(): Promise<void> {
     await updateStartupScreen(
       window,
       "Checking agent connections",
-      "Applying your capture choice to Claude Code, Codex, and Copilot CLI.",
+      "Applying your capture choice to Claude Code, Codex, Copilot CLI, and opencode.",
     );
     const setupReady = await ensureDesktopSetup(true);
     await updateStartupScreen(

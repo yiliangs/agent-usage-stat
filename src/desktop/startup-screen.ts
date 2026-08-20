@@ -175,7 +175,7 @@ const STARTUP_HTML = `<!doctype html>
     <h1 id="headline">Preparing your usage workspace</h1>
     <p class="status" id="status">Connecting the local helper and reconciling recent agent sessions. Your data stays on this machine.</p>
     <div class="progress" role="progressbar" aria-label="Starting Agent Usage Stat"></div>
-    <p class="providers">Claude Code / Codex / Copilot CLI</p>
+    <p class="providers">Claude Code / Codex / Copilot CLI / opencode</p>
   </main>
   <script>
     window.agentUsageStatStartup = (headline, detail, failed) => {

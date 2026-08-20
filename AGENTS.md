@@ -1,6 +1,6 @@
 # Agent Usage Stat
 
-Agent Usage Stat is a standalone desktop analytics application for Claude Code, Codex, and GitHub Copilot CLI usage.
+Agent Usage Stat is a standalone desktop analytics application for Claude Code, Codex, GitHub Copilot CLI, and opencode usage.
 
 ## Commands
 
@@ -16,7 +16,7 @@ node dist/helper.js capture --session <id>
 ## Data flow
 
 ```text
-Claude SessionEnd / Codex Stop / Copilot SessionEnd hooks
+Claude SessionEnd / Codex Stop / Copilot SessionEnd / opencode session.idle hooks
   -> installed standalone helper
   -> detach-shim.ts
   -> CaptureCommand
@@ -40,6 +40,8 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `src/helper.ts`: standalone headless helper entry
 - `src/commands/setup.ts`: setup flow and terminal-wrapper installation
 - `src/integrations/agent-integrations.ts`: the single registry for host detection and hook lifecycle
+- `src/utils/provider-data-roots.ts`: the two path axes per host, session records and hook location
+- `src/providers/opencode/database.ts`: read-only access to opencode's single SQLite store
 - `src/core/logbook-writer.ts`: idempotent per-session shard writer
 - `src/core/pricing-feed.ts`: cached remote pricing snapshot for models the baked tables miss
 - `src/utils/capture-run.ts`: machine-local run and capture-result protocol
@@ -59,11 +61,15 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - Never let a recomputation replace a recorded session with lower tokens or cost.
 - Every numeric format that feeds a single-line panel slot is bounded in `portal/usage-format.js` and declared in `SLOT_BUDGET`. Panels are sized once; the values they hold are not.
 - Every asset `portal/index.html` references lives inside the Vite root. A path that leaves `portal/` resolves during the build and falls through to the SPA fallback in the development server.
-- Parse JSONL line by line with per-line error isolation.
+- Parse JSONL line by line with per-line error isolation. opencode's records are JSON bodies in database columns; parse them per row with the same isolation.
+- opencode keeps every session in one SQLite database, so `FoundSession.transcriptPath` is that database and the session id is the key, not a fallback. A session's usage folds in its `parent_id` descendants.
+- A host's hook root follows its data root, including an override, unless the host declares a separate hook directory. Only opencode does.
+- `providerID` in an opencode message is routing, never the model's vendor.
 - Normalize model bracket suffixes before pricing lookup.
 - Baked pricing tables are authoritative. The remote pricing feed only prices models they miss, its refresh is best-effort and never blocks or fails capture, and the active snapshot is pinned into transcript fingerprints so repricing stays deterministic.
 - Claude subagent usage includes recursively nested workflow transcripts.
 - Copilot usage comes from the persisted `session.shutdown.modelMetrics` aggregate; incomplete sessions without shutdown are not capture candidates.
+- opencode records input excluding cache reads and output excluding reasoning; fold reasoning into output before pricing. Its own per-message `cost` prices only what the baked tables and the feed both miss.
 - `helper.ts`, `detach-shim.ts`, and `hook-log.ts` must remain import-light.
 - The detach shim reads at most the first 128 KB when checking Claude entrypoints.
 - Terminal feedback must fall back silently rather than weaken detached capture.

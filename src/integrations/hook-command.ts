@@ -13,6 +13,11 @@ export interface CaptureHookCommands {
   powershell: string;
 }
 
+export interface CaptureHookInvocation {
+  command: string;
+  args: string[];
+}
+
 export function captureHookCommands(): CaptureHookCommands {
   const { unixWrapper, windowsBin, windowsUsesNode } = hookExecutablePaths();
   const args = "capture --detach --quiet";
@@ -24,6 +29,20 @@ export function captureHookCommands(): CaptureHookCommands {
     windows,
     powershell: windowsUsesNode ? windows : `& ${windows}`,
   };
+}
+
+/**
+ * The same capture invocation as an executable plus argument list, for hosts
+ * whose hook is program code rather than a shell command line. Quoting rules
+ * differ per shell and are a recurring source of broken hooks; a host that can
+ * spawn a process directly should never have to re-parse a command string.
+ */
+export function captureHookInvocation(): CaptureHookInvocation {
+  const { windowsBin, windowsUsesNode } = hookExecutablePaths();
+  const args = ["capture", "--detach", "--quiet"];
+  return windowsUsesNode
+    ? { command: "node", args: [windowsBin, ...args] }
+    : { command: windowsBin, args };
 }
 
 export function hookExecutablePaths(): HookExecutablePaths {

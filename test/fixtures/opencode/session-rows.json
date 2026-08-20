@@ -1,0 +1,108 @@
+{
+  "_source": "Captured from opencode 1.18.19 on Windows 11 with `opencode db`. Model responses came from a local stub API, so the token counts are synthetic; every row, column, and field shape is opencode's own. Directory paths are rewritten to a neutral location.",
+  "session": {
+    "id": "ses_fdf63e281ffek3TZ9ILWrl92jc",
+    "project_id": "939ef20385df0ba703631d02710d76e3299f0f50",
+    "parent_id": null,
+    "slug": "calm-orchid",
+    "directory": "C:/work/sample-project",
+    "title": "Mock reply for fixture capture.",
+    "cost": 0,
+    "tokens_input": 800,
+    "tokens_output": 500,
+    "tokens_reasoning": 180,
+    "tokens_cache_read": 1600,
+    "tokens_cache_write": 0,
+    "model": "{\"id\":\"mock-model\",\"providerID\":\"mock\",\"variant\":\"default\"}",
+    "time_created": 1787253497215,
+    "time_updated": 1787253502776
+  },
+  "messages": [
+    {
+      "id": "msg_0209c1db1001cZF4PH0OJYRQZe",
+      "session_id": "ses_fdf63e281ffek3TZ9ILWrl92jc",
+      "time_created": 1787253497265,
+      "time_updated": 1787253498322,
+      "data": "{\"role\":\"user\",\"time\":{\"created\":1787253497265},\"agent\":\"build\",\"model\":{\"providerID\":\"mock\",\"modelID\":\"claude-sonnet-4-5\"},\"summary\":{\"diffs\":[]}}"
+    },
+    {
+      "id": "msg_0209c1e9d001qa2fyiQoliZ5vH",
+      "session_id": "ses_fdf63e281ffek3TZ9ILWrl92jc",
+      "time_created": 1787253497501,
+      "time_updated": 1787253499677,
+      "data": "{\"parentID\":\"msg_0209c1db1001cZF4PH0OJYRQZe\",\"role\":\"assistant\",\"mode\":\"build\",\"agent\":\"build\",\"path\":{\"cwd\":\"C:\\\\work\\\\sample-project\",\"root\":\"C:\\\\work\\\\sample-project\"},\"cost\":0,\"tokens\":{\"total\":1540,\"input\":400,\"output\":250,\"reasoning\":90,\"cache\":{\"write\":0,\"read\":800}},\"modelID\":\"claude-sonnet-4-5\",\"providerID\":\"mock\",\"time\":{\"created\":1787253497501,\"completed\":1787253499676},\"finish\":\"stop\"}"
+    },
+    {
+      "id": "msg_0209c2c6b001rL2LfSrcOnA4lZ",
+      "session_id": "ses_fdf63e281ffek3TZ9ILWrl92jc",
+      "time_created": 1787253501035,
+      "time_updated": 1787253501472,
+      "data": "{\"role\":\"user\",\"time\":{\"created\":1787253501035},\"agent\":\"build\",\"model\":{\"providerID\":\"mock\",\"modelID\":\"mock-model\"},\"summary\":{\"diffs\":[]}}"
+    },
+    {
+      "id": "msg_0209c2d5c001TqlsKNLgf9dcvP",
+      "session_id": "ses_fdf63e281ffek3TZ9ILWrl92jc",
+      "time_created": 1787253501276,
+      "time_updated": 1787253502772,
+      "data": "{\"parentID\":\"msg_0209c2c6b001rL2LfSrcOnA4lZ\",\"role\":\"assistant\",\"mode\":\"build\",\"agent\":\"build\",\"path\":{\"cwd\":\"C:\\\\work\\\\sample-project\",\"root\":\"C:\\\\work\\\\sample-project\"},\"cost\":0,\"tokens\":{\"total\":1540,\"input\":400,\"output\":250,\"reasoning\":90,\"cache\":{\"write\":0,\"read\":800}},\"modelID\":\"mock-model\",\"providerID\":\"mock\",\"time\":{\"created\":1787253501276,\"completed\":1787253502771},\"finish\":\"stop\"}"
+    }
+  ],
+  "parts": [
+    {
+      "id": "prt_0209c1db6001i6Ch9aa3UGQOxI",
+      "message_id": "msg_0209c1db1001cZF4PH0OJYRQZe",
+      "session_id": "ses_fdf63e281ffek3TZ9ILWrl92jc",
+      "time_created": 1787253497492,
+      "data": "{\"type\":\"text\",\"text\":\"\\\"First turn\\\"\"}"
+    },
+    {
+      "id": "prt_0209c255e001KIrlP1RVqr2rED",
+      "message_id": "msg_0209c1e9d001qa2fyiQoliZ5vH",
+      "session_id": "ses_fdf63e281ffek3TZ9ILWrl92jc",
+      "time_created": 1787253499230,
+      "data": "{\"snapshot\":\"853694aae8816094a0d875fee7ea26278dbf5d0f\",\"type\":\"step-start\"}"
+    },
+    {
+      "id": "prt_0209c2560001t9xAKpRCXtx0rr",
+      "message_id": "msg_0209c1e9d001qa2fyiQoliZ5vH",
+      "session_id": "ses_fdf63e281ffek3TZ9ILWrl92jc",
+      "time_created": 1787253499232,
+      "data": "{\"type\":\"text\",\"text\":\"Mock reply for fixture capture.\",\"time\":{\"start\":1787253499232,\"end\":1787253499234}}"
+    },
+    {
+      "id": "prt_0209c2629001kyh2Ose9BqnOXd",
+      "message_id": "msg_0209c1e9d001qa2fyiQoliZ5vH",
+      "session_id": "ses_fdf63e281ffek3TZ9ILWrl92jc",
+      "time_created": 1787253499433,
+      "data": "{\"reason\":\"stop\",\"snapshot\":\"853694aae8816094a0d875fee7ea26278dbf5d0f\",\"type\":\"step-finish\",\"tokens\":{\"total\":1540,\"input\":400,\"output\":250,\"reasoning\":90,\"cache\":{\"write\":0,\"read\":800}},\"cost\":0}"
+    },
+    {
+      "id": "prt_0209c2c720015buD16U49NUa89",
+      "message_id": "msg_0209c2c6b001rL2LfSrcOnA4lZ",
+      "session_id": "ses_fdf63e281ffek3TZ9ILWrl92jc",
+      "time_created": 1787253501267,
+      "data": "{\"type\":\"text\",\"text\":\"\\\"Second turn\\\"\"}"
+    },
+    {
+      "id": "prt_0209c31af001Y7IC6mC3FPD9s8",
+      "message_id": "msg_0209c2d5c001TqlsKNLgf9dcvP",
+      "session_id": "ses_fdf63e281ffek3TZ9ILWrl92jc",
+      "time_created": 1787253502383,
+      "data": "{\"snapshot\":\"853694aae8816094a0d875fee7ea26278dbf5d0f\",\"type\":\"step-start\"}"
+    },
+    {
+      "id": "prt_0209c31b1001iewyzi5Vh65i7N",
+      "message_id": "msg_0209c2d5c001TqlsKNLgf9dcvP",
+      "session_id": "ses_fdf63e281ffek3TZ9ILWrl92jc",
+      "time_created": 1787253502385,
+      "data": "{\"type\":\"text\",\"text\":\"Mock reply for fixture capture.\",\"time\":{\"start\":1787253502385,\"end\":1787253502387}}"
+    },
+    {
+      "id": "prt_0209c326f001xkRrIAaTeCrmWh",
+      "message_id": "msg_0209c2d5c001TqlsKNLgf9dcvP",
+      "session_id": "ses_fdf63e281ffek3TZ9ILWrl92jc",
+      "time_created": 1787253502575,
+      "data": "{\"reason\":\"stop\",\"snapshot\":\"853694aae8816094a0d875fee7ea26278dbf5d0f\",\"type\":\"step-finish\",\"tokens\":{\"total\":1540,\"input\":400,\"output\":250,\"reasoning\":90,\"cache\":{\"write\":0,\"read\":800}},\"cost\":0}"
+    }
+  ]
+}
