@@ -119,3 +119,16 @@ test("the logbook shard directory name has exactly one owner", () => {
 
   assert.deepEqual(owners, [join("src", "core", "usage-ledger.ts")]);
 });
+
+test("project attribution has exactly one owner", () => {
+  // The project a session belongs to used to be the last segment of its
+  // working directory, derived once per provider. Four copies of that rule
+  // meant a worktree layout none of them knew about (#64) mislabelled every
+  // session in it. A second derivation is how that comes back.
+  const derives = /["']worktrees["']|[Bb]asename\([^)]*cwd/;
+  const owners = sourceFiles()
+    .filter((path) => derives.test(readCode(path)))
+    .map((path) => relative(root, path));
+
+  assert.deepEqual(owners, [join("src", "core", "project-name.ts")]);
+});

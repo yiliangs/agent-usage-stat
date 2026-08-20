@@ -12,6 +12,7 @@ import {
   vendorForModel,
   type ModelVendor,
 } from "../core/model-vendor.js";
+import { worktreeProjectForCwd } from "../core/project-name.js";
 import {
   LOGBOOK_SHARD_DIR,
   type LogbookModelRecord,
@@ -20,7 +21,7 @@ import {
 } from "../core/usage-ledger.js";
 
 const CACHE_FILE = "snapshot-cache.json";
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const SHARD_CONCURRENCY = 8;
 
 /** Raw JSON also includes legacy shards whose missing/coercible fields are frozen. */
@@ -108,7 +109,7 @@ export interface PortalSnapshotCacheEntry {
 }
 
 export interface PortalSnapshotCache {
-  version: 1;
+  version: 2;
   source: string;
   entries: Record<string, PortalSnapshotCacheEntry>;
 }
@@ -333,6 +334,7 @@ function normalizeSession(
 ): PortalSessionRecord | null {
   const start = record.start_time as string | undefined;
   if (!start || Number.isNaN(Date.parse(start))) return null;
+  const cwd = (record.cwd || "") as string;
   return {
     slug: (
       record.session_slug ||
@@ -340,9 +342,13 @@ function normalizeSession(
       "-"
     ) as string,
     sid: String(record.session_id || ""),
-    project: String(record.project || "-").trim(),
+    // A shard captured before worktree attribution landed still carries the
+    // worktree directory in `project`. Its `cwd` proves that, so the owning
+    // project replaces it. Any other path proves nothing about the recorded
+    // name, which is the record's own claim and stays as written.
+    project: worktreeProjectForCwd(cwd) ?? String(record.project || "-").trim(),
     branch: String(record.branch || "").trim(),
-    cwd: (record.cwd || "") as string,
+    cwd,
     machine: String(record.machine || "-").trim(),
     start,
     end: (record.end_time || null) as string | null,

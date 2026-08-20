@@ -1,4 +1,3 @@
-import { basename } from "path";
 import type { ProviderSessionSnapshot } from "../../types/provider.js";
 import type { ModelBreakdown } from "../../types/session.js";
 import type { ParsedTranscript } from "../../types/transcript.js";
@@ -128,7 +127,6 @@ function toTranscript(records: OpencodeSessionRecords): ParsedTranscript {
     userMessageCount,
     assistantMessageCount: assistants.length,
     totalMessages: userMessageCount + assistants.length,
-    projectName: cwd ? basename(cwd.replace(/[\\/]+$/, "")) : undefined,
     cwd,
   };
 }

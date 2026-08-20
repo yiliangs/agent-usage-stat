@@ -311,7 +311,6 @@ function toSnapshot(state: StoredSnapshot): ProviderSessionSnapshot {
       userMessageCount: state.userMessageCount,
       assistantMessageCount: state.assistantMessageCount,
       totalMessages: state.totalMessages,
-      projectName: state.cwd ? pathBasename(state.cwd) : undefined,
       gitBranch: state.gitBranch,
       cwd: state.cwd,
     },
@@ -477,12 +476,6 @@ function promptText(message: TranscriptMessage): string {
         .map((part) => part.text).join(" ")
       : "";
   return text.length <= 100 ? text || "No prompt available" : `${text.slice(0, 100).trim()}...`;
-}
-
-function pathBasename(path: string): string {
-  const trimmed = path.replace(/[\\/]+$/, "");
-  const index = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
-  return index >= 0 ? trimmed.slice(index + 1) : trimmed;
 }
 
 function safeDate(value: string | undefined, fallback: Date): Date {

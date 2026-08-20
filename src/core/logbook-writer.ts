@@ -5,6 +5,7 @@ import { hostname } from "os";
 import type { SessionUsage } from "../types/session.js";
 import type { ParsedTranscript } from "../types/transcript.js";
 import { vendorForModel } from "./model-vendor.js";
+import { projectNameForCwd } from "./project-name.js";
 import {
   LOGBOOK_SHARD_DIR,
   type LogbookRecord,
@@ -163,7 +164,7 @@ export class LogbookWriter {
       timestamp: transcriptData.endTime.toISOString(),
       session_slug: transcriptData.sessionSlug || "",
       session_id: sessionData.sessionId || "",
-      project: transcriptData.projectName || "",
+      project: projectNameForCwd(transcriptData.cwd),
       branch: transcriptData.gitBranch || "",
       cwd: transcriptData.cwd || "",
       machine: hostname(),

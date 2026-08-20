@@ -50,6 +50,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `src/utils/provider-data-roots.ts`: the two path axes per host, session records and hook location
 - `src/providers/opencode/database.ts`: read-only access to opencode's single SQLite store
 - `src/core/logbook-writer.ts`: idempotent per-session shard writer
+- `src/core/project-name.ts`: the single owner of project attribution, including the worktree layouts each agent CLI creates
 - `src/core/pricing-feed.ts`: cached remote pricing snapshot for models the baked tables miss
 - `src/utils/capture-run.ts`: machine-local run and capture-result protocol
 - `src/utils/usage-root.ts`: the only data-root resolver
@@ -69,6 +70,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `provider` is the host tool; model vendor is a separate axis. Claude Code can route to GPT, so never pick a pricing table or a chart series by provider alone. Derive vendor per model via `src/core/model-vendor.ts`.
 - Persist `model_breakdowns` on every shard. Session totals alone cannot be split by vendor after the fact.
 - Never let a recomputation replace a recorded session with lower tokens or cost.
+- A session's project comes from `project-name.ts` and nowhere else. `cwd` is the recorded fact; `project` is derived from it, so a worktree checkout counts toward the project it was cut from rather than the worktree directory. The portal re-derives it for shards written before a layout was known, and otherwise leaves a recorded name alone.
 - Every numeric format that feeds a single-line panel slot is bounded in `portal/usage-format.js` and declared in `SLOT_BUDGET`. Panels are sized once; the values they hold are not.
 - Every asset `portal/index.html` references lives inside the Vite root. A path that leaves `portal/` resolves during the build and falls through to the SPA fallback in the development server.
 - Parse JSONL line by line with per-line error isolation. opencode's records are JSON bodies in database columns; parse them per row with the same isolation.

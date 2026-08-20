@@ -49,7 +49,6 @@ test("a captured opencode session becomes one normalized provider session", asyn
 
     assert.equal(transcriptData.userMessageCount, 2);
     assert.equal(transcriptData.assistantMessageCount, 2);
-    assert.equal(transcriptData.projectName, "sample-project");
     assert.equal(transcriptData.firstPrompt, '"First turn"');
     assert.equal(transcriptData.cwd, "C:/work/sample-project");
   });

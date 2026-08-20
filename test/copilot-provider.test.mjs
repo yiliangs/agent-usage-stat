@@ -99,7 +99,6 @@ test("Copilot shutdown usage becomes one normalized provider session", async () 
     assert.deepEqual(unknownModels, []);
 
     assert.equal(parsed.firstPrompt, "Inspect the build");
-    assert.equal(parsed.projectName, "sample-project");
     assert.equal(parsed.cwd, join(home, "sample-project"));
     assert.equal(parsed.userMessageCount, 1);
     assert.equal(parsed.assistantMessageCount, 1);

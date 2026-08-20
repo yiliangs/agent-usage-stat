@@ -98,7 +98,6 @@ test("all providers serialize the same normalized usage contract", async () => {
           userMessageCount: 1,
           assistantMessageCount: 1,
           totalMessages: 2,
-          projectName: "usage-summary",
           gitBranch: "main",
           cwd: "C:\\work\\usage-summary",
         },

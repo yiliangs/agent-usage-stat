@@ -10,7 +10,6 @@ export interface ParsedTranscript {
   userMessageCount: number;
   assistantMessageCount: number;
   totalMessages: number;
-  projectName?: string;
   gitBranch?: string;
   cwd?: string;
 }
