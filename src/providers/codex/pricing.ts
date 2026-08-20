@@ -1,3 +1,8 @@
+import {
+  feedPriceFor,
+  pricingFeedFingerprint,
+} from "../../core/pricing-feed.js";
+
 /** Standard OpenAI API list prices in USD per million tokens. */
 export interface ModelPricing {
   input: number;
@@ -118,6 +123,7 @@ export function pricingFingerprintSource(): string {
     pricing: PRICING,
     featureLabels: FEATURE_LABEL_MODELS,
     fastModeMultipliers: FAST_MODE_MULTIPLIERS,
+    feed: pricingFeedFingerprint(),
   });
 }
 
@@ -127,8 +133,25 @@ export function normalizeModelId(model: string): string {
   return normalized === "gpt-5.6" ? "gpt-5.6-sol" : normalized;
 }
 
+/**
+ * Baked table first; models it misses fall back to the remote pricing feed
+ * with base rates only (no fast-mode multiplier, no long-context premium).
+ * Claude and Copilot pricing delegate here, so this is the single feed
+ * fallback for every provider chain, Anthropic feed entries included.
+ */
 export function priceFor(model: string): ModelPricing | null {
-  return PRICING[normalizeModelId(model)] ?? null;
+  const normalized = normalizeModelId(model);
+  const baked = PRICING[normalized];
+  if (baked) return baked;
+
+  const feed = feedPriceFor(normalized);
+  if (!feed) return null;
+  return {
+    input: feed.input,
+    cachedInput: feed.cacheRead,
+    cacheWrite: feed.cacheWrite,
+    output: feed.output,
+  };
 }
 
 export function priceMultiplierForTier(model: string, serviceTier: string): number {

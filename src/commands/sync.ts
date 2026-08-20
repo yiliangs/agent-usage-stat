@@ -4,6 +4,7 @@ import { join } from "path";
 import ora from "ora";
 import { ConfigManager } from "../core/config-manager.js";
 import { LogbookWriter } from "../core/logbook-writer.js";
+import { initializePricingFeed } from "../core/pricing-feed.js";
 import {
   LOGBOOK_SHARD_DIR,
   type LogbookRecord,
@@ -52,6 +53,9 @@ export class SyncCommand {
     }).start();
     const config = await this.configManager.loadConfig();
     const { root } = resolveUsageRoot(config);
+    // Before fingerprinting: preflight compares shard fingerprints against the
+    // active pricing snapshot, so the snapshot must be loaded first.
+    await initializePricingFeed(root);
     const providers = this.providers ?? allProviders(config);
     let updated = 0;
     const failures: string[] = [];

@@ -36,10 +36,12 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `src/desktop/main.ts`: Electron lifecycle, windows, menus, and user-facing setup flows
 - `src/desktop/helper-runtime.ts`: stable helper installation, execution, and first-run state
 - `src/desktop/portal-runtime.ts`: `aus://` protocol, refresh serialization, and analytics snapshots
+- `src/desktop/logbook-watcher.ts`: debounced shard-write observer behind the dashboard's auto-refresh
 - `src/helper.ts`: standalone headless helper entry
 - `src/commands/setup.ts`: setup flow and terminal-wrapper installation
 - `src/integrations/agent-integrations.ts`: the single registry for host detection and hook lifecycle
 - `src/core/logbook-writer.ts`: idempotent per-session shard writer
+- `src/core/pricing-feed.ts`: cached remote pricing snapshot for models the baked tables miss
 - `src/utils/capture-run.ts`: machine-local run and capture-result protocol
 - `src/utils/usage-root.ts`: the only data-root resolver
 - `portal/scripts/build-data.mjs`: browser artifact builder
@@ -59,6 +61,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - Every asset `portal/index.html` references lives inside the Vite root. A path that leaves `portal/` resolves during the build and falls through to the SPA fallback in the development server.
 - Parse JSONL line by line with per-line error isolation.
 - Normalize model bracket suffixes before pricing lookup.
+- Baked pricing tables are authoritative. The remote pricing feed only prices models they miss, its refresh is best-effort and never blocks or fails capture, and the active snapshot is pinned into transcript fingerprints so repricing stays deterministic.
 - Claude subagent usage includes recursively nested workflow transcripts.
 - Copilot usage comes from the persisted `session.shutdown.modelMetrics` aggregate; incomplete sessions without shutdown are not capture candidates.
 - `helper.ts`, `detach-shim.ts`, and `hook-log.ts` must remain import-light.

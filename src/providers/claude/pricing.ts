@@ -23,6 +23,9 @@ import {
   priceFor as openAiPriceFor,
   pricingFingerprintSource as openAiPricingFingerprintSource,
 } from "../codex/pricing.js";
+import { normalizeModelId } from "../../core/model-id.js";
+
+export { normalizeModelId };
 
 export interface ModelPricing {
   input: number;
@@ -81,31 +84,18 @@ export function pricingFingerprintSource(): string {
     longContextThreshold: LONG_CONTEXT_THRESHOLD,
     anthropic: PRICING,
     fastModeMultipliers: FAST_MODE_MULTIPLIERS,
+    // Includes the remote pricing feed fingerprint transitively; the codex
+    // chain is the single owner of the feed fallback.
     openAi: openAiPricingFingerprintSource(),
   });
 }
 
 /**
- * Anthropic model IDs come in three flavors:
- *   - Alias:           "claude-opus-5"
- *   - Snapshot:        "claude-haiku-4-5-20251001"
- *   - Context variant: "claude-opus-5[1m]" (1M-context routing with the same
- *     standard pricing and no long-context premium)
- * Strip the bracket suffix first, then an 8-digit date suffix, so every
- * shape resolves to the same table entry. Without the bracket strip, [1m]
- * sessions fail the lookup and silently bill at $0.
- */
-export function normalizeModelId(model: string): string {
-  return model
-    .replace(/\[[^\]]*\]$/, "")
-    .replace(/-\d{8}$/, "")
-    .replace(/-\d{4}-\d{2}-\d{2}$/, "");
-}
-
-/**
  * Look up pricing for any model that can appear in a Claude Code transcript.
  * GPT cache creations use OpenAI's cache-write rate; cache reads use the
- * discounted cached-input rate.
+ * discounted cached-input rate. Models neither baked table covers resolve
+ * through the codex chain's remote-feed fallback, which carries base rates
+ * only — no fast-mode multiplier and no long-context premium.
  */
 export function priceFor(model: string): ModelPricing | null {
   const normalized = normalizeModelId(model);
