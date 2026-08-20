@@ -54,7 +54,7 @@ export class RunCommand {
       return value as AgentCommandName;
     }
     throw new Error(
-      `Unsupported agent: ${value}. Choose claude, codex, copilot, or claudex.`,
+      `Unsupported agent: ${value}. Choose claude, codex, copilot, opencode, or claudex.`,
     );
   }
 

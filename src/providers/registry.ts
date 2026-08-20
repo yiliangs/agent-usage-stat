@@ -6,6 +6,7 @@ import {
 import { ClaudeProvider } from "./claude/provider.js";
 import { CodexProvider } from "./codex/provider.js";
 import { CopilotProvider } from "./copilot/provider.js";
+import { OpencodeProvider } from "./opencode/provider.js";
 import type {
   FoundSession,
   ProviderName,
@@ -33,6 +34,12 @@ const PROVIDERS: Record<ProviderName, ProviderRegistration> = {
   copilot: {
     create: (root) => new CopilotProvider(root),
     transcriptRecordTypes: ["session.start"],
+  },
+  // opencode's transcript is a SQLite database, not a JSONL stream, so it
+  // declares no record types and is detected by containment in its data root.
+  opencode: {
+    create: (root) => new OpencodeProvider(root),
+    transcriptRecordTypes: [],
   },
 };
 
@@ -125,8 +132,8 @@ export async function findSession(
   if (matches.length === 0) {
     throw new Error(
       query
-        ? `No Claude Code, Codex, or Copilot session matching "${query}".`
-        : "No Claude Code, Codex, or Copilot sessions found.",
+        ? `No Claude Code, Codex, Copilot, or opencode session matching "${query}".`
+        : "No Claude Code, Codex, Copilot, or opencode sessions found.",
     );
   }
   matches.sort((a, b) => b.found.mtimeMs - a.found.mtimeMs);

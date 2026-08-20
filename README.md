@@ -1,6 +1,6 @@
 # Agent Usage Stat
 
-A private desktop analytics app for understanding how Claude Code, OpenAI Codex, and GitHub Copilot CLI use tokens, time, and API-equivalent cost.
+A private desktop analytics app for understanding how Claude Code, OpenAI Codex, GitHub Copilot CLI, and opencode use tokens, time, and API-equivalent cost.
 
 Agent Usage Stat turns local coding-agent transcripts into one searchable usage ledger. Compare providers and models, follow spend and token volume, inspect projects and sessions, and see when work happened. Prompt and response text never enters the ledger.
 
@@ -12,6 +12,7 @@ Agent Usage Stat turns local coding-agent transcripts into one searchable usage 
 - Claude Code
 - OpenAI Codex, including Codex sessions used through ChatGPT
 - GitHub Copilot CLI
+- opencode
 
 Agent Usage Stat does not read general ChatGPT or Claude.ai chats. All usage data stays on the local machine or in the folder selected by the user.
 
@@ -66,12 +67,12 @@ Batch sync installs no Agent Usage Stat hooks. It reconciles discoverable local 
 
 Settings reports the last hook attempt and the last successful checkpoint separately. The default capture policy and per-agent overrides can be changed at any time. Changing the ledger folder merges existing history into the selected ledger without replacing newer records, and preserves the original ledger as a backup by default.
 
-Advanced agent locations normally resolve from `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `COPILOT_HOME`, then fall back to each provider's standard per-user directory. Explicit overrides only change where Agent Usage Stat scans and manages its hook. They never move or delete provider-owned data.
+Advanced agent locations normally resolve from `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `COPILOT_HOME`, then fall back to each provider's standard per-user directory. opencode keeps sessions and plugins in separate places (`XDG_DATA_HOME/opencode` and `XDG_CONFIG_HOME/opencode`), so an override for opencode changes only where Agent Usage Stat scans; its plugin stays where opencode loads plugins from. For every other agent an override moves both, because the agent reads both from one directory. Overrides never move or delete provider-owned data.
 
 ## Application architecture
 
 ```text
-Claude / Codex / Copilot hooks (continuous policy, best effort)
+Claude / Codex / Copilot / opencode hooks (continuous policy, best effort)
   -> installed standalone helper
   -> provider-specific transcript parser and pricing
   -> logbook.d/<session-id>.json

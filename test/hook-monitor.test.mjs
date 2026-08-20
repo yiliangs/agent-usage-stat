@@ -93,6 +93,7 @@ test("local provider inspectors recognize their installed hook files", async () 
     claude: join(home, "claude"),
     codex: join(home, "codex"),
     copilot: join(home, "copilot"),
+    opencode: join(home, "opencode"),
   };
   const integrations = createAgentIntegrations(
     home,
@@ -104,12 +105,12 @@ test("local provider inspectors recognize their installed hook files", async () 
   try {
     assert.deepEqual(
       await Promise.all(integrations.map((integration) => integration.inspect())),
-      ["missing", "missing", "missing"],
+      ["missing", "missing", "missing", "missing"],
     );
     await Promise.all(integrations.map((integration) => integration.install()));
     assert.deepEqual(
       await Promise.all(integrations.map((integration) => integration.inspect())),
-      ["configured", "configured", "configured"],
+      ["configured", "configured", "configured", "configured"],
     );
 
     await writeFile(join(roots.codex, "hooks.json"), "not json", "utf8");
@@ -121,7 +122,7 @@ test("local provider inspectors recognize their installed hook files", async () 
 
 test("settings joins provider collaborators by identity instead of array position", async () => {
   const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-settings-order-"));
-  const providerNames = ["claude", "codex", "copilot"];
+  const providerNames = ["claude", "codex", "copilot", "opencode"];
   const roots = Object.fromEntries(
     providerNames.map((provider) => [provider, join(home, provider)]),
   );
@@ -140,6 +141,7 @@ test("settings joins provider collaborators by identity instead of array positio
     claude: "configured",
     codex: "missing",
     copilot: "disabled",
+    opencode: "invalid",
   };
   const integrations = providerNames.map((provider) => ({
     provider,
@@ -169,6 +171,7 @@ test("settings joins provider collaborators by identity instead of array positio
         { provider: "claude", sessions: 1, monitor: "awaiting_first_attempt" },
         { provider: "codex", sessions: 2, monitor: "hook_missing" },
         { provider: "copilot", sessions: 3, monitor: "hooks_disabled" },
+        { provider: "opencode", sessions: 4, monitor: "settings_invalid" },
       ],
     );
   } finally {
@@ -203,13 +206,60 @@ test("repair is offered exactly where a reinstall changes the outcome", () => {
   assert.equal(failed.reason, "last_attempt_failed");
   assert.equal(failed.repairable, false);
 
-  // Copilot is the only integration whose hook file the application owns.
+  // Copilot and opencode are the integrations whose hook file we write whole.
   const integrations = createAgentIntegrations("/home", () => false, process.env, {});
   assert.deepEqual(
     integrations.map((integration) => [integration.provider, integration.ownsHookFile]),
-    [["claude", false], ["codex", false], ["copilot", true]],
+    [["claude", false], ["codex", false], ["copilot", true], ["opencode", true]],
   );
   for (const integration of integrations) {
     assert.ok(integration.hookConfigPath.length > 0, `${integration.provider} names no hook file`);
+  }
+});
+
+test("the opencode plugin round-trips and keeps its runtime contract", async () => {
+  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-opencode-hook-"));
+  const [integration] = createAgentIntegrations(home, () => false, {}, {})
+    .filter((candidate) => candidate.provider === "opencode");
+  const plugin = integration.hookConfigPath;
+
+  try {
+    // opencode auto-loads every .js file in its global plugin directory, so
+    // the file lands there rather than in any shared configuration.
+    assert.equal(plugin, join(home, ".config", "opencode", "plugin", "agent-usage-stat.js"));
+    assert.equal(await integration.inspect(), "missing");
+
+    await integration.install();
+    assert.equal(await integration.inspect(), "configured");
+
+    const source = await readFile(plugin, "utf8");
+    // The contract the plugin runs under: opencode installs nothing for it, so
+    // every import has to be a Node built-in.
+    const imports = [...source.matchAll(/from\s+"([^"]+)"/g)].map(([, name]) => name);
+    assert.deepEqual(imports, ["node:child_process"]);
+    // It must checkpoint on idle and never block opencode waiting for us.
+    assert.match(source, /session\.idle/);
+    assert.match(source, /properties\?\.sessionID/);
+    assert.match(source, /unref\(\)/);
+    assert.doesNotMatch(source, /\bawait\s+(?!undefined)/);
+
+    // A plugin edited to spawn something else is broken, not configured.
+    await writeFile(
+      plugin,
+      source.replace(/const ARGS = \[[^\]]*\];/, 'const ARGS = [];')
+        .replace(/const COMMAND = "[^"]*";/, 'const COMMAND = "/usr/bin/env";'),
+      "utf8",
+    );
+    assert.equal(await integration.inspect(), "invalid");
+
+    // A foreign file under our name is ours to rewrite, never to merge.
+    await writeFile(plugin, "export const Other = () => ({})\n", "utf8");
+    assert.equal(await integration.inspect(), "invalid");
+    assert.equal(integration.ownsHookFile, true);
+
+    await integration.remove();
+    assert.equal(await integration.inspect(), "missing");
+  } finally {
+    await rm(home, { recursive: true, force: true });
   }
 });

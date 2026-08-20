@@ -69,6 +69,33 @@ The monitor does not expire an observation based on elapsed time. A quiet agent 
 
 Configuration inspection covers local Windows and macOS installations. WSL, containers, remote development hosts, and web-only agent environments are outside the supported monitor boundary.
 
+## opencode plugin capture
+
+opencode loads every `.js` file in its global plugin directory at startup, so
+the integration is a dedicated file we own outright and no shared configuration
+is edited. Verified on opencode 1.18.19 (Windows 11) by dropping a bare module
+into `~/.config/opencode/plugin/` and watching it receive the event stream.
+
+The plugin subscribes to `session.idle`, whose payload carries the session id at
+`event.properties.sessionID`. It spawns the installed helper detached, writes a
+`SessionEnd`-shaped payload to the worker's stdin, and returns without awaiting,
+so opencode capture reaches the same detach shim, correlated run protocol, and
+capture-health record as every other host.
+
+Constraints the generated plugin must keep:
+
+1. No import beyond Node built-ins. opencode installs nothing on its behalf.
+2. No throw that escapes into opencode's event loop.
+3. No await on the capture worker. Recording never holds up a session.
+
+`session.idle` fires at every quiet point, not only at exit, so a long session
+checkpoints repeatedly. The shard writer is idempotent and never lowers a
+recorded value, so the extra fires are free checkpoints rather than a hazard.
+
+opencode's data root and its plugin directory are different XDG directories. A
+custom data root moves only where sessions are read from; the plugin stays where
+opencode loads plugins from.
+
 ## Same-terminal completion status
 
 Setup installs shell functions for `claude`, `codex`, and `claudex`. Each

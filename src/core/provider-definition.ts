@@ -1,5 +1,5 @@
 /** Canonical provider identity and iteration order. */
-export const PROVIDER_NAMES = ["claude", "codex", "copilot"] as const;
+export const PROVIDER_NAMES = ["claude", "codex", "copilot", "opencode"] as const;
 
 export type ProviderName = (typeof PROVIDER_NAMES)[number];
 

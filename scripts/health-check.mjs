@@ -37,6 +37,7 @@ const pricing = {
   claude: (await import("../dist/providers/claude/pricing.js")).priceFor,
   codex: (await import("../dist/providers/codex/pricing.js")).priceFor,
   copilot: (await import("../dist/providers/copilot/pricing.js")).priceFor,
+  opencode: (await import("../dist/providers/opencode/pricing.js")).priceFor,
 };
 
 const modelsArePriced = (provider, models) => {

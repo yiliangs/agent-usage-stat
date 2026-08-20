@@ -82,7 +82,7 @@ export class SetupCommand {
     );
     if (agents.length === 0) {
       throw new Error(
-        "No supported agent was found. Install Claude Code, Codex, or Copilot CLI, run it once, then initialize again.",
+        "No supported agent was found. Install Claude Code, Codex, Copilot CLI, or opencode, run it once, then initialize again.",
       );
     }
 

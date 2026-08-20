@@ -45,6 +45,10 @@ const usageRoot = join(home, "usage");
 const claudeHome = join(home, ".claude");
 const codexHome = join(home, ".codex");
 const copilotHome = join(home, ".copilot");
+// opencode splits its two directories, so the fixture has to place both.
+const opencodeData = join(home, "xdg-data");
+const opencodeConfig = join(home, "xdg-config");
+const opencodeHome = join(opencodeData, "opencode");
 const smokeOutput = join(home, "desktop-smoke.json");
 const startupTrace = join(home, "desktop-startup.log");
 const cachedStartupTrace = join(home, "desktop-cached-startup.log");
@@ -55,6 +59,7 @@ try {
     mkdir(claudeHome, { recursive: true }),
     mkdir(codexHome, { recursive: true }),
     mkdir(copilotHome, { recursive: true }),
+    mkdir(opencodeHome, { recursive: true }),
   ]);
   await writeFile(
     join(home, ".agent-usage-stat.config.json"),
@@ -69,6 +74,8 @@ try {
     CLAUDE_CONFIG_DIR: claudeHome,
     CODEX_HOME: codexHome,
     COPILOT_HOME: copilotHome,
+    XDG_DATA_HOME: opencodeData,
+    XDG_CONFIG_HOME: opencodeConfig,
   };
   const launch = await run(
     executable,
@@ -100,12 +107,18 @@ try {
   assert.equal(smoke.settings.api, true);
   assert.equal(smoke.settings.visible, true);
   assert.equal(smoke.settings.commonRows, 3);
-  assert.equal(smoke.settings.captureChannels, 3);
+  assert.equal(smoke.settings.captureChannels, 4);
   assert.equal(smoke.settings.captureStatus, "UNVERIFIED");
   assert.equal(smoke.settings.advanced, true);
-  assert.equal(smoke.settings.providerRows, 3);
-  assert.deepEqual(smoke.settings.providers, ["claude", "codex", "copilot"]);
+  assert.equal(smoke.settings.providerRows, 4);
+  assert.deepEqual(smoke.settings.providers, [
+    "claude",
+    "codex",
+    "copilot",
+    "opencode",
+  ]);
   assert.deepEqual(smoke.settings.providerMonitorStatuses, [
+    "unverified",
     "unverified",
     "unverified",
     "unverified",
@@ -127,6 +140,7 @@ try {
     "claude",
     "codex",
     "copilot",
+    "opencode",
   ]);
 
   const claudeSettings = await readFile(
@@ -146,6 +160,14 @@ try {
   assert.doesNotMatch(codexHooks, /node .*agent-usage-stat-helper/);
   assert.match(copilotHooks, /agent-usage-stat-helper/);
   assert.doesNotMatch(copilotHooks, /node .*agent-usage-stat-helper/);
+  // The opencode plugin lands in the configuration directory, not the data
+  // directory the other three use for both purposes.
+  const opencodePlugin = await readFile(
+    join(opencodeConfig, "opencode", "plugin", "agent-usage-stat.js"),
+    "utf8",
+  );
+  assert.match(opencodePlugin, /agent-usage-stat-helper/);
+  assert.doesNotMatch(opencodePlugin, /"node"/);
 
   const cachedTrace = await launchUntilTrace(
     executable,
