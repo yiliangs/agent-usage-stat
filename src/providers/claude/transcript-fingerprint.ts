@@ -1,17 +1,31 @@
 import { createHash } from "crypto";
 import { open } from "fs/promises";
+import { pricingFeedFingerprint } from "../../core/pricing-feed.js";
 import { pricingFingerprintSource } from "./pricing.js";
 import { findSessionTranscriptFiles } from "./session-files.js";
 
 const TAIL_BYTES = 64 * 1024;
 const USAGE_ALGORITHM_VERSION = "claude-usage-v4";
-const SNAPSHOT_VERSION = createHash("sha256")
-  .update(USAGE_ALGORITHM_VERSION)
-  .update(pricingFingerprintSource())
-  .digest("hex")
-  .slice(0, 16);
 
-export const claudeSnapshotVersion = (): string => SNAPSHOT_VERSION;
+// Computed lazily, not at module load: the remote pricing feed is initialized
+// by the invoking command, and a version frozen at import time would pin every
+// fingerprint to the pre-initialization feed state. Memoized on the feed
+// fingerprint, the only input that changes within a process.
+let cachedVersion: { feed: string; version: string } | null = null;
+export function claudeSnapshotVersion(): string {
+  const feed = pricingFeedFingerprint();
+  if (cachedVersion?.feed !== feed) {
+    cachedVersion = {
+      feed,
+      version: createHash("sha256")
+        .update(USAGE_ALGORITHM_VERSION)
+        .update(pricingFingerprintSource())
+        .digest("hex")
+        .slice(0, 16),
+    };
+  }
+  return cachedVersion.version;
+}
 
 export async function fingerprintSessionTranscript(
   mainPath: string,
@@ -36,7 +50,7 @@ export function fingerprintTranscriptContentPart(content: string): string {
 export function fingerprintTranscriptParts(parts: string[]): string {
   const hash = createHash("sha256");
   for (const part of [...parts].sort()) hash.update(part).update("\n");
-  return `${USAGE_ALGORITHM_VERSION}:${SNAPSHOT_VERSION}:${parts.length}:${hash.digest("hex")}`;
+  return `${USAGE_ALGORITHM_VERSION}:${claudeSnapshotVersion()}:${parts.length}:${hash.digest("hex")}`;
 }
 
 async function fingerprintTranscriptFilePart(path: string): Promise<string> {

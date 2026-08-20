@@ -18,6 +18,7 @@ import {
 } from "../providers/registry.js";
 import { ConfigManager } from "../core/config-manager.js";
 import { LogbookWriter } from "../core/logbook-writer.js";
+import { initializePricingFeed } from "../core/pricing-feed.js";
 import { resolveUsageRoot } from "../utils/usage-root.js";
 import type { HookData } from "../types/session-hook.js";
 import type { SessionProvider } from "../types/provider.js";
@@ -69,6 +70,9 @@ export class CaptureCommand {
       const config = await this.configManager.loadConfig();
       const { root, source } = resolveUsageRoot(config);
       logHookEvent(`data root ${root} (${source})`);
+      // Before any pricing or fingerprint work; the worker is detached, so a
+      // stale-feed refresh may spend its bounded fetch timeout here unseen.
+      await initializePricingFeed(root);
 
       if (transcriptPath) {
         // The agent itself named this path in its hook payload, so its absence
