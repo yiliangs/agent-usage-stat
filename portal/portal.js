@@ -1230,11 +1230,15 @@ function rhythmDateKeys(window) {
   return Array.from({ length: dayCount }, (_, index) => `${year}-${String(month).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`)
 }
 
+/** A project name broken at its first hyphen so a narrow event block wraps it
+ *  at a word rather than mid-word. The hyphen stays with the first line: a
+ *  block too narrow to wrap at all turns the name sideways onto one line, and
+ *  it has to spell the project the reader is looking for. */
 function wrappedProjectLabel(project) {
   const value = String(project || 'Unassigned')
   const split = value.indexOf('-')
   if (split < 1) return escapeHtml(value)
-  return `${escapeHtml(value.slice(0, split))}<br>${escapeHtml(value.slice(split + 1))}`
+  return `${escapeHtml(value.slice(0, split + 1))}<br>${escapeHtml(value.slice(split + 1))}`
 }
 
 const WEEK_TIMELINE_HEIGHT = 672

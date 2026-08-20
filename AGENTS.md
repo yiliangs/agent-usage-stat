@@ -58,7 +58,9 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `portal/logo.svg`: the single brand source, feeding the header mark, the favicon, and every OS icon
 - `portal/portal.js`: client-side aggregation, navigation, charts, tables, and detail interactions
 - `portal/usage-format.js`: numeric formats, each bounded to the width of the slot it feeds
-- `scripts/measure-portal-layout.mjs`: renders the built portal in headless Chrome to catch overflowing panels
+- `scripts/portal-probe-runner.mjs`: the one headless-Chrome harness the rendered-layout guards share
+- `scripts/measure-portal-layout.mjs`: catches panels whose numbers wrap or clip
+- `scripts/portal-timeline-probe.js`: reports what each session block on the timeline actually draws
 - `scripts/install-local.mjs`: refreshes the installed application in place from a packaged build
 
 ## Invariants

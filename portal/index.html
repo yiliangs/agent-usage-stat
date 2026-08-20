@@ -1744,7 +1744,7 @@
       position: absolute;
       min-height: 4px;
       overflow: hidden;
-      container-type: inline-size;
+      container-type: size;
       border: 1px solid rgba(var(--ink-rgb),.28);
       border-left-width: 3px;
       border-radius: 2px;
@@ -1772,9 +1772,28 @@
     /* Concurrent sessions divide a day column into lanes, so an event is
        constrained on both axes. The classes above answer for height; these
        answer for width, dropping the rate once it no longer fits on its line
-       and the project name once it can only wrap a character at a time. */
+       and the project name once it can only wrap a character at a time.
+       A narrow lane still carries the whole session duration down the column,
+       so the name turns to run along that axis instead of disappearing, and
+       asks the same 42px of it that the horizontal name asks of the width. */
     @container (max-width: 78px) { .rhythm-event small { display: none; } }
     @container (max-width: 42px) { .rhythm-event span { display: none; } }
+    @container (max-width: 42px) and (min-height: 42px) {
+      .rhythm-event span {
+        display: block;
+        /* A lane this narrow is barely wider than one line of type, so the
+           sideways name takes the block's side padding back rather than have
+           its ascenders shaved off. */
+        margin-left: -5px;
+        margin-right: -5px;
+        max-height: 100%;
+        writing-mode: vertical-rl;
+        white-space: nowrap;
+      }
+      /* The wrap the label builds into a long name belongs to the horizontal
+         reading; sideways there is one line and it runs the whole block. */
+      .rhythm-event span br { display: none; }
+    }
     .rhythm-event:hover,
     .rhythm-event:focus-visible {
       z-index: 20;
