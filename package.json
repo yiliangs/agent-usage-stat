@@ -24,6 +24,7 @@
     "start": "npm run build && electron-forge start",
     "package": "npm run build && electron-forge package",
     "make": "npm run build && electron-forge make",
+    "install:local": "npm run package && node scripts/install-local.mjs",
     "dev": "tsc --watch",
     "data": "node portal/scripts/build-data.mjs",
     "dev:portal": "npm run build && npm run data && vite --config portal/vite.config.ts",

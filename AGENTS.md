@@ -10,8 +10,15 @@ npm run test:desktop
 npm run build
 npm start
 npm run make
+npm run install:local
 node dist/helper.js capture --session <id>
 ```
+
+`npm run install:local` replaces the payload behind the installed shortcut with
+the current working tree, so one installation serves both daily use and local
+iteration. It packages, copies, then prunes its staging tree, leaving exactly
+one application on the machine. It needs an installation to already exist;
+create that once from the installer `npm run make` writes to `dist/forge/make`.
 
 ## Data flow
 
@@ -50,6 +57,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `portal/portal.js`: client-side aggregation, navigation, charts, tables, and detail interactions
 - `portal/usage-format.js`: numeric formats, each bounded to the width of the slot it feeds
 - `scripts/measure-portal-layout.mjs`: renders the built portal in headless Chrome to catch overflowing panels
+- `scripts/install-local.mjs`: refreshes the installed application in place from a packaged build
 
 ## Invariants
 
