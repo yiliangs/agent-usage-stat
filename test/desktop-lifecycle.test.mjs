@@ -236,9 +236,16 @@ test("an agent that needs attention states its cause and its remedy", async () =
     /\.capture-channel \.capture-channel-detail,\s*\n\s*\.capture-channel \.capture-channel-remedy \{/,
   );
   assert.match(html, /\.capture-channel \.capture-channel-remedy \{[^}]*color: var\(--ink\)/);
-  const nowrap = html.match(/\.capture-channel span,\s*\n\s*\.capture-channel strong \{[^}]*\}/s);
-  assert.ok(nowrap, "capture-channel single-line slot rule was not found");
-  assert.doesNotMatch(nowrap[0], /capture-channel-detail/);
+  // The status slot truncates directly; the label slot carries a provider mark,
+  // so the name beside it is what gives way while the mark keeps its size.
+  const status = html.match(/\.capture-channel strong \{[^}]*\}/s);
+  assert.ok(status, "capture-channel status slot rule was not found");
+  assert.match(status[0], /text-overflow: ellipsis;[^}]*white-space: nowrap;/s);
+  assert.doesNotMatch(status[0], /capture-channel-detail/);
+  const name = html.match(/\.capture-channel-name \{[^}]*\}/s);
+  assert.ok(name, "capture-channel label slot rule was not found");
+  assert.match(name[0], /text-overflow: ellipsis;[^}]*white-space: nowrap;/s);
+  assert.match(html, /\.capture-channel \.provider-mark \{[^}]*width: 11px/s);
 });
 
 test("Squirrel first run enters the application instead of quitting", () => {

@@ -42,6 +42,7 @@
       --status-warn: #b8801d;
       --status-error: #a3483a;
       --status-error-ink: #fffaf5;
+      --mark-claude: #D97757;
       --cache-read: #8e8b83;
       --token-dark: #5f5e59;
       --token-mid: #8f8d86;
@@ -2004,6 +2005,15 @@
       border: 1px solid var(--line-dark);
       background: var(--paper-hi);
     }
+    /* One provider mark, sized by whichever surface hosts it. Claude is the
+       only host with a chromatic brand color; the rest follow the ink token. */
+    .provider-mark {
+      flex: none;
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
+    }
+    .provider-mark[data-provider="claude"] { fill: var(--mark-claude); }
     .capture-channel {
       position: relative;
       min-width: 0;
@@ -2021,7 +2031,6 @@
     .capture-channel.observed::before { background: var(--status-good); }
     .capture-channel.warning::before { background: var(--status-warn); }
     .capture-channel.needs_attention::before { background: var(--status-error); }
-    .capture-channel span,
     .capture-channel strong {
       display: block;
       overflow: hidden;
@@ -2029,12 +2038,24 @@
       white-space: nowrap;
     }
     .capture-channel span {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
       color: var(--muted);
       font-family: var(--mono);
       font-size: 7.5px;
       letter-spacing: .08em;
       text-transform: uppercase;
     }
+    /* The mark is fixed; only the name gives way as the channel narrows. */
+    .capture-channel-name {
+      overflow: hidden;
+      font-style: normal;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .capture-channel .provider-mark { width: 11px; height: 11px; }
     .capture-channel strong {
       margin-top: 5px;
       font-family: var(--sans);
@@ -2102,6 +2123,7 @@
     .provider-location.warning::before { background: var(--status-warn); }
     .provider-location.needs_attention::before { background: var(--status-error); }
     .provider-identity { grid-area: identity; }
+    .provider-location h3 { display: flex; align-items: center; gap: 8px; }
     .provider-location > .settings-path { grid-area: path; }
     .provider-location > .settings-segmented { grid-area: policy; justify-self: start; }
     .capture-diagnostic { grid-area: diagnostic; min-width: 0; }
@@ -2312,6 +2334,7 @@
         --status-good: #75b79a;
         --status-warn: #dcab5c;
         --status-error: #dc7866;
+        --mark-claude: #D97757;
         --cache-read: #aaa393;
         --token-dark: #d8d1bf;
         --token-mid: #aaa495;
@@ -2480,6 +2503,7 @@
         --status-good: #35765f;
         --status-warn: #b8801d;
         --status-error: #a3483a;
+        --mark-claude: #D97757;
         --cache-read: #8e8b83;
         --token-dark: #5f5e59;
         --token-mid: #8f8d86;

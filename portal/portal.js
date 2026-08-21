@@ -2,6 +2,7 @@ import { createIcons, Settings } from 'lucide'
 import { buildTokenTraffic, robustTokenTrafficScale } from './token-traffic.js'
 import { buildProjectColorIndex, projectSeriesFor } from './timeline-colors.js'
 import { selectPortalView } from './portal-navigation.js'
+import { providerMark } from './provider-marks.js'
 import { compact, pct, periodDelta, usd, usdHeadline } from './usage-format.js'
 import {
   DAY,
@@ -858,7 +859,7 @@ function renderSettings() {
       : 'App open + Sync now only'
     const diagnostic = captureMonitorPresentation(provider.captureMonitor, provider)
     return `<section class="provider-location ${provider.captureMonitor.status}">
-      <div class="provider-identity"><h3>${escapeHtml(provider.label)}</h3><span class="provider-status">${escapeHtml(status)} / ${captureStatus}</span></div>
+      <div class="provider-identity"><h3>${providerMark(provider.provider)}${escapeHtml(provider.label)}</h3><span class="provider-status">${escapeHtml(status)} / ${captureStatus}</span></div>
       <div class="capture-diagnostic"><strong>${escapeHtml(diagnostic.title)}</strong><p>${escapeHtml(diagnostic.detail)}</p>${diagnostic.remedy ? `<p class="capture-remedy">${escapeHtml(diagnostic.remedy)}</p>` : ''}</div>
       <div class="settings-path">${escapeHtml(provider.root)}<span class="settings-path-meta">${escapeHtml(source)}</span></div>
       <div class="settings-segmented" aria-label="${escapeHtml(provider.label)} capture policy">
@@ -882,7 +883,7 @@ function renderCaptureMonitor(providers) {
     const remedy = presentation.remedy
       ? `<p class="capture-channel-remedy">${escapeHtml(presentation.remedy)}</p>`
       : ''
-    return `<div class="capture-channel ${provider.captureMonitor.status}"><span>${escapeHtml(provider.label)}</span><strong>${escapeHtml(presentation.title)}</strong><p class="capture-channel-detail">${escapeHtml(presentation.detail)}</p>${remedy}</div>`
+    return `<div class="capture-channel ${provider.captureMonitor.status}"><span>${providerMark(provider.provider)}<em class="capture-channel-name">${escapeHtml(provider.label)}</em></span><strong>${escapeHtml(presentation.title)}</strong><p class="capture-channel-detail">${escapeHtml(presentation.detail)}</p>${remedy}</div>`
   }).join('')
 
   const aggregate = captureMonitorAggregate(providers)
