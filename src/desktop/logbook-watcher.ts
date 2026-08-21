@@ -1,4 +1,4 @@
-import { watch, type FSWatcher } from "node:fs";
+import { realpathSync, watch, type FSWatcher } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { LOGBOOK_SHARD_DIR } from "../core/usage-ledger.js";
@@ -36,7 +36,11 @@ export class LogbookWatcher {
     const shardDir = join(root, LOGBOOK_SHARD_DIR);
     try {
       await mkdir(shardDir, { recursive: true });
-      this.watcher = watch(shardDir, () => this.handleEvent());
+      // Windows reports a change against the directory in its long form, so
+      // a watcher opened on an 8.3 short path fails libuv's prefix assertion
+      // and aborts the process. os.tmpdir() alone resolves to one on a default
+      // profile, and a libuv abort is not catchable here, so resolve first.
+      this.watcher = watch(realpathSync.native(shardDir), () => this.handleEvent());
       this.watcher.on("error", () => this.stop());
     } catch {
       this.watcher = null;
