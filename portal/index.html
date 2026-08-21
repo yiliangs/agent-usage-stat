@@ -2074,6 +2074,45 @@
       line-height: 1.45;
       overflow-wrap: anywhere;
     }
+    /* Marked facts, not prose: the glyph states the verdict, the label names
+       the noun, and the time reads as a keyword. Kept on one line each so a
+       channel stays scannable at a glance. */
+    .capture-facts { margin: 6px 0 0; padding: 0; list-style: none; }
+    .capture-fact {
+      display: grid;
+      grid-template-columns: 12px auto minmax(0, 1fr);
+      align-items: center;
+      gap: 6px;
+      margin-top: 3px;
+      font-family: var(--sans);
+      font-size: 9.5px;
+      line-height: 1.5;
+    }
+    .capture-fact-mark {
+      width: 12px;
+      height: 12px;
+      fill: none;
+      stroke: var(--muted);
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .capture-fact.ok .capture-fact-mark { stroke: var(--status-good); }
+    .capture-fact.bad .capture-fact-mark { stroke: var(--status-error); }
+    .capture-fact-label {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 7.5px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .capture-fact-value {
+      overflow: hidden;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .capture-channel .capture-channel-detail { color: var(--graphite); }
     .capture-channel .capture-channel-remedy { color: var(--ink); font-weight: 600; }
 
@@ -2896,7 +2935,7 @@
             </div>
           </section>
           <section class="settings-row">
-            <div><h2>Capture monitor</h2><p>Local Windows and macOS configuration plus observed hook delivery for each agent.</p></div>
+            <div><h2>Capture monitor</h2><p>Local Windows and macOS configuration plus observed hook delivery for each agent. App sync remains the fallback for every agent.</p></div>
             <div class="capture-monitor-summary" id="captureMonitorSummary" aria-live="polite">Loading capture health…</div>
             <button class="settings-button" id="captureMonitorRepair" data-settings-action="repair-capture" data-busy-label="Repairing…" hidden>Repair setup</button>
           </section>

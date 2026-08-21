@@ -855,7 +855,7 @@ function renderSettings() {
     const diagnostic = captureMonitorPresentation(provider.captureMonitor, provider)
     return `<section class="provider-location ${provider.captureMonitor.status}">
       <div class="provider-identity"><h3>${providerMark(provider.provider)}${escapeHtml(provider.label)}</h3><span class="provider-status">${escapeHtml(status)} / ${captureStatus}</span></div>
-      <div class="capture-diagnostic"><strong>${escapeHtml(diagnostic.title)}</strong><p>${escapeHtml(diagnostic.detail)}</p>${diagnostic.remedy ? `<p class="capture-remedy">${escapeHtml(diagnostic.remedy)}</p>` : ''}</div>
+      <div class="capture-diagnostic"><strong>${escapeHtml(diagnostic.title)}</strong>${captureFacts(diagnostic.facts)}${diagnostic.detail ? `<p>${escapeHtml(diagnostic.detail)}</p>` : ''}${diagnostic.remedy ? `<p class="capture-remedy">${escapeHtml(diagnostic.remedy)}</p>` : ''}</div>
       <div class="settings-path">${escapeHtml(provider.root)}<span class="settings-path-meta">${escapeHtml(source)}</span></div>
       <div class="settings-segmented" aria-label="${escapeHtml(provider.label)} capture policy">
         <button class="settings-button${inherited ? ' active' : ''}" aria-pressed="${inherited}" data-settings-action="capture-policy" data-provider="${provider.provider}" data-inherit="true">Use default</button>
@@ -878,7 +878,10 @@ function renderCaptureMonitor(providers) {
     const remedy = presentation.remedy
       ? `<p class="capture-channel-remedy">${escapeHtml(presentation.remedy)}</p>`
       : ''
-    return `<div class="capture-channel ${provider.captureMonitor.status}"><span>${providerMark(provider.provider)}<em class="capture-channel-name">${escapeHtml(provider.label)}</em></span><strong>${escapeHtml(presentation.title)}</strong><p class="capture-channel-detail">${escapeHtml(presentation.detail)}</p>${remedy}</div>`
+    const detail = presentation.detail
+      ? `<p class="capture-channel-detail">${escapeHtml(presentation.detail)}</p>`
+      : ''
+    return `<div class="capture-channel ${provider.captureMonitor.status}"><span>${providerMark(provider.provider)}<em class="capture-channel-name">${escapeHtml(provider.label)}</em></span><strong>${escapeHtml(presentation.title)}</strong>${captureFacts(presentation.facts)}${detail}${remedy}</div>`
   }).join('')
 
   const aggregate = captureMonitorAggregate(providers)
@@ -980,22 +983,29 @@ function captureMonitorPresentation(monitor, provider = null) {
     }
   }
   if (monitor.reason === 'last_attempt_failed') {
-    const at = monitorTime(observation?.lastAttemptAt)
-    const failure = observation?.lastFailureMessage ? ` ${observation.lastFailureMessage}` : ''
+    const failure = observation?.lastFailureMessage || ''
     return {
       title: 'Last attempt failed',
-      detail: `Last hook attempt failed${at}.${failure}`,
+      facts: [
+        { label: 'Attempt', value: keywordTime(observation?.lastAttemptAt), state: 'bad' },
+        { label: 'Checkpoint', value: keywordTime(observation?.lastSuccessAt), state: 'ok' },
+      ],
+      detail: failure,
       remedy: 'No action needed: this clears itself on the next successful checkpoint. Usage still arrives on app open and Sync now.',
     }
   }
   if (monitor.reason === 'awaiting_first_attempt') {
     return { title: 'Waiting for first checkpoint', detail: 'Hook configuration is present, but no local delivery has been observed. Another settings scope or a managed policy may still block it.' }
   }
-  const attempt = monitorTime(observation?.lastAttemptAt)
-  const success = monitorTime(observation?.lastSuccessAt)
+  // The healthy card is the one every agent shows most of the time, so it
+  // states its two facts as marked rows instead of a sentence that reads the
+  // same on all four. The fallback note lives once, in the row's own copy.
   return {
     title: 'Hook observed',
-    detail: `Last hook attempt succeeded${attempt}. Last successful checkpoint${success}. App sync remains the fallback.`,
+    facts: [
+      { label: 'Attempt', value: keywordTime(observation?.lastAttemptAt), state: 'ok' },
+      { label: 'Checkpoint', value: keywordTime(observation?.lastSuccessAt), state: 'ok' },
+    ],
   }
 }
 
@@ -1004,6 +1014,38 @@ function monitorTime(value) {
   const parsed = Date.parse(value)
   if (!Number.isFinite(parsed)) return ' at an unknown time'
   return ` ${fmt.dateYear(new Date(parsed))} / ${clockTime(parsed)}`
+}
+
+/** A timestamp said the way someone reads it: recent by keyword, older by date. */
+function keywordTime(value) {
+  const parsed = Date.parse(value || '')
+  if (!Number.isFinite(parsed)) return 'unknown'
+  const now = Date.now()
+  const elapsed = now - parsed
+  if (elapsed >= 0 && elapsed < 60_000) return 'just now'
+  if (elapsed >= 0 && elapsed < 3_600_000) return `${Math.max(1, Math.round(elapsed / 60_000))} min ago`
+  const day = localDateKey(new Date(parsed))
+  if (day === localDateKey(new Date(now))) return `today ${clockTime(parsed)}`
+  if (day === localDateKey(new Date(now - DAY))) return `yesterday ${clockTime(parsed)}`
+  // The value shares one line with its label, so an older stamp drops the
+  // clock rather than pushing the date under an ellipsis. A checkpoint from
+  // another year is not a fact anyone reads to the minute.
+  const sameYear = new Date(parsed).getFullYear() === new Date(now).getFullYear()
+  if (!sameYear) return fmt.dateYear(new Date(parsed))
+  return `${fmt.date(new Date(parsed))} ${clockTime(parsed)}`
+}
+
+const FACT_GLYPHS = {
+  ok: '<path d="M2.5 6.4 5 8.9l4.5-5.3"/>',
+  bad: '<path d="M6 2.4v4.4"/><path d="M6 9.1h.01"/>',
+  neutral: '<path d="M2.6 6h6.8"/>',
+}
+
+/** Marked fact rows: the glyph carries the state, the label carries the noun. */
+function captureFacts(facts) {
+  if (!facts?.length) return ''
+  return `<ul class="capture-facts">${facts.map((fact) => `
+    <li class="capture-fact ${fact.state}"><svg class="capture-fact-mark" viewBox="0 0 12 12" aria-hidden="true" focusable="false">${FACT_GLYPHS[fact.state] || FACT_GLYPHS.neutral}</svg><span class="capture-fact-label">${escapeHtml(fact.label)}</span><span class="capture-fact-value">${escapeHtml(fact.value)}</span></li>`).join('')}</ul>`
 }
 
 async function loadSettings() {

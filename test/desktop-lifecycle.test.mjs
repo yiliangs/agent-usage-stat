@@ -260,6 +260,19 @@ test("an agent that needs attention states its cause and its remedy", async () =
   const narrow = html.match(/@media \(max-width: 1279px\) \{.*?\n    \}/s);
   assert.ok(narrow, "the 1279px band was not found");
   assert.match(narrow[0], /\.capture-monitor-summary \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
+
+  // Each fact carries its verdict as a glyph and its time as a keyword, so the
+  // four channels stop reading as the same sentence four times over.
+  assert.match(script, /function captureFacts/);
+  assert.match(script, /function keywordTime/);
+  assert.match(script, /return 'just now'/);
+  assert.match(script, /min ago/);
+  assert.match(script, /\{ label: 'Checkpoint', value: keywordTime\(observation\?\.lastSuccessAt\), state: 'ok' \}/);
+  assert.match(html, /\.capture-fact\.ok \.capture-fact-mark \{ stroke: var\(--status-good\); \}/);
+  assert.match(html, /\.capture-fact\.bad \.capture-fact-mark \{ stroke: var\(--status-error\); \}/);
+  // The fallback note is stated once for the section, not once per channel.
+  assert.equal((html.match(/App sync remains the fallback/g) || []).length, 1);
+  assert.doesNotMatch(script, /App sync remains the fallback/);
 });
 
 test("Squirrel first run enters the application instead of quitting", () => {
