@@ -21,8 +21,13 @@ Agent Usage Stat does not read general ChatGPT or Claude.ai chats. All usage dat
 Download the current installer from [GitHub Releases](https://github.com/yiliangs/agent-usage-stat/releases):
 
 - Windows installer: `Agent-Usage-Stat-Setup.exe`
-- Windows portable: `Agent Usage Stat-win32-x64-*.zip`
-- macOS: `Agent-Usage-Stat.dmg`
+- Windows portable: `Agent.Usage.Stat-win32-x64-*.zip`
+- macOS, Apple Silicon: `Agent.Usage.Stat-*-arm64.dmg`
+- macOS portable, Apple Silicon: `Agent.Usage.Stat-darwin-arm64-*.zip`
+
+The macOS build is Apple Silicon only. Intel Macs are not covered by a release
+yet, because the bundled capture helper is a single executable built for one
+architecture at a time.
 
 No separate Node.js or npm installation is required.
 
