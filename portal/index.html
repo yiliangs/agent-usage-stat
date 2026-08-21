@@ -2382,6 +2382,9 @@
       .cumulative-plot { height: clamp(430px, 46vw, 720px); }
       .project-module,
       .rhythm-module { grid-column: span 3; }
+      /* Four agents no longer fit across this row, and auto-fit would seat
+         three and strand the fourth alone. Two even rows instead. */
+      .capture-monitor-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     @media (max-width: 959px) {

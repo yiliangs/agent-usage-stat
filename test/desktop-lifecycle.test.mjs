@@ -254,6 +254,12 @@ test("an agent that needs attention states its cause and its remedy", async () =
   assert.ok(name, "capture-channel label slot rule was not found");
   assert.match(name[0], /text-overflow: ellipsis;[^}]*white-space: nowrap;/s);
   assert.match(html, /\.capture-channel \.provider-mark \{[^}]*width: 11px/s);
+
+  // Four agents across one row, or two even rows. Three across strands the
+  // fourth alone, which is what auto-fit does on its own at this width.
+  const narrow = html.match(/@media \(max-width: 1279px\) \{.*?\n    \}/s);
+  assert.ok(narrow, "the 1279px band was not found");
+  assert.match(narrow[0], /\.capture-monitor-summary \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
 });
 
 test("Squirrel first run enters the application instead of quitting", () => {
