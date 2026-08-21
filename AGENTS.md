@@ -88,7 +88,19 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - Production opens no localhost server. Renderer assets and data use the `aus://` protocol.
 - Hooks must target the stable installed helper, never a versioned application directory.
 - Resolve machine-specific paths through `usage-root.ts`; do not hardcode them.
-- Before changing hook behavior, read `SESSIONEND-HOOK-LOG.md`.
+- Before changing hook behavior, read `docs/SESSIONEND-HOOK-LOG.md`.
+
+## Documents
+
+Markdown lives under `docs/`. The repository root carries only `README.md`,
+`LICENSE`, `AGENTS.md`, and `CLAUDE.md`; nothing else is added there.
+
+- `docs/plans/`: plans, proposals, and design notes, one file per subject in
+  kebab case. The directory is gitignored, so a plan stays local to the machine
+  that wrote it. Write a plan here rather than at the root, and state its status
+  in the opening lines so a later reader knows whether it was executed.
+- `docs/`: tracked reference that is not a plan, such as
+  `SESSIONEND-HOOK-LOG.md`.
 
 ## Platform
 
