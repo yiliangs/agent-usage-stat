@@ -16,7 +16,13 @@ export default defineConfig(({ command }) => ({
     emptyOutDir: true,
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
-      input: resolve(root, 'index.html'),
+      // Two documents, one visual system: the dashboard and the status-area
+      // panel. They share the model and formatting modules, so building them
+      // together is also what keeps that code in one chunk rather than two.
+      input: {
+        index: resolve(root, 'index.html'),
+        panel: resolve(root, 'panel.html'),
+      },
     },
   },
   server: { port: 4179 },

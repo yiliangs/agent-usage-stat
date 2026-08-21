@@ -19,13 +19,14 @@ export { SUPPORTED_WIDTHS, findChrome };
 /**
  * Render the portal at each width and return every overflowing numeric slot.
  * `data` supplies `sessions.json` and `meta.json` exactly as the desktop build
- * writes them.
+ * writes them; `page` selects the document, and is empty for the dashboard.
  */
-export async function measurePortalLayout({ portalDir, data, widths = SUPPORTED_WIDTHS, height = 960 }) {
+export async function measurePortalLayout({ portalDir, data, page = "", widths = SUPPORTED_WIDTHS, height = 960 }) {
   const results = await runPortalProbe({
     portalDir,
     data,
     probe: new URL("portal-layout-probe.js", import.meta.url),
+    page,
     widths,
     height,
   });

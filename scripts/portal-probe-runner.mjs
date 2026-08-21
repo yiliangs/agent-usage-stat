@@ -151,7 +151,7 @@ globalThis.waitForRender = async function (rendered, timeoutMs = 20000) {
 `;
 
 /** Measure one width in a fresh browser so no earlier width leaks state. */
-async function probeWidth({ chrome, port, width, height, script }) {
+async function probeWidth({ chrome, port, page, width, height, script }) {
   const profile = await mkdtemp(join(tmpdir(), "aus-layout-"));
   const browser = spawn(chrome, [
     "--headless=new",
@@ -188,7 +188,7 @@ async function probeWidth({ chrome, port, width, height, script }) {
     await client.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false }, session);
     await client.send("Page.enable", {}, session);
     const loaded = client.once("Page.loadEventFired");
-    await client.send("Page.navigate", { url: `http://127.0.0.1:${port}/` }, session);
+    await client.send("Page.navigate", { url: `http://127.0.0.1:${port}/${page}` }, session);
     await withDeadline(loaded, 30_000);
     const evaluated = await client.send(
       "Runtime.evaluate",
@@ -208,9 +208,10 @@ async function probeWidth({ chrome, port, width, height, script }) {
 /**
  * Render the portal at each width and return one probe result per width.
  * `data` supplies `sessions.json` and `meta.json` exactly as the desktop build
- * writes them; `probe` is the URL of a script file to evaluate in the page.
+ * writes them; `probe` is the URL of a script file to evaluate in the page;
+ * `page` selects the document, and is empty for the dashboard at the root.
  */
-export async function runPortalProbe({ portalDir, data, probe, widths = SUPPORTED_WIDTHS, height = 960 }) {
+export async function runPortalProbe({ portalDir, data, probe, page = "", widths = SUPPORTED_WIDTHS, height = 960 }) {
   const chrome = findChrome();
   if (!chrome) throw new Error("no Chrome binary found");
   const script = await readFile(probe, "utf8");
@@ -220,7 +221,7 @@ export async function runPortalProbe({ portalDir, data, probe, widths = SUPPORTE
   try {
     const results = [];
     for (const width of widths) {
-      results.push({ width, ...(await probeWidth({ chrome, port, width, height, script })) });
+      results.push({ width, ...(await probeWidth({ chrome, port, page, width, height, script })) });
     }
     return results;
   } finally {

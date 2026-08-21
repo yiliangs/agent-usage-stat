@@ -17,9 +17,17 @@
 (async () => {
   const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  // The first tab click below only lands on the right page once the portal
-  // has drawn its navigation, so wait for a view to be on screen first.
-  await waitForRender(() => [...document.querySelectorAll(".portal-view")].some((view) => !view.hidden));
+  // Two documents are measured by this one probe: the dashboard, whose slots
+  // sit across views behind a tab row, and the status-area panel, which is a
+  // single fixed-width screen. Each document says which it is.
+  const surface = document.body.dataset.surface || "portal";
+  if (surface === "panel") {
+    await waitForRender(() => document.body.dataset.glanceReady === "true");
+  } else {
+    // The first tab click below only lands on the right page once the portal
+    // has drawn its navigation, so wait for a view to be on screen first.
+    await waitForRender(() => [...document.querySelectorAll(".portal-view")].some((view) => !view.hidden));
+  }
 
   /** Right-aligned text sits flush against its container, and glyph bearings
    *  put the ink rectangle a hair past the edge. Below this nothing is lost. */
@@ -56,6 +64,18 @@
     ["projects", ".analysis-kpi small", "flow", "project KPI note"],
     ["projects", ".topology-cell b", "line", "topology cell"],
     ["projects", ".topology-total", "line", "topology total"],
+  ];
+
+  /** The status-area panel, 320px wide at every screen size. Its budgets are
+   *  the `glance` entries in `portal/usage-format.js`. */
+  const PANEL_SLOTS = [
+    [".glance-value", "line", "panel figure"],
+    [".glance-note", "line", "panel comparison"],
+    [".glance-detail", "line", "latest session figures"],
+    [".glance-name span", "trim", "latest session project"],
+    [".glance-name time", "line", "latest session time"],
+    [".panel-stamp", "line", "snapshot stamp"],
+    [".panel-foot button", "line", "dashboard control"],
   ];
 
   /** The nearest ancestor that hides overflow. A scrollable ancestor stops the
@@ -97,21 +117,7 @@
     return { lines, clippedPx };
   }
 
-  const byView = new Map();
-  for (const [view, selector, mode, label] of SLOTS) {
-    if (!byView.has(view)) byView.set(view, []);
-    byView.get(view).push([selector, mode, label]);
-  }
-
-  const findings = [];
-  for (const [view, slots] of byView) {
-    const tab = document.querySelector(`[data-portal-view="${view}"]`);
-    if (tab) {
-      tab.click();
-      await settle(900);
-    }
-    const root = document.querySelector(`[data-view="${view}"]`);
-    if (!root) continue;
+  function collect(view, root, slots, findings) {
     for (const [selector, mode, label] of slots) {
       for (const element of root.querySelectorAll(selector)) {
         const style = getComputedStyle(element);
@@ -132,6 +138,29 @@
         });
       }
     }
+  }
+
+  const findings = [];
+  if (surface === "panel") {
+    collect("panel", document.body, PANEL_SLOTS, findings);
+    return { width: document.documentElement.clientWidth, findings };
+  }
+
+  const byView = new Map();
+  for (const [view, selector, mode, label] of SLOTS) {
+    if (!byView.has(view)) byView.set(view, []);
+    byView.get(view).push([selector, mode, label]);
+  }
+
+  for (const [view, slots] of byView) {
+    const tab = document.querySelector(`[data-portal-view="${view}"]`);
+    if (tab) {
+      tab.click();
+      await settle(900);
+    }
+    const root = document.querySelector(`[data-view="${view}"]`);
+    if (!root) continue;
+    collect(view, root, slots, findings);
   }
   return { width: document.documentElement.clientWidth, findings };
 })()

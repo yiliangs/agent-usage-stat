@@ -23,12 +23,20 @@
  * - `metricNote`  `.metric small`, the comparison line beneath it
  * - `heroDelta`   `.hero-number .delta`, the comparison under the hero figure
  * - `concValue`   `.conc-row .value`, 15px mono in the fixed 88px last column
+ * - `glanceValue` `.glance-value`, 20px serif in half of the status-area panel
+ * - `glanceNote`  `.glance-note`, the comparison line under a panel band
+ * - `glanceDetail` `.glance-detail`, the latest session's figures, full width
  *
  * `concValue` is 9 rather than the 10 that fits on Windows: the column is a
  * fixed 88px at every window width, and the same ten characters that fit there
  * in the Windows mono fallback are cut off by 2px in the macOS one. A budget
  * has to hold on the narrower of the two faces, not the machine it was
  * measured on.
+ *
+ * The three `glance` slots belong to the status-area panel, which is 320px
+ * wide at every screen size, so their budgets have no window width to vary
+ * with. `glanceDetail` is the one slot that concatenates: a model family, a
+ * token count, and a cost, with a separator between each.
  */
 export const SLOT_BUDGET = {
   heroValue: 7,
@@ -36,6 +44,9 @@ export const SLOT_BUDGET = {
   metricNote: 17,
   heroDelta: 17,
   concValue: 9,
+  glanceValue: 7,
+  glanceNote: 17,
+  glanceDetail: 26,
 };
 
 /** Exact currency, cents included. For the slots with room to print it in
