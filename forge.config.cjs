@@ -42,11 +42,16 @@ module.exports = {
       path.join(artifactRoot, "helper", helperName),
       iconRoot,
     ],
+    // A macOS build is always signed, or the kernel refuses it on Apple
+    // Silicon. With a Developer ID it takes the hardened runtime, which
+    // notarization requires. Ad-hoc it must not: the hardened runtime enforces
+    // library validation, ad-hoc signatures carry no team identity to match,
+    // and dyld then refuses to map Electron Framework into the process.
     ...(process.platform === "darwin"
       ? {
         osxSign: macSigningEnabled
           ? {}
-          : { identity: "-", identityValidation: false },
+          : { identity: "-", identityValidation: false, hardenedRuntime: false },
       }
       : {}),
     ...(process.platform === "darwin" && macNotarizationEnabled
