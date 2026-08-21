@@ -19,6 +19,11 @@ import { cp, readdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import {
+  promoteStartMenuShortcut,
+  startMenuProgramsDir,
+  startMenuShortcutName,
+} from "../dist/desktop/start-menu-shortcut.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
@@ -171,22 +176,22 @@ function delay(milliseconds) {
 /**
  * The Squirrel installer creates the shortcut during `--squirrel-install`, and
  * that step can be interrupted. Restore it from the same Squirrel command
- * rather than hand-writing a shortcut file.
+ * rather than hand-writing a shortcut file, then place it where the
+ * application places it, through the one module that owns that decision.
  */
 async function ensureStartMenuShortcut() {
   if (process.platform !== "win32") return;
-  const shortcut = join(
-    process.env.APPDATA || join(home, "AppData", "Roaming"),
-    "Microsoft", "Windows", "Start Menu", "Programs",
-    manifest.author,
-    `${productName}.lnk`,
-  );
-  if (existsSync(shortcut)) return;
+  const programs = startMenuProgramsDir(process.env);
+  const shortcutName = startMenuShortcutName(`${productName}.exe`);
+  const shortcut = join(programs, shortcutName);
 
-  const updater = join(installed, "..", "Update.exe");
-  if (!existsSync(updater)) return;
-  await run(updater, [`--createShortcut=${productName}.exe`]);
-  console.log(`Recreated the Start Menu shortcut at ${shortcut}`);
+  if (!existsSync(shortcut)) {
+    const updater = join(installed, "..", "Update.exe");
+    if (!existsSync(updater)) return;
+    await run(updater, [`--createShortcut=${productName}.exe`]);
+    console.log(`Recreated the Start Menu shortcut at ${shortcut}`);
+  }
+  await promoteStartMenuShortcut(programs, shortcutName);
 }
 
 function run(command, args, captureOutput = false) {

@@ -90,6 +90,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - Terminal feedback must fall back silently rather than weaken detached capture.
 - Production opens no localhost server. Renderer assets and data use the `aus://` protocol.
 - Hooks must target the stable installed helper, never a versioned application directory.
+- The Start Menu entry is `Programs\<Product>.lnk`, listed as an application rather than filed in a folder. Squirrel writes it into a folder named after the nuspec authors and offers no location that skips one, and that same field is the uninstall entry's Publisher, so `src/desktop/start-menu-shortcut.ts` moves the shortcut instead of renaming the author.
 - Resolve machine-specific paths through `usage-root.ts`; do not hardcode them.
 - Before changing hook behavior, read `docs/SESSIONEND-HOOK-LOG.md`.
 
