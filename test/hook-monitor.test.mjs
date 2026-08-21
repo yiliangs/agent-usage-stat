@@ -40,7 +40,7 @@ test("capture monitor follows local hook configuration and observed delivery", a
 
     await installClaudeHook(settingsPath);
     assert.deepEqual(await readClaudeMonitor(), {
-      status: "unverified",
+      status: "warning",
       reason: "awaiting_first_attempt",
       repairable: false,
       observation: null,
@@ -74,7 +74,7 @@ test("capture monitor follows local hook configuration and observed delivery", a
       occurredAt: "2026-08-09T11:00:00.000Z",
     }, environment);
     const failed = await readClaudeMonitor();
-    assert.equal(failed.status, "needs_attention");
+    assert.equal(failed.status, "warning");
     assert.equal(failed.reason, "last_attempt_failed");
     assert.equal(failed.observation.lastSuccessAt, "2026-08-09T10:00:00.000Z");
 

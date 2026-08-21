@@ -919,13 +919,30 @@ function captureMonitorAggregate(providers) {
   if (counts.needs_attention) {
     return { status: 'needs_attention', label: 'Needs attention', detail: `${counts.needs_attention} local capture configuration${counts.needs_attention === 1 ? ' needs' : 's need'} attention.` }
   }
-  if (counts.unverified) {
-    return { status: 'unverified', label: 'Unverified', detail: `${counts.unverified} configured hook${counts.unverified === 1 ? '' : 's'} are waiting for a first observed checkpoint.` }
+  if (counts.warning) {
+    return { status: 'warning', label: 'Warning', detail: warningAggregateDetail(providers) }
   }
   if (counts.observed) {
     return { status: 'observed', label: 'Hook observed', detail: `${counts.observed} local hook${counts.observed === 1 ? '' : 's'} have delivered a checkpoint.` }
   }
   return { status: 'off', label: 'Sync only', detail: 'No local continuous hooks are active.' }
+}
+
+/** The warning tier holds two causes, so the sentence names the ones present. */
+function warningAggregateDetail(providers) {
+  const reasons = providers
+    .filter((provider) => provider.captureMonitor.status === 'warning')
+    .map((provider) => provider.captureMonitor.reason)
+  const awaiting = reasons.filter((reason) => reason === 'awaiting_first_attempt').length
+  const failed = reasons.filter((reason) => reason === 'last_attempt_failed').length
+  const sentences = []
+  if (awaiting) {
+    sentences.push(`${awaiting} configured hook${awaiting === 1 ? ' is' : 's are'} waiting for a first observed checkpoint.`)
+  }
+  if (failed) {
+    sentences.push(`${failed} hook${failed === 1 ? '' : 's'} recorded a failed attempt that clears itself on the next successful checkpoint.`)
+  }
+  return sentences.join(' ')
 }
 
 function captureMonitorPresentation(monitor, provider = null) {
@@ -970,7 +987,7 @@ function captureMonitorPresentation(monitor, provider = null) {
     const at = monitorTime(observation?.lastAttemptAt)
     const failure = observation?.lastFailureMessage ? ` ${observation.lastFailureMessage}` : ''
     return {
-      title: 'Needs attention',
+      title: 'Last attempt failed',
       detail: `Last hook attempt failed${at}.${failure}`,
       remedy: 'No action needed: this clears itself on the next successful checkpoint. Usage still arrives on app open and Sync now.',
     }

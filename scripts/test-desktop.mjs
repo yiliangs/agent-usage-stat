@@ -108,7 +108,7 @@ try {
   assert.equal(smoke.settings.visible, true);
   assert.equal(smoke.settings.commonRows, 3);
   assert.equal(smoke.settings.captureChannels, 4);
-  assert.equal(smoke.settings.captureStatus, "UNVERIFIED");
+  assert.equal(smoke.settings.captureStatus, "WARNING");
   assert.equal(smoke.settings.advanced, true);
   assert.equal(smoke.settings.providerRows, 4);
   assert.deepEqual(smoke.settings.providers, [
@@ -118,10 +118,10 @@ try {
     "opencode",
   ]);
   assert.deepEqual(smoke.settings.providerMonitorStatuses, [
-    "unverified",
-    "unverified",
-    "unverified",
-    "unverified",
+    "warning",
+    "warning",
+    "warning",
+    "warning",
   ]);
 
   assert.equal(smoke.home.view, "overview");
