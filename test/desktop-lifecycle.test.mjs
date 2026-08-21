@@ -108,8 +108,16 @@ test("the settings control distinguishes hover from the active page", async () =
     /\.capture-monitor-link\.active\s*\{[^}]*background:\s*var\(--ink\);[^}]*color:\s*var\(--paper-hi\);/s,
   );
   assert.doesNotMatch(html, /\.capture-monitor-link:hover,\s*\.capture-monitor-link\.active/);
-  assert.match(script, /settingsLink\.classList\.toggle\('active', settingsActive\)/);
-  assert.match(script, /settingsLink\.setAttribute\('aria-current', 'page'\)/);
+  // The control is the only way into Settings, so it carries the view trigger
+  // itself and takes its active state from the one navigation loop rather than
+  // from a second code path written just for it.
+  assert.match(html, /data-capture-monitor-link[^>]*data-portal-view="settings"/);
+  assert.doesNotMatch(script, /settingsLink/);
+  assert.match(
+    script,
+    /\$\$\('\[data-portal-view\]'\)\.forEach\(\(trigger\) => \{[^}]*trigger\.classList\.toggle\('active', active\)/s,
+  );
+  assert.match(script, /trigger\.setAttribute\('aria-current', 'page'\)/);
   assert.match(script, /link\.dataset\.captureStatus = aggregate\.status/);
   assert.doesNotMatch(script, /link\.className = `capture-monitor-link/);
 });
@@ -236,9 +244,35 @@ test("an agent that needs attention states its cause and its remedy", async () =
     /\.capture-channel \.capture-channel-detail,\s*\n\s*\.capture-channel \.capture-channel-remedy \{/,
   );
   assert.match(html, /\.capture-channel \.capture-channel-remedy \{[^}]*color: var\(--ink\)/);
-  const nowrap = html.match(/\.capture-channel span,\s*\n\s*\.capture-channel strong \{[^}]*\}/s);
-  assert.ok(nowrap, "capture-channel single-line slot rule was not found");
-  assert.doesNotMatch(nowrap[0], /capture-channel-detail/);
+  // The status slot truncates directly; the label slot carries a provider mark,
+  // so the name beside it is what gives way while the mark keeps its size.
+  const status = html.match(/\.capture-channel strong \{[^}]*\}/s);
+  assert.ok(status, "capture-channel status slot rule was not found");
+  assert.match(status[0], /text-overflow: ellipsis;[^}]*white-space: nowrap;/s);
+  assert.doesNotMatch(status[0], /capture-channel-detail/);
+  const name = html.match(/\.capture-channel-name \{[^}]*\}/s);
+  assert.ok(name, "capture-channel label slot rule was not found");
+  assert.match(name[0], /text-overflow: ellipsis;[^}]*white-space: nowrap;/s);
+  assert.match(html, /\.capture-channel \.provider-mark \{[^}]*width: 11px/s);
+
+  // Four agents across one row, or two even rows. Three across strands the
+  // fourth alone, which is what auto-fit does on its own at this width.
+  const narrow = html.match(/@media \(max-width: 1279px\) \{.*?\n    \}/s);
+  assert.ok(narrow, "the 1279px band was not found");
+  assert.match(narrow[0], /\.capture-monitor-summary \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
+
+  // Each fact carries its verdict as a glyph and its time as a keyword, so the
+  // four channels stop reading as the same sentence four times over.
+  assert.match(script, /function captureFacts/);
+  assert.match(script, /function keywordTime/);
+  assert.match(script, /return 'just now'/);
+  assert.match(script, /min ago/);
+  assert.match(script, /\{ label: 'Checkpoint', value: keywordTime\(observation\?\.lastSuccessAt\), state: 'ok' \}/);
+  assert.match(html, /\.capture-fact\.ok \.capture-fact-mark \{ stroke: var\(--status-good\); \}/);
+  assert.match(html, /\.capture-fact\.bad \.capture-fact-mark \{ stroke: var\(--status-error\); \}/);
+  // The fallback note is stated once for the section, not once per channel.
+  assert.equal((html.match(/App sync remains the fallback/g) || []).length, 1);
+  assert.doesNotMatch(script, /App sync remains the fallback/);
 });
 
 test("Squirrel first run enters the application instead of quitting", () => {

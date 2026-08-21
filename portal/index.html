@@ -42,6 +42,7 @@
       --status-warn: #b8801d;
       --status-error: #a3483a;
       --status-error-ink: #fffaf5;
+      --mark-claude: #D97757;
       --cache-read: #8e8b83;
       --token-dark: #5f5e59;
       --token-mid: #8f8d86;
@@ -2006,6 +2007,15 @@
       border: 1px solid var(--line-dark);
       background: var(--paper-hi);
     }
+    /* One provider mark, sized by whichever surface hosts it. Claude is the
+       only host with a chromatic brand color; the rest follow the ink token. */
+    .provider-mark {
+      flex: none;
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
+    }
+    .provider-mark[data-provider="claude"] { fill: var(--mark-claude); }
     .capture-channel {
       position: relative;
       min-width: 0;
@@ -2023,7 +2033,6 @@
     .capture-channel.observed::before { background: var(--status-good); }
     .capture-channel.warning::before { background: var(--status-warn); }
     .capture-channel.needs_attention::before { background: var(--status-error); }
-    .capture-channel span,
     .capture-channel strong {
       display: block;
       overflow: hidden;
@@ -2031,12 +2040,24 @@
       white-space: nowrap;
     }
     .capture-channel span {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
       color: var(--muted);
       font-family: var(--mono);
       font-size: 7.5px;
       letter-spacing: .08em;
       text-transform: uppercase;
     }
+    /* The mark is fixed; only the name gives way as the channel narrows. */
+    .capture-channel-name {
+      overflow: hidden;
+      font-style: normal;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .capture-channel .provider-mark { width: 11px; height: 11px; }
     .capture-channel strong {
       margin-top: 5px;
       font-family: var(--sans);
@@ -2054,6 +2075,45 @@
       font-size: 9.5px;
       line-height: 1.45;
       overflow-wrap: anywhere;
+    }
+    /* Marked facts, not prose: the glyph states the verdict, the label names
+       the noun, and the time reads as a keyword. Kept on one line each so a
+       channel stays scannable at a glance. */
+    .capture-facts { margin: 6px 0 0; padding: 0; list-style: none; }
+    .capture-fact {
+      display: grid;
+      grid-template-columns: 12px auto minmax(0, 1fr);
+      align-items: center;
+      gap: 6px;
+      margin-top: 3px;
+      font-family: var(--sans);
+      font-size: 9.5px;
+      line-height: 1.5;
+    }
+    .capture-fact-mark {
+      width: 12px;
+      height: 12px;
+      fill: none;
+      stroke: var(--muted);
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .capture-fact.ok .capture-fact-mark { stroke: var(--status-good); }
+    .capture-fact.bad .capture-fact-mark { stroke: var(--status-error); }
+    .capture-fact-label {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 7.5px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .capture-fact-value {
+      overflow: hidden;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .capture-channel .capture-channel-detail { color: var(--graphite); }
     .capture-channel .capture-channel-remedy { color: var(--ink); font-weight: 600; }
@@ -2104,6 +2164,7 @@
     .provider-location.warning::before { background: var(--status-warn); }
     .provider-location.needs_attention::before { background: var(--status-error); }
     .provider-identity { grid-area: identity; }
+    .provider-location h3 { display: flex; align-items: center; gap: 8px; }
     .provider-location > .settings-path { grid-area: path; }
     .provider-location > .settings-segmented { grid-area: policy; justify-self: start; }
     .capture-diagnostic { grid-area: diagnostic; min-width: 0; }
@@ -2314,6 +2375,7 @@
         --status-good: #75b79a;
         --status-warn: #dcab5c;
         --status-error: #dc7866;
+        --mark-claude: #D97757;
         --cache-read: #aaa393;
         --token-dark: #d8d1bf;
         --token-mid: #aaa495;
@@ -2361,6 +2423,9 @@
       .cumulative-plot { height: clamp(430px, 46vw, 720px); }
       .project-module,
       .rhythm-module { grid-column: span 3; }
+      /* Four agents no longer fit across this row, and auto-fit would seat
+         three and strand the fourth alone. Two even rows instead. */
+      .capture-monitor-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     @media (max-width: 959px) {
@@ -2482,6 +2547,7 @@
         --status-good: #35765f;
         --status-warn: #b8801d;
         --status-error: #a3483a;
+        --mark-claude: #D97757;
         --cache-read: #8e8b83;
         --token-dark: #5f5e59;
         --token-mid: #8f8d86;
@@ -2513,7 +2579,7 @@
         <div><span class="micro">Machine</span><b>CHI-W11-01</b></div>
         <div><span class="micro">Snapshot</span><b>24 JUL 2026</b></div>
         <div>
-          <button class="capture-monitor-link" type="button" data-capture-monitor-link data-capture-status="not_detected" aria-label="Open Settings: Checking">
+          <button class="capture-monitor-link" type="button" data-capture-monitor-link data-portal-view="settings" data-capture-status="not_detected" aria-label="Open Settings: Checking">
             <i data-lucide="settings" aria-hidden="true"></i>
             <span class="capture-monitor-label">Settings</span>
             <span class="capture-monitor-attention" aria-hidden="true"></span>
@@ -2538,7 +2604,6 @@
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="tokens">Tokens</button>
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="projects">Projects</button>
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="sessions">Sessions</button>
-        <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="settings">Settings</button>
       </div>
       <div class="view-switch">
         <button class="refresh-button" id="refreshButton"><i></i>REFRESH DATA</button>
@@ -2872,7 +2937,7 @@
             </div>
           </section>
           <section class="settings-row">
-            <div><h2>Capture monitor</h2><p>Local Windows and macOS configuration plus observed hook delivery for each agent.</p></div>
+            <div><h2>Capture monitor</h2><p>Local Windows and macOS configuration plus observed hook delivery for each agent. App sync remains the fallback for every agent.</p></div>
             <div class="capture-monitor-summary" id="captureMonitorSummary" aria-live="polite">Loading capture health…</div>
             <button class="settings-button" id="captureMonitorRepair" data-settings-action="repair-capture" data-busy-label="Repairing…" hidden>Repair setup</button>
           </section>
