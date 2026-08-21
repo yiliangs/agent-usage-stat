@@ -22,11 +22,17 @@ import {
 import { HelperRuntime } from "./helper-runtime.js";
 import { LogbookWatcher } from "./logbook-watcher.js";
 import {
+  PANEL_URL,
   PORTAL_ORIGIN,
   PORTAL_URL,
   PortalRuntime,
   registerPortalScheme,
 } from "./portal-runtime.js";
+import { StatusArea } from "./status-area.js";
+import {
+  closesToStatusArea,
+  hasStatusArea,
+} from "./status-area-policy.js";
 import { squirrelLifecycleEvent } from "./squirrel-events.js";
 import {
   promoteStartMenuShortcut,
@@ -86,6 +92,12 @@ if (process.platform === "win32") app.setAppUserModelId(WINDOWS_APP_ID);
 
 let mainWindow: BrowserWindow | null = null;
 const helperRuntime = new HelperRuntime();
+const statusArea = new StatusArea({
+  panelUrl: PANEL_URL,
+  iconPath: windowIconPath,
+  openDashboard,
+  quit: () => app.quit(),
+});
 const configManager = new ConfigManager();
 const portalRuntime = new PortalRuntime(helperRuntime, handlePortalRequest);
 const logbookWatcher = new LogbookWatcher(autoRefreshPortal);
@@ -99,27 +111,42 @@ traceStartup(`single-instance:${hasSingleInstanceLock}`);
 if (squirrelEvent || !hasSingleInstanceLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
-  });
+  app.on("second-instance", openDashboard);
 
   app.whenReady().then(start).catch(failStartup);
 }
 
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    void openApplicationWindow().catch(failStartup);
-  }
-});
+app.on("activate", openDashboard);
 
+/**
+ * The status area holds the application open once the dashboard is closed.
+ *
+ * Its panel is a window, so with the icon in place this event usually never
+ * fires at all. It still states the rule for the sessions where there is no
+ * status area to hand the application to: another platform, or a shell that
+ * refused the icon.
+ */
 app.on("window-all-closed", () => {
+  if (closesToStatusArea(process.platform) && statusArea.isActive()) return;
   if (process.platform !== "darwin") app.quit();
 });
 
+app.on("before-quit", () => statusArea.destroy());
+
 app.on("will-quit", () => logbookWatcher.stop());
+
+nativeTheme.on("updated", () => statusArea.applyTheme());
+
+/** Bring the dashboard back, from the icon, a second launch, or the dock. */
+function openDashboard(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  void openApplicationWindow().catch(failStartup);
+}
 
 async function start(): Promise<void> {
   traceStartup("ready");
@@ -131,6 +158,18 @@ async function start(): Promise<void> {
   installApplicationMenu();
   traceStartup("protocol-ready");
 
+  if (hasStatusArea(process.platform)) {
+    try {
+      statusArea.install();
+      traceStartup("status-area-ready");
+    } catch (error) {
+      // The dashboard is the application; the icon is a shortcut into it. A
+      // shell that will not take the icon costs the shortcut, not the launch.
+      traceStartup("status-area-failed");
+      console.error(error);
+    }
+  }
+
   if (isSmokeTest) {
     await helperRuntime.syncInstallation();
   }
@@ -138,6 +177,7 @@ async function start(): Promise<void> {
     application: app,
     helperRuntime,
     portalRuntime,
+    statusArea,
     ensureSetup: async () => {
       await ensureDesktopSetup(null);
     },
@@ -255,10 +295,17 @@ function syncDetail(updated: number): string {
  */
 async function autoRefreshPortal(): Promise<void> {
   const window = mainWindow;
-  if (!window || window.isDestroyed()) return;
+  if (!window || window.isDestroyed()) {
+    // The dashboard is closed, but the status area is still showing figures
+    // from the ledger that just changed.
+    await portalRuntime.refresh().catch(() => undefined);
+    await statusArea.refresh();
+    return;
+  }
   try {
     await setPortalSyncState(window, "syncing", "SYNCING");
     const result = await portalRuntime.refresh();
+    await statusArea.refresh();
     await setPortalSyncState(window, "complete", syncDetail(result.updated));
   } catch {
     await setPortalSyncState(window, "error", "SYNC FAILED").catch(() => undefined);
@@ -310,7 +357,9 @@ async function createWindow(
   });
   if (show) window.once("ready-to-show", () => window.show());
   window.on("closed", () => {
-    if (mainWindow === window) mainWindow = null;
+    if (mainWindow !== window) return;
+    mainWindow = null;
+    if (statusArea.isActive()) statusArea.announceResidency();
   });
 
   mainWindow = window;
@@ -505,6 +554,7 @@ async function handlePortalRequest(
   request: Request,
   url: URL,
 ): Promise<Response | null> {
+  if (url.pathname === "/api/panel") return handlePanelRequest(request);
   if (url.pathname !== "/api/settings") return null;
   try {
     if (request.method === "GET") {
@@ -551,6 +601,25 @@ async function handlePortalRequest(
       throw new Error("Unknown settings action.");
     }
     return settingsJson(await currentSettingsState());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return settingsJson({ error: message }, 500);
+  }
+}
+
+/** The panel's only outbound action: leave the glance for the whole ledger. */
+async function handlePanelRequest(request: Request): Promise<Response> {
+  if (request.method !== "POST") {
+    return settingsJson({ error: "Method not allowed" }, 405);
+  }
+  try {
+    const body = await request.json() as { action?: string };
+    if (body.action !== "open-dashboard") {
+      return settingsJson({ error: "Unknown panel action." }, 400);
+    }
+    statusArea.hide();
+    openDashboard();
+    return settingsJson({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return settingsJson({ error: message }, 500);

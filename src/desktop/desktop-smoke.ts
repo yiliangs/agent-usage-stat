@@ -4,6 +4,7 @@ import { rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { HelperRuntime } from "./helper-runtime.js";
 import type { PortalRuntime } from "./portal-runtime.js";
+import type { StatusArea } from "./status-area.js";
 
 const DESKTOP_SMOKE_FLAG = "--desktop-smoke-test";
 
@@ -13,10 +14,16 @@ interface SmokeApplication {
   getVersion(): string;
 }
 
+type SmokeStatusArea = Pick<
+  StatusArea,
+  "isActive" | "toggle" | "hide" | "panelWindow"
+>;
+
 export interface DesktopSmokeDependencies {
   application: SmokeApplication;
   helperRuntime: Pick<HelperRuntime, "run">;
   portalRuntime: Pick<PortalRuntime, "assetsRoot" | "refresh">;
+  statusArea: SmokeStatusArea;
   ensureSetup(): Promise<void>;
   createWindow(): Promise<BrowserWindow>;
   runtimeIconPath(): string;
@@ -43,6 +50,7 @@ export async function runDesktopSmokeIfRequested(
     application,
     helperRuntime,
     portalRuntime,
+    statusArea,
     ensureSetup,
     createWindow,
     runtimeIconPath,
@@ -64,6 +72,10 @@ export async function runDesktopSmokeIfRequested(
   const settings = await inspectSettings(window);
   const home = await inspectHomeNavigation(window);
   trace("smoke-renderer-complete");
+  // Last, because proving the application outlives its dashboard means
+  // closing the dashboard.
+  const statusAreaResult = await inspectStatusArea(statusArea, window);
+  trace("smoke-status-area-complete");
 
   const smokeJson = JSON.stringify({
     application: application.getName(),
@@ -77,13 +89,90 @@ export async function runDesktopSmokeIfRequested(
     renderer,
     settings,
     home,
+    statusArea: statusAreaResult,
   }, null, 2);
   const stagedOutput = `${output}.${process.pid}.tmp`;
   await writeFile(stagedOutput, smokeJson, "utf8");
   await rename(stagedOutput, output);
   trace("smoke-output-complete");
-  window.destroy();
+  if (!window.isDestroyed()) window.destroy();
   return true;
+}
+
+interface StatusAreaSmokeResult {
+  installed: boolean;
+  opened: boolean;
+  dismissed: boolean;
+  residentAfterClose: boolean;
+  glance: PanelGlance | null;
+}
+
+interface PanelGlance {
+  surface: string | null;
+  ready: boolean;
+  todayTokens: string | null;
+  todayCost: string | null;
+  todayNote: string | null;
+  weekNote: string | null;
+  empty: boolean;
+}
+
+/**
+ * The status-area icon, its panel, and the residency that makes both worth
+ * having.
+ *
+ * The panel is opened through the same call the icon's click makes, read back
+ * from the rendered document, and dismissed. Then the dashboard is closed: on
+ * a platform that hands the application to the status area, reaching the end
+ * of this function at all is the evidence, because the application quitting
+ * here would leave the smoke result unwritten.
+ */
+async function inspectStatusArea(
+  statusArea: SmokeStatusArea,
+  window: BrowserWindow,
+): Promise<StatusAreaSmokeResult> {
+  if (!statusArea.isActive()) {
+    return {
+      installed: false,
+      opened: false,
+      dismissed: false,
+      residentAfterClose: false,
+      glance: null,
+    };
+  }
+
+  await statusArea.toggle();
+  const panel = statusArea.panelWindow();
+  const opened = panel?.isVisible() ?? false;
+
+  const glance = panel ? await readPanelGlance(panel) : null;
+  statusArea.hide();
+  const dismissed = !(panel?.isVisible() ?? false);
+
+  if (!window.isDestroyed()) window.destroy();
+  await new Promise((settle) => setTimeout(settle, 500));
+
+  return { installed: true, opened, dismissed, residentAfterClose: true, glance };
+}
+
+function readPanelGlance(panel: BrowserWindow): Promise<PanelGlance> {
+  return panel.webContents.executeJavaScript(`(async () => {
+    for (let index = 0; index < 100; index++) {
+      if (document.body.dataset.glanceReady) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const read = (slot) =>
+      document.querySelector('[data-glance="' + slot + '"]')?.textContent ?? null;
+    return {
+      surface: document.body.dataset.surface ?? null,
+      ready: document.body.dataset.glanceReady === 'true',
+      todayTokens: read('today-tokens'),
+      todayCost: read('today-cost'),
+      todayNote: read('today-note'),
+      weekNote: read('week-note'),
+      empty: !document.querySelector('[data-glance-empty]')?.hidden,
+    };
+  })()`);
 }
 
 async function inspectHomeNavigation(window: BrowserWindow): Promise<{

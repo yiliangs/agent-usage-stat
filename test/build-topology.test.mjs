@@ -49,6 +49,7 @@ test("the canonical build writes every application artifact under dist", () => {
     join("dist", "desktop", "main.js"),
     join("dist", "helper.js"),
     join("dist", "portal", "index.html"),
+    join("dist", "portal", "panel.html"),
     join("dist", "helper", helperName),
     join("dist", "icons", "icon-light.png"),
     join("dist", "icons", "icon-dark.png"),
