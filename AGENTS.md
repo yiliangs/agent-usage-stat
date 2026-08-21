@@ -78,6 +78,8 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - opencode keeps every session in one SQLite database, so `FoundSession.transcriptPath` is that database and the session id is the key, not a fallback. A session's usage folds in its `parent_id` descendants.
 - A host's hook root follows its data root, including an override, unless the host declares a separate hook directory. Only opencode does.
 - `providerID` in an opencode message is routing, never the model's vendor.
+- Every setup decision is a `SetupQuestion` from `src/desktop/setup-question.ts`, never a shape built for one renderer. The first-run window answers them inline through `startup-screen.ts`; the dashboard, which has no such surface, is the only caller that may hand one to a native dialog. The OS folder picker is not a question and stays native.
+- The first-run sequence lives once, in `FIRST_RUN_STEPS`. The spine, the headline, and the step prose all read from it, so a lifecycle call site names a step rather than repeating its copy.
 - Normalize model bracket suffixes before pricing lookup.
 - Baked pricing tables are authoritative. The remote pricing feed only prices models they miss, its refresh is best-effort and never blocks or fails capture, and the active snapshot is pinned into transcript fingerprints so repricing stays deterministic.
 - Claude subagent usage includes recursively nested workflow transcripts.
