@@ -278,9 +278,13 @@ function renderSpendHeatmap(sessions, window) {
   $('#spendHeatmap').innerHTML = blanks + buckets.map((bucket, index) => {
     const windowClass = currentKeys.has(bucket.key) ? ' current-window' : priorKeys.has(bucket.key) ? ' prior-window' : ' outside-window'
     const period = currentKeys.has(bucket.key) ? 'current window' : priorKeys.has(bucket.key) ? 'prior window' : 'outside selection'
-    return `<button class="calendar-cell level-${level(bucket.cost)}${windowClass}${rawMaxCost > 0 && index === peakIndex ? ' peak' : ''}"
+    // A day with nothing recorded on it has no detail to open, so it carries
+    // no key. `data-day` is what makes the cell clickable, and the stylesheet
+    // draws the pointer cursor from the same attribute.
+    const day = bucket.sessions ? ` data-day="${bucket.key}"` : ''
+    return `<button class="calendar-cell level-${level(bucket.cost)}${windowClass}${rawMaxCost > 0 && index === peakIndex ? ' peak' : ''}"${day}
       data-tip="${fmt.date(new Date(bucket.start))} | ${fmt.usd(bucket.cost)} | ${bucket.sessions} sessions | ${period}"
-      aria-label="${fmt.dateYear(new Date(bucket.start))}: ${fmt.usd(bucket.cost)}, ${bucket.sessions} sessions, ${period}"></button>`
+      aria-label="${fmt.dateYear(new Date(bucket.start))}: ${fmt.usd(bucket.cost)}, ${bucket.sessions} sessions, ${period}${bucket.sessions ? '. Opens day detail' : ''}"></button>`
   }).join('')
   const currentCost = sum(buckets.filter((bucket) => currentKeys.has(bucket.key)), (bucket) => bucket.cost)
   const priorCost = sum(buckets.filter((bucket) => priorKeys.has(bucket.key)), (bucket) => bucket.cost)
@@ -1593,6 +1597,34 @@ function detailList(rows) {
   return `<div class="detail-list">${rows.map((row) => `<div><span>${escapeHtml(row.label)}</span><b>${escapeHtml(row.value)}</b></div>`).join('')}</div>`
 }
 
+// The heatmap draws the whole ledger while the range chips select a window
+// inside it, so a day is read back from every recorded session rather than
+// from the selected period. Sourcing it from `state.current`, as the openers
+// for period-scoped marks do, empties every cell outside the selection.
+function openDayDetail(dateKey) {
+  const sessions = state.sessions.filter((session) => localDateKey(new Date(session.t)) === dateKey)
+  const value = summarizeUsage(sessions)
+  const projects = group(sessions, (session) => session.project, (session) => session.cost || 0)
+  const models = group(sessions, (session) => familyOf(session.primaryModel), (session) => session.cost || 0)
+  const ordered = sessions.slice().sort((a, b) => a.t - b.t)
+  openDetail({
+    eyebrow: 'Day detail',
+    title: fmt.dateYear(new Date(Date.parse(`${dateKey}T12:00:00Z`))),
+    stats: [
+      { label: 'Day value', value: fmt.usd(value.cost) },
+      { label: 'Sessions', value: String(value.sessions) },
+      { label: 'Tokens', value: fmt.compact(value.tokens) },
+      { label: 'Cache read', value: fmt.pct(value.cacheRatio) },
+    ],
+    sections: [
+      { title: 'Projects', html: detailList(projects.map((row) => ({ label: row.key, value: fmt.usd(row.value) }))) },
+      { title: 'Model composition', html: detailList(models.map((row) => ({ label: row.key, value: fmt.usd(row.value) }))) },
+      { title: 'Sessions', html: detailList(ordered.map((session) => ({ label: `${clockTime(session.t)} / ${session.project}`, value: fmt.usd(session.cost || 0) }))) },
+      { title: 'Measurement', text: 'A session counts toward the local calendar day it finished on, which is the same day the heatmap draws it in. A session that ran across midnight therefore lands entirely on the later day.' },
+    ],
+  })
+}
+
 function openProjectDetail(project) {
   const sessions = state.current.filter((session) => session.project === project)
   const value = summarizeUsage(sessions)
@@ -1776,6 +1808,9 @@ function bindPageInteractions() {
       applyFamilyFocus(family)
       openModelDetail(family)
     }
+  })
+  $$('.calendar-cell[data-day]').forEach((cell) => {
+    cell.onclick = () => openDayDetail(cell.dataset.day)
   })
   $$('.topology-filter').forEach((cell) => {
     cell.onclick = () => openTopologyDetail(cell.dataset.project, cell.dataset.family)

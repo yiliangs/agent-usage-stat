@@ -769,7 +769,9 @@
       background: var(--paper-hi);
       cursor: pointer;
     }
-    .calendar-cell.level-0 { cursor: default; }
+    /* Only a day that recorded work has a detail view to open, and only such a
+       day carries `data-day`, so the pointer follows the actual affordance. */
+    .calendar-cell:not([data-day]) { cursor: default; }
     .calendar-cell.level-1 { background: color-mix(in srgb, var(--heat-chill) 24%, var(--paper)); }
     .calendar-cell.level-2 { background: color-mix(in srgb, var(--heat-chill) 46%, var(--paper)); }
     .calendar-cell.level-3 { background: color-mix(in srgb, var(--heat-chill) 70%, var(--paper)); }
