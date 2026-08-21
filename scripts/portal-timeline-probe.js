@@ -8,8 +8,9 @@
  * block, and leaves the guard to decide which of them owed the reader a name.
  */
 (async () => {
-  const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  await settle(1200);
+  // Blocks are drawn by the first render, so one on the page means the
+  // geometry this probe measures exists to be measured.
+  await waitForRender(() => document.querySelectorAll(".rhythm-event").length > 0);
 
   /** The text a reader can actually see in this element, ignoring anything a
    *  rule has taken out of the flow. */

@@ -17,6 +17,10 @@
 (async () => {
   const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  // The first tab click below only lands on the right page once the portal
+  // has drawn its navigation, so wait for a view to be on screen first.
+  await waitForRender(() => [...document.querySelectorAll(".portal-view")].some((view) => !view.hidden));
+
   /** Right-aligned text sits flush against its container, and glyph bearings
    *  put the ink rectangle a hair past the edge. Below this nothing is lost. */
   const BEARING_TOLERANCE_PX = 2;

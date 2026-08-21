@@ -12,8 +12,12 @@
  * is what a reader is told the cell stands for.
  */
 (async () => {
-  const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  await settle(1200);
+  // index.html ships the heatmap hidden and portal.js reveals it on the first
+  // render, so a visible view with cells in it is the page being drawn.
+  await waitForRender(() => {
+    const view = document.querySelector(".spend-heatmap-view");
+    return view && !view.hidden && document.querySelectorAll(".calendar-cell").length > 0;
+  });
 
   const text = (element) => (element ? element.textContent.trim() : "");
   const scrim = document.querySelector("#detailScrim");

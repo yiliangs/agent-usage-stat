@@ -19,6 +19,21 @@ import { installCodexHooks } from "../dist/integrations/codex-hooks.js";
 import { buildPortalData } from "../dist/desktop/portal-data.js";
 import { detectProvider } from "../dist/providers/registry.js";
 
+/**
+ * Setup writes the wrapper its host shell understands: a PowerShell function
+ * on Windows, a POSIX shell function on macOS. Both platforms run these
+ * guards, so the expectation follows the platform rather than asserting the
+ * Windows shape everywhere.
+ */
+const SHELL_PROFILE_NAME = process.platform === "win32"
+  ? "shell-profile.ps1"
+  : "shell-profile.sh";
+
+const wrapperFor = (command) =>
+  process.platform === "win32"
+    ? new RegExp(`function global:${command}\\b`)
+    : new RegExp(`^\\s*${command}\\(\\) \\{`, "m");
+
 test("installed agents are inferred without a provider setting", async () => {
   const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-detect-"));
   const claudeHome = join(home, "custom-claude-home");
@@ -140,27 +155,27 @@ test(
         claudeSettings.hooks.SessionEnd[0].hooks[0].command,
       );
       const shellProfile = await readFile(
-        join(home, "shell-profile.ps1"),
+        join(home, SHELL_PROFILE_NAME),
         "utf8",
       );
-      assert.match(shellProfile, /function global:claude/);
-      assert.match(shellProfile, /function global:codex/);
-      assert.match(shellProfile, /function global:claudex/);
-      assert.match(shellProfile, /function global:copilot/);
+      assert.match(shellProfile, wrapperFor("claude"));
+      assert.match(shellProfile, wrapperFor("codex"));
+      assert.match(shellProfile, wrapperFor("claudex"));
+      assert.match(shellProfile, wrapperFor("copilot"));
 
       const second = await runCli(["setup"], home);
       assert.equal(second.code, 0, second.output);
       assert.equal(second.output.includes("Usage data folder"), false);
       assert.equal(second.output.includes("one final action"), false);
       assert.equal(
-        await readFile(join(home, "shell-profile.ps1"), "utf8"),
+        await readFile(join(home, SHELL_PROFILE_NAME), "utf8"),
         shellProfile,
       );
 
       const disabled = await runCli(["setup", "--no-terminal-message"], home);
       assert.equal(disabled.code, 0, disabled.output);
       assert.doesNotMatch(
-        await readFile(join(home, "shell-profile.ps1"), "utf8"),
+        await readFile(join(home, SHELL_PROFILE_NAME), "utf8"),
         /Agent Usage Stat terminal message/,
       );
     } finally {
@@ -183,7 +198,7 @@ test(
       "hooks",
       "agent-usage-stat.json",
     );
-    const shellProfile = join(home, "shell-profile.ps1");
+    const shellProfile = join(home, SHELL_PROFILE_NAME);
     await mkdir(join(home, ".claude"));
     await mkdir(join(home, ".codex"));
     await mkdir(join(home, ".copilot"));
@@ -192,7 +207,7 @@ test(
       const continuous = await runCli(["setup", "--data-root", dataRoot], home);
       assert.equal(continuous.code, 0, continuous.output);
       assert.equal(existsSync(copilotHook), true);
-      assert.match(await readFile(shellProfile, "utf8"), /function global:codex/);
+      assert.match(await readFile(shellProfile, "utf8"), wrapperFor("codex"));
 
       const configured = await runCli(
         ["config", "--set", "capturePolicy=batch"],
@@ -237,7 +252,7 @@ test(
       "hooks",
       "agent-usage-stat.json",
     );
-    const shellProfile = join(home, "shell-profile.ps1");
+    const shellProfile = join(home, SHELL_PROFILE_NAME);
     await mkdir(join(home, ".claude"));
     await mkdir(join(home, ".codex"));
     await mkdir(join(home, ".copilot"));
@@ -261,10 +276,10 @@ test(
       assert.equal(existsSync(copilotHook), false);
 
       const profile = await readFile(shellProfile, "utf8");
-      assert.match(profile, /function global:claude/);
-      assert.match(profile, /function global:claudex/);
-      assert.doesNotMatch(profile, /function global:codex/);
-      assert.doesNotMatch(profile, /function global:copilot/);
+      assert.match(profile, wrapperFor("claude"));
+      assert.match(profile, wrapperFor("claudex"));
+      assert.doesNotMatch(profile, wrapperFor("codex"));
+      assert.doesNotMatch(profile, wrapperFor("copilot"));
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -872,7 +887,7 @@ function runCli(args, home) {
           ...process.env,
           HOME: home,
           USERPROFILE: home,
-          AGENT_USAGE_STAT_SHELL_PROFILE: join(home, "shell-profile.ps1"),
+          AGENT_USAGE_STAT_SHELL_PROFILE: join(home, SHELL_PROFILE_NAME),
         },
         stdio: ["ignore", "pipe", "pipe"],
       },

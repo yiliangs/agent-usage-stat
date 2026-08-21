@@ -9,7 +9,9 @@
  * only the Node standard library.
  *
  * The harness is shared; each guard supplies its own probe script, which runs
- * in the page and returns whatever that guard needs to assert.
+ * in the page and returns whatever that guard needs to assert. The harness
+ * navigates and waits for the load event; the probe calls `waitForRender` with
+ * the condition that means "drawn" for the thing it measures.
  */
 
 import { spawn } from "node:child_process";
@@ -86,13 +88,22 @@ async function connect(endpoint) {
     socket.addEventListener("error", () => reject(new Error("devtools socket failed")), { once: true });
   });
   const pending = new Map();
+  const waiting = new Map();
   let lastId = 0;
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
-    const resolve = message.id && pending.get(message.id);
+    if (message.id) {
+      const resolve = pending.get(message.id);
+      if (resolve) {
+        pending.delete(message.id);
+        resolve(message);
+      }
+      return;
+    }
+    const resolve = waiting.get(message.method);
     if (resolve) {
-      pending.delete(message.id);
-      resolve(message);
+      waiting.delete(message.method);
+      resolve(message.params);
     }
   });
   const send = (method, params = {}, sessionId) =>
@@ -101,8 +112,43 @@ async function connect(endpoint) {
       pending.set(id, resolve);
       socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
     });
-  return { send, close: () => socket.close() };
+  /** Resolve the next occurrence of a devtools event. Register before issuing
+   *  the command that causes it, or the event arrives with nobody listening. */
+  const once = (method) => new Promise((resolve) => waiting.set(method, resolve));
+  return { send, once, close: () => socket.close() };
 }
+
+/** Resolve when `promise` settles, or after `ms`, whichever comes first. A
+ *  probe that starts early reports a half-drawn page, so the wait is worth
+ *  having; a probe that never starts reports nothing at all, so it is capped. */
+function withDeadline(promise, ms) {
+  let timer;
+  const deadline = new Promise((resolve) => { timer = setTimeout(resolve, ms); });
+  // Racing does not cancel the loser, and a live timer keeps Node running long
+  // after the probe has answered.
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Defines `waitForRender` for the probe about to run in the page.
+ *
+ * The portal ships its views hidden and reveals them on its first render, so
+ * every probe has to start after that render rather than after a fixed sleep.
+ * A sleep long enough for a loaded CI runner is dead time on every other
+ * machine, and one tuned on a warm machine reads a blank page on a cold one.
+ */
+const PROBE_PREAMBLE = `
+globalThis.waitForRender = async function (rendered, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    let ready = false;
+    try { ready = Boolean(rendered()); } catch { ready = false; }
+    if (ready) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+};
+`;
 
 /** Measure one width in a fresh browser so no earlier width leaks state. */
 async function probeWidth({ chrome, port, width, height, script }) {
@@ -141,10 +187,12 @@ async function probeWidth({ chrome, port, width, height, script }) {
     const session = attached.result.sessionId;
     await client.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false }, session);
     await client.send("Page.enable", {}, session);
+    const loaded = client.once("Page.loadEventFired");
     await client.send("Page.navigate", { url: `http://127.0.0.1:${port}/` }, session);
+    await withDeadline(loaded, 30_000);
     const evaluated = await client.send(
       "Runtime.evaluate",
-      { expression: script, awaitPromise: true, returnByValue: true },
+      { expression: PROBE_PREAMBLE + script, awaitPromise: true, returnByValue: true },
       session,
     );
     client.close();
