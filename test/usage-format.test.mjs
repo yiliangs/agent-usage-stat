@@ -37,12 +37,18 @@ function widest(label, values, produce) {
   return { label, longest };
 }
 
-test("the headline currency format stays inside the hero and metric budgets", () => {
+test("the headline currency format stays inside every fixed column it feeds", () => {
   const { longest } = widest("usdHeadline", MAGNITUDES, usdHeadline);
-  assert.ok(
-    longest.length <= SLOT_BUDGET.heroValue,
-    `widest headline currency ${JSON.stringify(longest)} is ${longest.length} characters, budget ${SLOT_BUDGET.heroValue}`,
-  );
+  for (const slot of ["heroValue", "concValue"]) {
+    assert.ok(
+      longest.length <= SLOT_BUDGET[slot],
+      `widest headline currency ${JSON.stringify(longest)} is ${longest.length} characters, ${slot} budget ${SLOT_BUDGET[slot]}`,
+    );
+  }
+  // The concentration row that clipped on macOS: ten characters in a column
+  // measured to hold nine.
+  assert.equal(usd(42_071.75).length, 10);
+  assert.equal(usdHeadline(42_071.75), "$42,072");
   assert.equal(usdHeadline(539.8), "$539.80");
   assert.equal(usdHeadline(10_329.3), "$10,329");
   assert.equal(usdHeadline(126_987.25), "$127K");

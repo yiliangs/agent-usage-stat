@@ -73,6 +73,13 @@ test("restarting repoints the watcher to the new root", async () => {
   await watcher.start(oldRoot);
   await watcher.start(newRoot);
   try {
+    // Watching a directory created a moment earlier can report the creation
+    // itself, and this guard is about the root that was replaced rather than
+    // about the noise a fresh watch makes, so let the new root settle first
+    // and count only the refreshes that follow.
+    await settle();
+    calls = 0;
+
     await writeFile(join(shardDir(oldRoot), "old-root.json"), "{}");
     await settle();
     assert.equal(calls, 0, "the replaced root must no longer trigger refreshes");

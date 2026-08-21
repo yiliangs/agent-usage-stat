@@ -1193,14 +1193,14 @@ function renderConcentration(projects) {
       <i style="--series:${styles[index].color}"></i>
       <span class="name">${escapeHtml(project.project)}<small>${escapeHtml(project.family.toUpperCase())} DOMINANT</small></span>
       <span class="share">${fmt.pct(shares[index])}</span>
-      <span class="value">${fmt.usd(project.cost)}</span>
+      <span class="value">${fmt.usdHeadline(project.cost)}</span>
     </div>`).join('')
   const otherValue = Math.max(0, total - sum(top, (project) => project.cost))
   $('.ring-key').innerHTML = detailed + `
     <div class="conc-row">
       <span class="rank">04</span><i style="--series:var(--token-pale)"></i>
       <span class="name">Other projects<small>${Math.max(0, rows.length - top.length)} PROJECTS</small></span>
-      <span class="share">${fmt.pct(1 - concentration)}</span><span class="value">${fmt.usd(otherValue)}</span>
+      <span class="share">${fmt.pct(1 - concentration)}</span><span class="value">${fmt.usdHeadline(otherValue)}</span>
     </div>`
 }
 

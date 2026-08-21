@@ -22,12 +22,20 @@
  * - `metricValue` `.metric b`, 29px serif in half of the metric stack
  * - `metricNote`  `.metric small`, the comparison line beneath it
  * - `heroDelta`   `.hero-number .delta`, the comparison under the hero figure
+ * - `concValue`   `.conc-row .value`, 15px mono in the fixed 88px last column
+ *
+ * `concValue` is 9 rather than the 10 that fits on Windows: the column is a
+ * fixed 88px at every window width, and the same ten characters that fit there
+ * in the Windows mono fallback are cut off by 2px in the macOS one. A budget
+ * has to hold on the narrower of the two faces, not the machine it was
+ * measured on.
  */
 export const SLOT_BUDGET = {
   heroValue: 7,
   metricValue: 7,
   metricNote: 17,
   heroDelta: 17,
+  concValue: 9,
 };
 
 /** Exact currency, cents included. For the slots with room to print it in
@@ -37,13 +45,15 @@ export function usd(value) {
 }
 
 /**
- * Currency bounded to `SLOT_BUDGET.heroValue` characters, for the headline
- * figures that sit in a fixed column at poster size.
+ * Currency bounded to `SLOT_BUDGET.heroValue` characters, for every figure
+ * that sits in a fixed column: the headline at poster size, and the per
+ * project value in the concentration rows.
  *
  * Cents are dropped once the whole-dollar part alone carries the magnitude,
  * and six figures and beyond compact, so the string stops growing where the
  * panel stops growing. Nothing is lost: the exact total is printed in full on
- * the Spend view, whose KPI panels are four times as wide.
+ * the Spend view, whose KPI panels are four times as wide, and the note above
+ * the concentration ring still names the largest project's total to the cent.
  */
 export function usdHeadline(value) {
   if (Math.abs(value) < 1e3) return usd(value);

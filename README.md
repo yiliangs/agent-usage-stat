@@ -115,6 +115,8 @@ npm run make
 - `npm start` builds and launches the development desktop application.
 - `npm run make` creates platform installers under `dist/forge/make/`.
 
+Every push to `main` and every pull request runs the suite on Windows and macOS through `.github/workflows/test.yml`, so platform-specific breakage surfaces where it lands rather than at release time.
+
 Tagged releases are built for Windows and macOS by `.github/workflows/desktop-release.yml`. Signing credentials are optional. When the Windows certificate secrets are present the installer is signed, and when the Apple certificate and notarization secrets are present the macOS build is signed with the Developer ID identity and notarized. Without them the release still publishes: the Windows installer is unsigned and the macOS application is ad-hoc signed, which means users clear Gatekeeper by hand on first launch.
 
 The npm package does not expose a supported JavaScript library API.
