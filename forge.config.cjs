@@ -49,9 +49,16 @@ module.exports = {
     // and dyld then refuses to map Electron Framework into the process.
     ...(process.platform === "darwin"
       ? {
+        // `hardenedRuntime` is read per file, from `optionsForFile`, and
+        // nowhere else. Setting it at the top level is accepted in silence and
+        // does nothing, which shipped a broken 3.0.0 and 3.0.1.
         osxSign: macSigningEnabled
           ? {}
-          : { identity: "-", identityValidation: false, hardenedRuntime: false },
+          : {
+            identity: "-",
+            identityValidation: false,
+            optionsForFile: () => ({ hardenedRuntime: false }),
+          },
       }
       : {}),
     ...(process.platform === "darwin" && macNotarizationEnabled

@@ -40,6 +40,26 @@ const executable = process.platform === "win32"
   : join(packageDir, "Agent Usage Stat.app", "Contents", "MacOS", "Agent Usage Stat");
 assert.equal(existsSync(executable), true, `Missing packaged executable: ${executable}`);
 
+if (process.platform === "darwin") {
+  // The hardened runtime enforces library validation, and an ad-hoc signature
+  // carries no team identity to satisfy it, so dyld refuses to map Electron
+  // Framework and the application dies at launch. 3.0.0 and 3.0.1 both shipped
+  // that way: the option that turns it off is read per file through
+  // `optionsForFile`, so setting it at the top level did nothing and said
+  // nothing. Launching here would not have caught it either, because
+  // enforcement differs by macOS version. Read the signature instead.
+  const appPath = join(packageDir, "Agent Usage Stat.app");
+  const { stderr } = await run("codesign", ["-d", "-vv", appPath], process.env);
+  const flags = /^CodeDirectory\b.*?\bflags=(\S+)/m.exec(stderr)?.[1];
+  assert.ok(flags, `codesign reported no CodeDirectory flags:\n${stderr}`);
+  if (flags.includes("adhoc")) {
+    assert.ok(
+      !flags.includes("runtime"),
+      `Ad-hoc signed build carries the hardened runtime (flags=${flags}). It cannot launch.`,
+    );
+  }
+}
+
 const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-desktop-"));
 const usageRoot = join(home, "usage");
 const claudeHome = join(home, ".claude");
