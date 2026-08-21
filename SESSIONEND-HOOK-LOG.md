@@ -60,8 +60,8 @@ The hook observation files under `~/.agent-usage-stat/capture-health/` record th
 The portal combines local hook configuration with the observation files above. It reports:
 
 - `Observed` only after a configured hook has delivered a successful attempt.
-- `Unverified` when configuration is present but no attempt has been observed.
-- `Needs attention` when configuration is missing, disabled, unreadable, or the latest attempt failed.
+- `Warning` when configuration is present but no attempt has been observed, or when the latest attempt failed. Neither state asks the user for anything: the first is unproven, the second clears itself on the next successful checkpoint.
+- `Needs attention` when configuration is missing, disabled, or unreadable.
 - `Batch sync` when hook capture is intentionally disabled by policy.
 - `Not detected` when the local provider data folder is absent.
 

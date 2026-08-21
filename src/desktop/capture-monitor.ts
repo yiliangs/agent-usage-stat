@@ -2,11 +2,16 @@ import type { CaptureStrategy } from "../types/config.js";
 import type { CaptureHealth } from "../utils/capture-health.js";
 import type { HookConfigurationStatus } from "../integrations/hook-status.js";
 
+/**
+ * Severity, not cause. `needs_attention` is the only tier that asks the user
+ * for something; `warning` covers every configured-but-imperfect state that
+ * resolves on its own, and `reason` says which one it is.
+ */
 export type CaptureMonitorStatus =
   | "off"
   | "not_detected"
   | "needs_attention"
-  | "unverified"
+  | "warning"
   | "observed";
 
 export type CaptureMonitorReason =
@@ -63,15 +68,17 @@ export function captureMonitor(
   }
   if (!observation) {
     return {
-      status: "unverified",
+      status: "warning",
       reason: "awaiting_first_attempt",
       repairable: false,
       observation: null,
     };
   }
+  // A failed attempt clears itself on the next successful checkpoint and app
+  // sync still reconciles the usage, so it warns rather than demanding a fix.
   if (observation.lastAttemptStatus === "failed") {
     return {
-      status: "needs_attention",
+      status: "warning",
       reason: "last_attempt_failed",
       repairable: false,
       observation,
