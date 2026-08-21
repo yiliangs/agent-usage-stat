@@ -1984,19 +1984,33 @@
     .settings-segmented .settings-button { border: 0; border-left: 1px solid var(--ink); }
     .settings-segmented .settings-button:first-child { border-left: 0; }
 
+    /* The agent registry decides how many channels there are, so the grid fits
+       as many as the width holds instead of naming a count. The track floor is
+       the widest status title plus this cell's padding, so today's four
+       channels share one row at every supported width, and wrap rather than
+       truncate a title only in the 1040 window that also shows the Repair
+       control. Separators are the 1px gap seen through each cell's shadow
+       rather than cell borders: a border would inset that cell's status bar by
+       its own width, so the bars in a wrapped row would sit a pixel off the
+       bars above them. Shadows also stop at the last cell of a ragged row, so
+       the empty remainder of that row stays blank instead of reading as a rule
+       to nowhere. */
     .capture-monitor-summary {
       min-width: 0;
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(162px, 1fr));
+      gap: 1px;
+      overflow: hidden;
       border: 1px solid var(--line-dark);
+      background: var(--paper-hi);
     }
     .capture-channel {
       position: relative;
       min-width: 0;
       padding: 12px 13px 11px 17px;
-      border-left: 1px solid var(--line);
+      background: var(--paper-hi);
+      box-shadow: -1px 0 0 var(--line), 0 -1px 0 var(--line);
     }
-    .capture-channel:first-child { border-left: 0; }
     .capture-channel::before {
       content: '';
       position: absolute;
@@ -2430,8 +2444,6 @@
       .settings-advanced-body { padding-left: 12px; padding-right: 12px; }
       .settings-segmented { display: grid; }
       .capture-monitor-summary { grid-template-columns: 1fr; }
-      .capture-channel { border-top: 1px solid var(--line); border-left: 0; }
-      .capture-channel:first-child { border-top: 0; }
       .settings-segmented .settings-button { border-left: 0; border-top: 1px solid var(--ink); }
       .settings-segmented .settings-button:first-child { border-top: 0; }
       .settings-repair { align-items: flex-start; flex-direction: column; }
