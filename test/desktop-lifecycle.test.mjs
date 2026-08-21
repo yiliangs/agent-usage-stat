@@ -15,6 +15,14 @@ import {
   ledgerMigrationPrompt,
 } from "../dist/desktop/ledger-onboarding.js";
 import { capturePolicyPrompt } from "../dist/desktop/capture-policy.js";
+import {
+  setupAnswerAt,
+  setupQuestionDetail,
+} from "../dist/desktop/setup-question.js";
+import {
+  FIRST_RUN_STEPS,
+  STARTUP_URL,
+} from "../dist/desktop/startup-screen.js";
 
 const require = createRequire(import.meta.url);
 
@@ -39,40 +47,122 @@ test("first-run storage choice explains the local default and shared ledgers", (
     }),
     {
       message: "Where should usage history be stored?",
-      detail:
-        "On this computer:\n" +
-        "C:\\Users\\Alex\\AppData\\Local\\Agent Usage Stat\\ledger\n\n" +
-        "Using multiple computers? Choose a folder in Google Drive, OneDrive, Dropbox, or another synchronized drive, then select that same synchronized folder on each computer. Paths may differ by machine.\n\n" +
+      facts: [{
+        label: "On this computer",
+        value: "C:\\Users\\Alex\\AppData\\Local\\Agent Usage Stat\\ledger",
+      }],
+      detail: [
+        "Using multiple computers? Choose a folder in Google Drive, OneDrive, Dropbox, or another synchronized drive, then select that same synchronized folder on each computer. Paths may differ by machine.",
         "The ledger contains usage totals, model names, project names, branches, and local project paths. It does not contain prompt or response text.",
-      buttons: ["Use Local Storage", "Choose Another Folder..."],
+      ],
+      options: [
+        { value: "keep", label: "Use Local Storage" },
+        { value: "choose", label: "Choose Another Folder..." },
+      ],
     },
   );
 });
 
 test("changing folders offers migration and preserves the original by default", () => {
-  assert.deepEqual(
-    ledgerMigrationPrompt("C:\\old-ledger", "D:\\new-ledger"),
-    {
-      message: "Migrate existing usage history?",
-      detail:
-        "Existing history will be merged into the new ledger without replacing newer records.\n\n" +
-        "From: C:\\old-ledger\n" +
-        "To: D:\\new-ledger",
-      buttons: ["Continue", "Cancel"],
-      checkboxLabel: "Keep the original ledger as a backup",
-      checkboxChecked: true,
-    },
+  const question = ledgerMigrationPrompt("C:\\old-ledger", "D:\\new-ledger");
+
+  assert.deepEqual(question, {
+    message: "Migrate existing usage history?",
+    facts: [
+      { label: "From", value: "C:\\old-ledger" },
+      { label: "To", value: "D:\\new-ledger" },
+    ],
+    detail: [
+      "Existing history will be merged into the new ledger without replacing newer records.",
+    ],
+    options: [
+      { value: "migrate", label: "Continue" },
+      { value: "cancel", label: "Cancel" },
+    ],
+    toggle: { label: "Keep the original ledger as a backup", checked: true },
+  });
+
+  // The native dialog still takes one detail string and a button index, so the
+  // adapters between the shared question and that surface are covered here.
+  assert.equal(
+    setupQuestionDetail(question),
+    "From:\nC:\\old-ledger\n\n" +
+    "To:\nD:\\new-ledger\n\n" +
+    "Existing history will be merged into the new ledger without replacing newer records.",
   );
+  assert.deepEqual(
+    setupAnswerAt(question, 0, true),
+    { value: "migrate", toggled: true },
+  );
+  assert.deepEqual(
+    setupAnswerAt(question, 1, false),
+    { value: "cancel", toggled: false },
+  );
+  assert.equal(setupAnswerAt(question, 2, false), null);
 });
 
 test("first-run capture choice treats hooks as best effort and explains recovery", () => {
   assert.deepEqual(capturePolicyPrompt(), {
     message: "How should usage be captured?",
-    detail:
-      "Continuous capture (recommended) uses agent hooks to checkpoint usage while you work. Hooks are best effort, so Agent Usage Stat also reconciles transcripts whenever the application opens and when you choose Sync now.\n\n" +
+    facts: [],
+    detail: [
+      "Continuous capture (recommended) uses agent hooks to checkpoint usage while you work. Hooks are best effort, so Agent Usage Stat also reconciles transcripts whenever the application opens and when you choose Sync now.",
       "Batch sync installs no hooks. Sessions deleted by an agent before the next application sync cannot be recovered.",
-    buttons: ["Use Continuous Capture", "Use Batch Sync"],
+    ],
+    options: [
+      { value: "continuous", label: "Use Continuous Capture" },
+      { value: "batch", label: "Use Batch Sync" },
+    ],
   });
+});
+
+test("the first-run window asks its own questions instead of raising dialogs", async () => {
+  const main = await readFile(join(process.cwd(), "src", "desktop", "main.ts"), "utf8");
+  const firstRun = main.slice(
+    main.indexOf("async function openFirstRunWindow"),
+    main.indexOf("async function synchronizeCachedWindow"),
+  );
+
+  // showOpenDialog is the OS folder picker, which has no in-window equivalent.
+  // Every question and notice the first run raises belongs to the window.
+  assert.doesNotMatch(firstRun, /showMessageBox/);
+  assert.match(firstRun, /askOnStartupScreen\(window, ledgerLocationPrompt\(resolved\)\)/);
+  assert.match(firstRun, /askOnStartupScreen\(window, capturePolicyPrompt\(\)\)/);
+  assert.match(firstRun, /noticeOnStartupScreen\(window, notice\)/);
+  assert.match(firstRun, /failStartupScreen\(window, detail\)/);
+});
+
+test("the setup screen renders questions in the dashboard's visual system", () => {
+  // The setup window is the first thing a user sees, so it carries the same
+  // typography roles, tokens, and dark mode as the dashboard it opens into.
+  assert.match(STARTUP_URL, /^data:text\/html;charset=UTF-8,/);
+  const html = decodeURIComponent(STARTUP_URL.slice(STARTUP_URL.indexOf(",") + 1));
+
+  assert.match(html, /--serif: "Libre Baskerville", Georgia, serif;/);
+  assert.match(html, /--mono: "Geist Mono", "Cascadia Mono", Consolas, monospace;/);
+  assert.match(html, /--sans: "IBM Plex Sans", Aptos, "Segoe UI", sans-serif;/);
+  assert.match(html, /h1 \{[^}]*font-family: var\(--serif\)/s);
+  assert.match(html, /\.facts dd \{[^}]*font-family: var\(--mono\)/s);
+  assert.match(html, /@media \(prefers-color-scheme: dark\)/);
+  assert.doesNotMatch(html, /Segoe UI Variable/);
+
+  // The question surface itself: facts, prose, an optional toggle, and buttons.
+  assert.match(html, /window\.agentUsageStatAsk = \(question, eyebrow, tag\)/);
+  assert.match(html, /id="facts"/);
+  assert.match(html, /id="toggleInput"/);
+  assert.match(html, /id="actions"/);
+});
+
+test("the setup spine and the step copy come from one list", () => {
+  assert.deepEqual(
+    FIRST_RUN_STEPS.map((step) => step.id),
+    ["helper", "storage", "capture", "agents", "sessions"],
+  );
+  for (const step of FIRST_RUN_STEPS) {
+    assert.ok(step.label.length > 0, `${step.id} has no spine label`);
+    assert.ok(step.headline.length > 0, `${step.id} has no headline`);
+    assert.ok(step.detail.length > 0, `${step.id} has no detail`);
+  }
 });
 
 test("the dashboard exposes a corner status for background synchronization", async () => {

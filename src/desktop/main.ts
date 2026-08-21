@@ -33,11 +33,23 @@ import {
   startupIconFilename,
   startupMode,
 } from "./startup-policy.js";
-import { STARTUP_URL, updateStartupScreen } from "./startup-screen.js";
+import {
+  askOnStartupScreen,
+  enterStartupStep,
+  failStartupScreen,
+  installStartupSteps,
+  noticeOnStartupScreen,
+  STARTUP_URL,
+} from "./startup-screen.js";
 import {
   ledgerLocationPrompt,
   ledgerMigrationPrompt,
 } from "./ledger-onboarding.js";
+import {
+  setupAnswerAt,
+  setupQuestionDetail,
+  type SetupNotifier,
+} from "./setup-question.js";
 import {
   mergeUsageLedger,
   removeUsageLedger,
@@ -121,7 +133,7 @@ async function start(): Promise<void> {
     helperRuntime,
     portalRuntime,
     ensureSetup: async () => {
-      await ensureDesktopSetup(false);
+      await ensureDesktopSetup(null);
     },
     createWindow: () => createWindow(PORTAL_URL, false),
     runtimeIconPath: windowIconPath,
@@ -152,72 +164,43 @@ async function openFirstRunWindow(): Promise<void> {
   const window = await createWindow(STARTUP_URL);
   try {
     traceStartup("startup-window-ready");
-    await updateStartupScreen(
-      window,
-      "Connecting the local helper",
-      "Preparing the local process that imports agent sessions into your usage ledger.",
-    );
+    await installStartupSteps(window);
+    await enterStartupStep(window, "helper");
     await helperRuntime.syncInstallation();
     if (helperRuntime.needsSetup()) {
-      await updateStartupScreen(
-        window,
-        "Choosing usage storage",
-        "Select where the durable usage ledger should be kept.",
-      );
+      await enterStartupStep(window, "storage");
       await helperRuntime.configureDataRoot(
         await chooseFirstRunUsageRoot(window),
       );
-      await updateStartupScreen(
-        window,
-        "Choosing capture behavior",
-        "Choose between continuous checkpoints and batch synchronization.",
-      );
+      await enterStartupStep(window, "capture");
       await helperRuntime.configureCapturePolicy(
-        (await chooseCapturePolicy(window)) ?? "continuous",
+        await chooseCapturePolicy(window),
       );
     }
-    await updateStartupScreen(
-      window,
-      "Checking agent connections",
-      "Applying your capture choice to Claude Code, Codex, Copilot CLI, and opencode.",
+    await enterStartupStep(window, "agents");
+    const setupReady = await ensureDesktopSetup(
+      (notice) => noticeOnStartupScreen(window, notice),
     );
-    const setupReady = await ensureDesktopSetup(true);
-    await updateStartupScreen(
-      window,
-      "Reconciling recent sessions",
-      "Building the local dashboard from your usage ledger.",
-    );
+    await enterStartupStep(window, "sessions");
     await portalRuntime.refresh();
     await window.loadURL(firstRunPortalUrl(PORTAL_URL, setupReady));
     await logbookWatcher.start(resolveUsageRootFromDisk().root);
     traceStartup("first-run-complete");
   } catch (error) {
+    // Closing the window mid-setup rejects the pending question. There is no
+    // one left to tell, and the window itself already carries any other
+    // failure, so nothing is raised over it.
+    if (window.isDestroyed()) return;
     const detail = error instanceof Error ? error.message : String(error);
-    await updateStartupScreen(
-      window,
-      "The workspace could not start",
-      detail,
-      true,
-    );
-    await showOperationError("Startup failed", error);
+    await failStartupScreen(window, detail);
   }
 }
 
 async function chooseFirstRunUsageRoot(window: BrowserWindow): Promise<string> {
   while (true) {
     const resolved = resolveUsageRootFromDisk();
-    const prompt = ledgerLocationPrompt(resolved);
-    const choice = await dialog.showMessageBox(window, {
-      type: "question",
-      title: "Usage History Storage",
-      message: prompt.message,
-      detail: prompt.detail,
-      buttons: prompt.buttons,
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-    });
-    if (choice.response === 0) return resolved.root;
+    const answer = await askOnStartupScreen(window, ledgerLocationPrompt(resolved));
+    if (answer.value === "keep") return resolved.root;
 
     const selected = await dialog.showOpenDialog(window, {
       title: "Choose usage ledger folder",
@@ -232,31 +215,16 @@ async function chooseFirstRunUsageRoot(window: BrowserWindow): Promise<string> {
 
 async function chooseCapturePolicy(
   window: BrowserWindow,
-  cancellable = false,
-): Promise<CaptureStrategy | null> {
-  const prompt = capturePolicyPrompt();
-  const buttons = cancellable
-    ? [...prompt.buttons, "Cancel"]
-    : prompt.buttons;
-  const choice = await dialog.showMessageBox(window, {
-    type: "question",
-    title: "Usage Capture",
-    message: prompt.message,
-    detail: prompt.detail,
-    buttons,
-    defaultId: 0,
-    cancelId: cancellable ? 2 : 0,
-    noLink: true,
-  });
-  if (cancellable && choice.response === 2) return null;
-  return choice.response === 0 ? "continuous" : "batch";
+): Promise<CaptureStrategy> {
+  const answer = await askOnStartupScreen(window, capturePolicyPrompt());
+  return answer.value;
 }
 
 async function synchronizeCachedWindow(window: BrowserWindow): Promise<void> {
   try {
     await setPortalSyncState(window, "syncing", "SYNCING");
     await helperRuntime.syncInstallation();
-    await ensureDesktopSetup(true);
+    await ensureDesktopSetup(notifyWithDialog);
     const result = await portalRuntime.refresh();
     await setPortalSyncState(window, "complete", syncDetail(result.updated));
     traceStartup("background-sync-complete");
@@ -313,7 +281,9 @@ async function createWindow(
     height: 960,
     minWidth: 1040,
     minHeight: 700,
-    backgroundColor: "#dfddd6",
+    // Matches --field in both themes, so the frame never flashes the wrong
+    // ground before the first paint.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#171713" : "#dfddd6",
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -430,27 +400,32 @@ async function chooseDataFolder(reload = true): Promise<boolean> {
   try {
     hasExistingHistory = await usageLedgerHasRecords(current);
     if (hasExistingHistory) {
-      const prompt = ledgerMigrationPrompt(current, selected);
+      const question = ledgerMigrationPrompt(current, selected);
       const migration = await showMessageBox({
         type: "question",
         title: "Change Usage Ledger Folder",
-        message: prompt.message,
-        detail: prompt.detail,
-        buttons: prompt.buttons,
+        message: question.message,
+        detail: setupQuestionDetail(question),
+        buttons: question.options.map((option) => option.label),
         defaultId: 0,
         cancelId: 1,
         noLink: true,
-        checkboxLabel: prompt.checkboxLabel,
-        checkboxChecked: prompt.checkboxChecked,
+        checkboxLabel: question.toggle?.label,
+        checkboxChecked: question.toggle?.checked,
       });
-      if (migration.response !== 0) return false;
-      keepOriginal = migration.checkboxChecked;
+      const answer = setupAnswerAt(
+        question,
+        migration.response,
+        migration.checkboxChecked,
+      );
+      if (answer?.value !== "migrate") return false;
+      keepOriginal = answer.toggled;
       await mergeUsageLedger(current, selected);
     }
 
     await helperRuntime.configureDataRoot(selected);
     await helperRuntime.resetSetup();
-    if (!(await ensureDesktopSetup(true))) return false;
+    if (!(await ensureDesktopSetup(notifyWithDialog))) return false;
     await portalRuntime.refresh();
     await logbookWatcher.start(resolveUsageRootFromDisk().root);
     if (reload) await mainWindow?.webContents.reload();
@@ -467,7 +442,7 @@ async function chooseDataFolder(reload = true): Promise<boolean> {
 
 async function repairCaptureSetup(): Promise<void> {
   await helperRuntime.resetSetup();
-  if (!(await ensureDesktopSetup(true))) {
+  if (!(await ensureDesktopSetup(notifyWithDialog))) {
     throw new Error("Capture setup could not be repaired.");
   }
 }
@@ -479,7 +454,7 @@ async function applyCapturePolicy(
   if (!provider && strategy === await helperRuntime.captureStrategy()) return;
   await helperRuntime.configureCapturePolicy(strategy, provider);
   await helperRuntime.resetSetup();
-  if (!(await ensureDesktopSetup(true))) {
+  if (!(await ensureDesktopSetup(notifyWithDialog))) {
     throw new Error("Capture setup is incomplete. Use Repair capture setup.");
   }
 }
@@ -509,7 +484,7 @@ async function applyProviderDataRoot(
 ): Promise<void> {
   await helperRuntime.configureProviderDataRoot(provider, root);
   await helperRuntime.resetSetup();
-  if (!(await ensureDesktopSetup(true))) {
+  if (!(await ensureDesktopSetup(notifyWithDialog))) {
     throw new Error("Agent data location was saved, but capture setup is incomplete.");
   }
   await portalRuntime.refresh();
@@ -587,14 +562,23 @@ function settingsJson(value: unknown, status = 200): Response {
 }
 
 async function showOperationError(title: string, error: unknown): Promise<void> {
-  const detail = error instanceof Error ? error.message : String(error);
-  await showMessageBox({
-    type: "error",
+  await notifyWithDialog({
+    tone: "error",
     title,
     message: title,
-    detail,
+    detail: error instanceof Error ? error.message : String(error),
   });
 }
+
+/** Delivers a setup message over the dashboard, which has no surface for one. */
+const notifyWithDialog: SetupNotifier = async (notice) => {
+  await showMessageBox({
+    type: notice.tone,
+    title: notice.title,
+    message: notice.message,
+    detail: notice.detail,
+  });
+};
 
 function showMessageBox(
   options: Electron.MessageBoxOptions,
@@ -604,22 +588,28 @@ function showMessageBox(
     : dialog.showMessageBox(options);
 }
 
-async function ensureDesktopSetup(interactive: boolean): Promise<boolean> {
+/**
+ * Reports setup trouble through whichever surface is in front. A null notifier
+ * means no one is watching, so an unconfigured helper raises instead.
+ */
+async function ensureDesktopSetup(
+  notify: SetupNotifier | null,
+): Promise<boolean> {
   const setup = await helperRuntime.ensureSetup();
   if (!setup.configured) {
-    if (!interactive) throw new Error(setup.detail || "Desktop setup failed.");
-    await dialog.showMessageBox({
-      type: "warning",
+    if (!notify) throw new Error(setup.detail || "Desktop setup failed.");
+    await notify({
+      tone: "warning",
       title: "Agent Usage Stat Setup",
       message: "The application opened, but agent capture could not be connected.",
-      detail: setup.detail,
+      detail: setup.detail || "Agent capture could not be connected.",
     });
     return false;
   }
 
-  if (interactive && setup.codexNeedsTrust) {
-    await dialog.showMessageBox({
-      type: "info",
+  if (notify && setup.codexNeedsTrust) {
+    await notify({
+      tone: "info",
       title: "Trust the Codex hook",
       message: "Codex needs one security confirmation.",
       detail: "Open /hooks in Codex and trust the Agent Usage Stat hook.",

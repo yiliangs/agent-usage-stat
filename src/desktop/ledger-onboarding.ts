@@ -1,18 +1,8 @@
 import type { ResolvedUsageRoot } from "../utils/usage-root.js";
+import type { SetupQuestion } from "./setup-question.js";
 
-export interface LedgerLocationPrompt {
-  message: string;
-  detail: string;
-  buttons: [string, string];
-}
-
-export interface LedgerMigrationPrompt {
-  message: string;
-  detail: string;
-  buttons: [string, string];
-  checkboxLabel: string;
-  checkboxChecked: boolean;
-}
+export type LedgerLocationChoice = "keep" | "choose";
+export type LedgerMigrationChoice = "migrate" | "cancel";
 
 const SHARED_LEDGER_NOTE =
   "Using multiple computers? Choose a folder in Google Drive, OneDrive, " +
@@ -26,17 +16,20 @@ const LEDGER_PRIVACY_NOTE =
 /** User-facing first-run storage decision derived from the resolved ledger. */
 export function ledgerLocationPrompt(
   resolved: ResolvedUsageRoot,
-): LedgerLocationPrompt {
+): SetupQuestion<LedgerLocationChoice> {
   const isDefault = resolved.source === "default";
-  const location = isDefault ? "On this computer" : "Existing usage history";
   return {
     message: "Where should usage history be stored?",
-    detail:
-      `${location}:\n${resolved.root}\n\n` +
-      `${SHARED_LEDGER_NOTE}\n\n${LEDGER_PRIVACY_NOTE}`,
-    buttons: [
-      isDefault ? "Use Local Storage" : "Use This Folder",
-      "Choose Another Folder...",
+    facts: [
+      {
+        label: isDefault ? "On this computer" : "Existing usage history",
+        value: resolved.root,
+      },
+    ],
+    detail: [SHARED_LEDGER_NOTE, LEDGER_PRIVACY_NOTE],
+    options: [
+      { value: "keep", label: isDefault ? "Use Local Storage" : "Use This Folder" },
+      { value: "choose", label: "Choose Another Folder..." },
     ],
   };
 }
@@ -44,14 +37,24 @@ export function ledgerLocationPrompt(
 export function ledgerMigrationPrompt(
   sourceRoot: string,
   destinationRoot: string,
-): LedgerMigrationPrompt {
+): SetupQuestion<LedgerMigrationChoice> {
   return {
     message: "Migrate existing usage history?",
-    detail:
+    facts: [
+      { label: "From", value: sourceRoot },
+      { label: "To", value: destinationRoot },
+    ],
+    detail: [
       "Existing history will be merged into the new ledger without replacing " +
-      `newer records.\n\nFrom: ${sourceRoot}\nTo: ${destinationRoot}`,
-    buttons: ["Continue", "Cancel"],
-    checkboxLabel: "Keep the original ledger as a backup",
-    checkboxChecked: true,
+      "newer records.",
+    ],
+    options: [
+      { value: "migrate", label: "Continue" },
+      { value: "cancel", label: "Cancel" },
+    ],
+    toggle: {
+      label: "Keep the original ledger as a backup",
+      checked: true,
+    },
   };
 }
