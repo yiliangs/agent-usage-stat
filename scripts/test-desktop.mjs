@@ -191,9 +191,14 @@ try {
     `desktop smoke ok: ${process.platform}/${process.arch} -> ${outRelative}\n`,
   );
 } finally {
+  // Windows holds the image of a process for a moment after it exits, so
+  // deleting the application this smoke test just launched can fail with
+  // EPERM even though every assertion above passed. Retry rather than turn a
+  // successful run into a failed one.
+  const discard = { recursive: true, force: true, maxRetries: 20, retryDelay: 150 };
   await Promise.all([
-    rm(home, { recursive: true, force: true }),
-    rm(out, { recursive: true, force: true }),
+    rm(home, discard),
+    rm(out, discard),
   ]);
 }
 

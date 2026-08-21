@@ -72,21 +72,20 @@ module.exports = {
   rebuildConfig: {},
   hooks: {
     async postMake() {
+      // Windows can still hold a packaged binary the makers have only just
+      // finished reading, so pruning retries rather than failing a build whose
+      // installers are already written.
+      const discard = { recursive: true, force: true, maxRetries: 20, retryDelay: 150 };
+
       const entries = await readdir(artifactRoot, { withFileTypes: true });
       await Promise.all(entries
         .filter((entry) => entry.name !== forgeOutRelative)
-        .map((entry) => rm(path.join(artifactRoot, entry.name), {
-          recursive: true,
-          force: true,
-        })));
+        .map((entry) => rm(path.join(artifactRoot, entry.name), discard)));
 
       const forgeEntries = await readdir(forgeOutDir, { withFileTypes: true });
       await Promise.all(forgeEntries
         .filter((entry) => entry.name !== "make")
-        .map((entry) => rm(path.join(forgeOutDir, entry.name), {
-          recursive: true,
-          force: true,
-        })));
+        .map((entry) => rm(path.join(forgeOutDir, entry.name), discard)));
     },
   },
   makers: [
