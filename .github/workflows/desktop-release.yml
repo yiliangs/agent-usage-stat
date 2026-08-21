@@ -23,7 +23,7 @@ jobs:
             package-lock.json
       - name: Verify tag version
         run: node -e "const v=require('./package.json').version; if(process.env.GITHUB_REF_NAME!=='v'+v) throw new Error('Tag must equal v'+v)"
-      - name: Require Windows signing credentials
+      - name: Import Windows signing certificate
         shell: pwsh
         env:
           WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
@@ -31,13 +31,9 @@ jobs:
         run: |
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_BASE64) -or
               [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
-            throw "Windows signing secrets are required for a release."
+            Write-Host "No Windows signing certificate configured. Building unsigned."
+            exit 0
           }
-      - name: Import Windows signing certificate
-        shell: pwsh
-        env:
-          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
-        run: |
           $certificatePath = Join-Path $env:RUNNER_TEMP "agent-usage-stat.pfx"
           [IO.File]::WriteAllBytes(
             $certificatePath,
@@ -72,27 +68,16 @@ jobs:
             package-lock.json
       - name: Verify tag version
         run: node -e "const v=require('./package.json').version; if(process.env.GITHUB_REF_NAME!=='v'+v) throw new Error('Tag must equal v'+v)"
-      - name: Require macOS signing credentials
-        shell: bash
-        env:
-          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          for name in APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
-            if [[ -z "${!name}" ]]; then
-              echo "Missing required release secret: $name" >&2
-              exit 1
-            fi
-          done
       - name: Import macOS signing certificate
         shell: bash
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
+          if [[ -z "$APPLE_CERTIFICATE_BASE64" || -z "$APPLE_CERTIFICATE_PASSWORD" ]]; then
+            echo "No macOS signing certificate configured. Building ad-hoc signed and unnotarized."
+            exit 0
+          fi
           certificate_path="$RUNNER_TEMP/agent-usage-stat.p12"
           keychain_path="$RUNNER_TEMP/agent-usage-stat.keychain-db"
           keychain_password="agent-usage-stat-ci"

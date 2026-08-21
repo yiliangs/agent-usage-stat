@@ -42,8 +42,12 @@ module.exports = {
       path.join(artifactRoot, "helper", helperName),
       iconRoot,
     ],
-    ...(process.platform === "darwin" && macSigningEnabled
-      ? { osxSign: {} }
+    ...(process.platform === "darwin"
+      ? {
+        osxSign: macSigningEnabled
+          ? {}
+          : { identity: "-", identityValidation: false },
+      }
       : {}),
     ...(process.platform === "darwin" && macNotarizationEnabled
       ? {
