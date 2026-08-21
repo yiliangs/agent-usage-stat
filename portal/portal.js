@@ -805,11 +805,6 @@ function applyPortalView() {
     else if (active) trigger.setAttribute('aria-current', 'page')
     else trigger.removeAttribute('aria-current')
   })
-  const settingsLink = $('[data-capture-monitor-link]')
-  const settingsActive = state.view === 'settings'
-  settingsLink.classList.toggle('active', settingsActive)
-  if (settingsActive) settingsLink.setAttribute('aria-current', 'page')
-  else settingsLink.removeAttribute('aria-current')
   document.body.classList.toggle('settings-active', state.view === 'settings')
 }
 
@@ -1939,10 +1934,6 @@ $$('[data-portal-view]').forEach((button) => button.addEventListener('click', ()
   if (state.view === 'settings') void loadSettings()
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }))
-
-$('[data-capture-monitor-link]').addEventListener('click', () => {
-  $('[data-portal-view="settings"]').click()
-})
 
 $('#settingsView').addEventListener('click', (event) => {
   const button = event.target.closest('[data-settings-action]')

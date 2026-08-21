@@ -108,8 +108,16 @@ test("the settings control distinguishes hover from the active page", async () =
     /\.capture-monitor-link\.active\s*\{[^}]*background:\s*var\(--ink\);[^}]*color:\s*var\(--paper-hi\);/s,
   );
   assert.doesNotMatch(html, /\.capture-monitor-link:hover,\s*\.capture-monitor-link\.active/);
-  assert.match(script, /settingsLink\.classList\.toggle\('active', settingsActive\)/);
-  assert.match(script, /settingsLink\.setAttribute\('aria-current', 'page'\)/);
+  // The control is the only way into Settings, so it carries the view trigger
+  // itself and takes its active state from the one navigation loop rather than
+  // from a second code path written just for it.
+  assert.match(html, /data-capture-monitor-link[^>]*data-portal-view="settings"/);
+  assert.doesNotMatch(script, /settingsLink/);
+  assert.match(
+    script,
+    /\$\$\('\[data-portal-view\]'\)\.forEach\(\(trigger\) => \{[^}]*trigger\.classList\.toggle\('active', active\)/s,
+  );
+  assert.match(script, /trigger\.setAttribute\('aria-current', 'page'\)/);
   assert.match(script, /link\.dataset\.captureStatus = aggregate\.status/);
   assert.doesNotMatch(script, /link\.className = `capture-monitor-link/);
 });
