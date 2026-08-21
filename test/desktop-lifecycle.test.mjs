@@ -2,9 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { squirrelLifecycleEvent } from "../dist/desktop/squirrel-events.js";
+import {
+  promoteStartMenuShortcut,
+  removeStartMenuShortcut,
+  startMenuProgramsDir,
+  startMenuShortcutName,
+} from "../dist/desktop/start-menu-shortcut.js";
 import {
   firstRunPortalUrl,
   startupIconFilename,
@@ -417,4 +424,74 @@ test("Windows packaging includes branded installation and a portable archive", (
     squirrel.config.loadingGif,
     join(process.cwd(), "dist", "icons", "install-loading.gif"),
   );
+});
+
+/**
+ * Windows lists a `.lnk` sitting directly under `Programs` as an application
+ * and a subdirectory as a folder to expand. Squirrel 2.0.1 only knows how to
+ * write into a subdirectory named after the nuspec authors, and that same
+ * field is the uninstall entry's Publisher, so placement is corrected here
+ * rather than by renaming the author (#72).
+ */
+async function startMenuFixture() {
+  const programs = await mkdtemp(join(tmpdir(), "aus-start-menu-"));
+  const authorFolder = join(programs, "Yiliang Shao");
+  await mkdir(authorFolder, { recursive: true });
+  await writeFile(join(authorFolder, "Agent Usage Stat.lnk"), "shortcut");
+  return programs;
+}
+
+test("the Start Menu lists the application itself, not a folder named after its author", async () => {
+  const programs = await startMenuFixture();
+
+  await promoteStartMenuShortcut(programs, "Agent Usage Stat.lnk");
+
+  assert.deepEqual(await readdir(programs), ["Agent Usage Stat.lnk"]);
+  await rm(programs, { recursive: true, force: true });
+});
+
+test("promoting the Start Menu entry twice leaves the same single entry", async () => {
+  const programs = await startMenuFixture();
+
+  await promoteStartMenuShortcut(programs, "Agent Usage Stat.lnk");
+  await promoteStartMenuShortcut(programs, "Agent Usage Stat.lnk");
+
+  assert.deepEqual(await readdir(programs), ["Agent Usage Stat.lnk"]);
+  await rm(programs, { recursive: true, force: true });
+});
+
+test("uninstalling clears both the promoted entry and anything Squirrel left behind", async () => {
+  const programs = await startMenuFixture();
+  await writeFile(join(programs, "Agent Usage Stat.lnk"), "shortcut");
+
+  await removeStartMenuShortcut(programs, "Agent Usage Stat.lnk");
+
+  assert.deepEqual(await readdir(programs), []);
+  await rm(programs, { recursive: true, force: true });
+});
+
+test("the Start Menu entry is named for the installed executable", () => {
+  assert.equal(startMenuShortcutName("Agent Usage Stat.exe"), "Agent Usage Stat.lnk");
+  assert.equal(
+    startMenuProgramsDir({ APPDATA: join("C:", "Users", "person", "AppData", "Roaming") }),
+    join("C:", "Users", "person", "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs"),
+  );
+});
+
+test("every Squirrel lifecycle event that touches shortcuts corrects their placement", async () => {
+  const main = await readFile(join(process.cwd(), "src", "desktop", "main.ts"), "utf8");
+  const install = main.slice(main.indexOf("async function performSquirrelEvent"));
+
+  assert.match(install, /--squirrel-install" \|\| event === "--squirrel-updated"[\s\S]*?promoteStartMenuShortcut\(/);
+  assert.match(install, /--squirrel-uninstall"[\s\S]*?removeStartMenuShortcut\(/);
+});
+
+test("the Squirrel maker leaves the nuspec author alone", () => {
+  // Renaming `authors` would move the Start Menu folder, and would also
+  // rewrite the uninstall entry's Publisher, which reads that same field.
+  const config = require("../forge.config.cjs");
+  const squirrel = config.makers.find((maker) => maker.name.includes("squirrel"));
+
+  assert.equal("authors" in squirrel.config, false);
+  assert.equal("owners" in squirrel.config, false);
 });

@@ -29,6 +29,12 @@ import {
 } from "./portal-runtime.js";
 import { squirrelLifecycleEvent } from "./squirrel-events.js";
 import {
+  promoteStartMenuShortcut,
+  removeStartMenuShortcut,
+  startMenuProgramsDir,
+  startMenuShortcutName,
+} from "./start-menu-shortcut.js";
+import {
   firstRunPortalUrl,
   startupIconFilename,
   startupMode,
@@ -637,9 +643,12 @@ function handleSquirrelEvent(): boolean {
 async function performSquirrelEvent(event: string): Promise<void> {
   const updateExecutable = resolve(dirname(process.execPath), "..", "Update.exe");
   const target = process.execPath.split(/[\\/]/).pop() || "Agent Usage Stat.exe";
+  const programs = startMenuProgramsDir(process.env);
+  const shortcut = startMenuShortcutName(target);
 
   if (event === "--squirrel-install" || event === "--squirrel-updated") {
     await spawnAndWait(updateExecutable, [`--createShortcut=${target}`]);
+    await promoteStartMenuShortcut(programs, shortcut);
     return;
   }
   if (event === "--squirrel-uninstall") {
@@ -651,7 +660,9 @@ async function performSquirrelEvent(event: string): Promise<void> {
       rm(join(helper, ".."), { recursive: true, force: true }),
       rm(desktopSetupStatePath(), { force: true }),
     ]);
-    await spawnAndWait(updateExecutable, [`--removeShortcut=${target}`]);
+    await spawnAndWait(updateExecutable, [`--removeShortcut=${target}`])
+      .catch(() => undefined);
+    await removeStartMenuShortcut(programs, shortcut);
   }
 }
 
