@@ -19,6 +19,8 @@ const MIME_TYPES: Record<string, string> = {
 
 export const PORTAL_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 export const PORTAL_URL = `${PORTAL_ORIGIN}/index.html`;
+/** The status-area glance, the portal's second document. */
+export const PANEL_URL = `${PORTAL_ORIGIN}/panel.html`;
 
 export interface PortalRefreshResult {
   updated: number;

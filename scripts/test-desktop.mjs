@@ -104,6 +104,12 @@ try {
       ...desktopEnvironment,
       AGENT_USAGE_STAT_STARTUP_TRACE: startupTrace,
     },
+    // Windows passes a hidden-window flag from the spawn down to the process
+    // it starts, and the first window shown then stays hidden however often it
+    // is asked to appear. The status-area panel opening is part of what this
+    // run checks, so the flag has to be off; the dashboard window the smoke
+    // creates is not shown either way.
+    { windowsHide: false },
   );
 
   const trace = await readFile(startupTrace, "utf8").catch(() => "no startup trace");
@@ -146,6 +152,33 @@ try {
 
   assert.equal(smoke.home.view, "overview");
   assert.equal(smoke.home.markSelectable, false);
+
+  // The status area is wired on Windows only; the macOS menu bar is issue #47.
+  if (process.platform === "win32") {
+    assert.equal(smoke.statusArea.installed, true);
+    assert.equal(smoke.statusArea.opened, true, JSON.stringify(smoke.statusArea));
+    assert.equal(smoke.statusArea.dismissed, true);
+    // Written after the dashboard window was destroyed: the application is
+    // held open by the status area rather than quitting with its window.
+    assert.equal(smoke.statusArea.residentAfterClose, true);
+    assert.equal(smoke.statusArea.glance.surface, "panel");
+    assert.equal(smoke.statusArea.glance.ready, true);
+    // The fixture ledger is empty, and the panel says so in each band rather
+    // than printing a figure it does not have. The charts are still drawn:
+    // a day has twenty-four hours and a half year has 182 days whether or not
+    // anything happened in them.
+    assert.equal(smoke.statusArea.glance.todayTokens, "0");
+    assert.equal(smoke.statusArea.glance.todayCost, "$0.00");
+    assert.equal(smoke.statusArea.glance.todayNote, "No sessions");
+    assert.equal(smoke.statusArea.glance.todayDelta, "No prior baseline");
+    assert.equal(smoke.statusArea.glance.weekMeta, "0 · $0.00");
+    assert.equal(smoke.statusArea.glance.bars, 24);
+    assert.ok(smoke.statusArea.glance.cells >= 182, `heatmap cells: ${smoke.statusArea.glance.cells}`);
+    assert.equal(smoke.statusArea.glance.models, 0);
+    assert.equal(smoke.statusArea.glance.modelsEmpty, true);
+  } else {
+    assert.equal(smoke.statusArea.installed, false);
+  }
 
   const installedHelper = process.platform === "win32"
     ? join(home, ".agent-usage-stat", "bin", "agent-usage-stat-helper.exe")
@@ -286,13 +319,13 @@ function traceTime(trace, event) {
   return Date.parse(line.slice(0, line.indexOf(" ")));
 }
 
-function run(command, args, environment) {
+function run(command, args, environment, { windowsHide = true } = {}) {
   return new Promise((resolveRun, reject) => {
     const child = spawn(command, args, {
       cwd: root,
       env: environment,
       stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
+      windowsHide,
     });
     let stdout = "";
     let stderr = "";

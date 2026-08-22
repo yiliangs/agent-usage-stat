@@ -1,6 +1,6 @@
 import { createIcons, Settings } from 'lucide'
 import { buildTokenTraffic, robustTokenTrafficScale } from './token-traffic.js'
-import { buildProjectColorIndex, projectSeriesFor } from './timeline-colors.js'
+import { buildProjectColorIndex, modelSeriesFor, projectSeriesFor } from './timeline-colors.js'
 import { selectPortalView } from './portal-navigation.js'
 import { providerMark } from './provider-marks.js'
 import { compact, pct, periodDelta, usd, usdHeadline } from './usage-format.js'
@@ -37,19 +37,6 @@ const state = {
   sessionSort: { key: 'start', direction: -1 },
   sessionQuery: '',
   settings: null,
-}
-
-const MODEL_STYLES = {
-  fable: { variable: '--model-fable', fallback: '#CE604A' },
-  sol: { variable: '--model-sol', fallback: '#00897D' },
-  opus: { variable: '--model-opus', fallback: '#76569A' },
-  sonnet: { variable: '--model-sonnet', fallback: '#2D804F' },
-  haiku: { variable: '--model-haiku', fallback: '#405FA0' },
-  terra: { variable: '--model-terra', fallback: '#A27B18' },
-  luna: { variable: '--model-luna', fallback: '#AA4778' },
-  codex: { variable: '--model-codex', fallback: '#007F9A' },
-  gpt: { variable: '--model-luna', fallback: '#AA4778' },
-  other: { variable: '--muted', fallback: '#66717F' },
 }
 
 const $ = (selector, root = document) => root.querySelector(selector)
@@ -113,7 +100,7 @@ function colorChannels(hex) {
 }
 
 function styleForFamily(family) {
-  const style = MODEL_STYLES[(family || 'other').toLowerCase()] || MODEL_STYLES.other
+  const style = modelSeriesFor(family)
   const base = cssColor(style.variable, style.fallback)
   return { base, color: tintColor(base, .78) }
 }
