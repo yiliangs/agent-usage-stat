@@ -26,7 +26,7 @@ const PANEL = PANEL_SIZE;
 const MARGIN = 8;
 
 test("the panel is one fixed size, whatever screen it opens on", () => {
-  assert.deepEqual(PANEL_SIZE, { width: 320, height: 368 });
+  assert.deepEqual(PANEL_SIZE, { width: 360, height: 636 });
 });
 
 test("the panel opens above an icon on a taskbar along the bottom edge", () => {
@@ -38,10 +38,10 @@ test("the panel opens above an icon on a taskbar along the bottom edge", () => {
     PANEL,
   );
 
-  // Centred on the icon: 1720 + 12 - 160 = 1572, which is inside the work
-  // area, so the centre is kept. 1032 - 368 - 8 = 656 puts its lower edge one
+  // Centred on the icon: 1720 + 12 - 180 = 1552, which is inside the work
+  // area, so the centre is kept. 1032 - 636 - 8 = 388 puts its lower edge one
   // margin above the taskbar.
-  assert.deepEqual(placement, { x: 1572, y: 656 });
+  assert.deepEqual(placement, { x: 1552, y: 388 });
 });
 
 test("the panel opens below an icon on a taskbar along the top edge", () => {
@@ -51,8 +51,8 @@ test("the panel opens below an icon on a taskbar along the top edge", () => {
     PANEL,
   );
 
-  // 900 + 12 - 160 = 752, and 40 + 8 clears the taskbar the icon sits on.
-  assert.deepEqual(placement, { x: 752, y: 48 });
+  // 900 + 12 - 180 = 732, and 40 + 8 clears the taskbar the icon sits on.
+  assert.deepEqual(placement, { x: 732, y: 48 });
 });
 
 test("a panel anchored near a screen edge stays inside the work area", () => {
@@ -73,7 +73,7 @@ test("a display offset from the origin keeps the panel on that display", () => {
     PANEL,
   );
 
-  assert.deepEqual(placement, { x: 3840 - PANEL.width - MARGIN, y: 656 });
+  assert.deepEqual(placement, { x: 3840 - PANEL.width - MARGIN, y: 388 });
 });
 
 test("an icon the shell reports no position for anchors to the work area corner", () => {
@@ -87,7 +87,7 @@ test("an icon the shell reports no position for anchors to the work area corner"
     PANEL,
   );
 
-  assert.deepEqual(placement, { x: 1592, y: 656 });
+  assert.deepEqual(placement, { x: 1552, y: 388 });
 });
 
 test("a work area smaller than the panel still shows the panel's own corner", () => {
@@ -126,6 +126,10 @@ test("the panel takes every figure from the shared model and formatters", async 
   const model = await readFile(join(root, "portal", "glance-model.js"), "utf8");
 
   assert.match(script, /import \{ buildGlance, glanceFigures \} from '\.\/glance-model\.js'/);
+  // Traffic bins and calendar buckets belong to the modules the dashboard
+  // draws its own charts from.
+  assert.match(model, /from '\.\/token-traffic\.js'/);
+  assert.match(model, /from '\.\/timeline-colors\.js'/);
   assert.match(model, /from '\.\/usage-model\.js'/);
   assert.match(model, /from '\.\/usage-format\.js'/);
   // Summing and calendar bucketing belong to usage-model.js, which the

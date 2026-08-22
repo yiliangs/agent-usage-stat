@@ -8,11 +8,11 @@
   <link rel="icon" type="image/svg+xml" href="./logo.svg">
   <style>
     /* The status-area panel is the dashboard's smallest surface, so it carries
-       the same palette and the same typographic roles: serif for the figures a
-       reader comes here to see, mono for the labels around them, sans for
-       prose. The palette is repeated rather than shared because the dashboard
-       ships its own inline, and a stylesheet split across both documents would
-       be a third place to keep them in step. */
+       the dashboard's own devices: hairline rules between every band, serif
+       figures with the same negative tracking, mono for every numeral and
+       label, and one accent. The palette is repeated rather than shared
+       because the dashboard ships its own inline, and a stylesheet split
+       across both documents would be a third place to keep them in step. */
     :root {
       color-scheme: light;
       --field: #dfddd6;
@@ -23,7 +23,19 @@
       --graphite: #686761;
       --muted: #9a9890;
       --line: #cac6bc;
+      --line-dark: #9f9c93;
+      --meter-field: #e5e1d8;
       --accent: #ba5d37;
+      --idle: #d5d6d2;
+      --model-fable: #ce604a;
+      --model-sol: #00897d;
+      --model-opus: #76569a;
+      --model-sonnet: #2d804f;
+      --model-haiku: #405fa0;
+      --model-terra: #a27b18;
+      --model-luna: #aa4778;
+      --model-codex: #007f9a;
+      --texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cpath d='M0 16h2M16 0v2M63 48h-2M48 63v-2' stroke='%23171817' stroke-opacity='.035' stroke-width='.6'/%3E%3Ccircle cx='32' cy='32' r='.55' fill='%23171817' fill-opacity='.028'/%3E%3C/svg%3E");
       --sans: "IBM Plex Sans", Aptos, "Segoe UI", sans-serif;
       --mono: "Geist Mono", "Cascadia Mono", Consolas, monospace;
       --serif: "Libre Baskerville", Georgia, serif;
@@ -39,7 +51,11 @@
         --graphite: #c3bcab;
         --muted: #918a7b;
         --line: #454239;
+        --line-dark: #6a6558;
+        --meter-field: #322f27;
         --accent: #d77a50;
+        --idle: #2b2922;
+        --texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cpath d='M0 16h2M16 0v2M63 48h-2M48 63v-2' stroke='%23eee9db' stroke-opacity='.045' stroke-width='.6'/%3E%3Ccircle cx='32' cy='32' r='.55' fill='%23eee9db' fill-opacity='.035'/%3E%3C/svg%3E");
       }
     }
     * { box-sizing: border-box; }
@@ -47,10 +63,11 @@
     html, body { width: 100%; height: 100%; margin: 0; }
     body {
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr) auto;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
       overflow: hidden;
       border: 1px solid var(--ink);
-      background: var(--field);
+      background-color: var(--paper);
+      background-image: var(--texture);
       color: var(--ink);
       font-family: var(--sans);
       -webkit-font-smoothing: antialiased;
@@ -59,155 +76,281 @@
 
     .panel-head {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       justify-content: space-between;
-      gap: 10px;
-      padding: 11px 14px;
+      gap: 12px;
+      height: 38px;
+      padding: 0 14px;
       border-bottom: 1px solid var(--ink);
-      background: var(--paper);
+      background: var(--paper-hi);
     }
     .wordmark {
       font-family: var(--mono);
-      font-size: 9.5px;
+      font-size: 9px;
       font-weight: 600;
-      letter-spacing: .17em;
+      letter-spacing: .2em;
       text-transform: uppercase;
     }
     .panel-stamp {
       color: var(--muted);
       font-family: var(--mono);
-      font-size: 8.5px;
-      letter-spacing: .14em;
+      font-size: 8px;
+      letter-spacing: .1em;
       text-transform: uppercase;
       white-space: nowrap;
     }
-    .panel-stamp b { color: var(--graphite); font-weight: 600; }
 
-    /* The window is sized for the tallest fallback face this can render in,
-       but a face taller still must push the last band into a scroll rather
-       than have it cut off by the frame. */
-    .panel-body { overflow-y: auto; padding: 4px 14px 10px; }
-    .glance-band { padding: 10px 0; border-bottom: 1px solid var(--line); }
-    .glance-band:last-child { border-bottom: 0; }
-    .glance-band h2 {
-      margin: 0 0 7px;
-      color: var(--muted);
-      font-family: var(--mono);
-      font-size: 8.5px;
-      font-weight: 600;
-      letter-spacing: .19em;
-      text-transform: uppercase;
-    }
-    .glance-figures {
+    /* Two headline figures, one row, each in half the panel. */
+    .glance-hero {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-      align-items: baseline;
+      border-bottom: 1px solid var(--ink);
     }
-    .glance-value {
-      margin: 0;
+    .glance-hero > div { padding: 13px 14px; }
+    .glance-hero > div:first-child { border-right: 1px solid var(--line); }
+    .glance-hero span {
+      display: block;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 8px;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+    .glance-hero b {
+      display: block;
+      margin-top: 10px;
       overflow: hidden;
       font-family: var(--serif);
-      font-size: 20px;
-      line-height: 1.15;
+      font-size: 27px;
+      font-weight: 400;
+      line-height: 1.05;
+      letter-spacing: -.04em;
       white-space: nowrap;
     }
-    .glance-value.money { color: var(--accent); }
+    .glance-hero .money { color: var(--accent); }
     .glance-note {
-      margin: 5px 0 0;
+      display: block;
+      margin-top: 5px;
       overflow: hidden;
       color: var(--graphite);
-      font-size: 11px;
+      font-family: var(--mono);
+      font-size: 10px;
       white-space: nowrap;
     }
-    .glance-name {
+
+    .panel-body { overflow-y: auto; }
+    .glance-band { padding: 13px 14px 12px; border-bottom: 1px solid var(--line); }
+    .glance-band-head {
       display: flex;
       align-items: baseline;
       justify-content: space-between;
       gap: 10px;
+      margin-bottom: 10px;
+    }
+    .glance-band-head h2 {
       margin: 0;
-      font-size: 12.5px;
-      font-weight: 500;
-    }
-    .glance-name span {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .glance-name time {
-      color: var(--muted);
       font-family: var(--mono);
-      font-size: 9.5px;
-      letter-spacing: .08em;
-      white-space: nowrap;
-    }
-    .glance-detail {
-      margin: 4px 0 0;
-      overflow: hidden;
-      color: var(--graphite);
-      font-family: var(--mono);
-      font-size: 10.5px;
-      letter-spacing: .02em;
-      white-space: nowrap;
-    }
-    .glance-empty { margin: 0; color: var(--muted); font-size: 11.5px; }
-
-    .panel-foot {
-      display: grid;
-      padding: 10px 14px 12px;
-      border-top: 1px solid var(--ink);
-      background: var(--paper-hi);
-    }
-    .panel-foot button {
-      padding: 8px 10px;
-      border: 1px solid var(--ink);
-      background: var(--paper);
-      color: var(--ink);
-      cursor: pointer;
-      font-family: var(--mono);
-      font-size: 9.5px;
+      font-size: 8.5px;
       font-weight: 600;
       letter-spacing: .16em;
       text-transform: uppercase;
     }
-    .panel-foot button:hover { background: var(--ink); color: var(--paper-hi); }
+    .glance-meta {
+      overflow: hidden;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 8.5px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    /* Traffic: one bar an hour against two hairline gridlines, so a tall hour
+       reads as a quantity rather than only as taller than its neighbour. */
+    .glance-plot { position: relative; }
+    .glance-plot::before,
+    .glance-plot::after {
+      position: absolute;
+      right: 0;
+      left: 0;
+      height: 1px;
+      background: var(--line);
+      content: "";
+    }
+    .glance-plot::before { top: 0; }
+    .glance-plot::after { top: 50%; }
+    .glance-traffic {
+      position: relative;
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(0, 1fr);
+      align-items: end;
+      gap: 1px;
+      height: 58px;
+      border-bottom: 1px solid var(--ink);
+    }
+    .glance-traffic i { display: block; min-height: 1px; background: var(--ink); }
+    .glance-traffic i[data-empty] { background: var(--idle); }
+    .glance-axis {
+      display: flex;
+      justify-content: space-between;
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 8px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    /* Activity: a day a cell, a week a column, twenty-six weeks across. */
+    .glance-heatmap {
+      display: grid;
+      grid-auto-flow: column;
+      grid-template-rows: repeat(7, 10px);
+      grid-auto-columns: 10px;
+      gap: 2px;
+      justify-content: start;
+    }
+    .glance-heatmap i { display: block; background: var(--idle); }
+    .glance-heatmap i[data-level="1"] { background: rgba(var(--ink-rgb), .22); }
+    .glance-heatmap i[data-level="2"] { background: rgba(var(--ink-rgb), .42); }
+    .glance-heatmap i[data-level="3"] { background: rgba(var(--ink-rgb), .68); }
+    .glance-heatmap i[data-level="4"] { background: var(--accent); }
+    .glance-heatmap i[data-pad] { background: transparent; }
+
+    /* Models: one meter a family, so the shares compare along one edge. */
+    .glance-models { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .glance-model { display: flex; align-items: center; gap: 10px; }
+    .glance-model span:first-child {
+      width: 52px;
+      flex: none;
+      overflow: hidden;
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .glance-meter { flex-grow: 1; height: 8px; background: var(--meter-field); }
+    .glance-meter i { display: block; height: 100%; }
+    .glance-share {
+      width: 32px;
+      flex: none;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      text-align: right;
+    }
+    .glance-empty { margin: 0; color: var(--muted); font-size: 11px; }
+
+    .glance-foot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .glance-foot > div { padding: 12px 14px; }
+    .glance-foot > div:first-child { border-right: 1px solid var(--line); }
+    .glance-foot span {
+      display: block;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 8px;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+    .glance-name {
+      display: block;
+      margin-top: 6px;
+      overflow: hidden;
+      font-size: 12px;
+      font-weight: 500;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .glance-detail {
+      display: block;
+      margin-top: 3px;
+      overflow: hidden;
+      color: var(--graphite);
+      font-family: var(--mono);
+      font-size: 9.5px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .panel-open {
+      height: 38px;
+      border: 0;
+      border-top: 1px solid var(--ink);
+      background: var(--ink);
+      color: var(--paper);
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    .panel-open:hover { background: var(--accent); }
   </style>
 </head>
 <body data-surface="panel">
   <header class="panel-head">
-    <span class="wordmark">Agent Usage Stat</span>
-    <span class="panel-stamp">Updated <b data-glance="updated">—</b></span>
+    <span class="wordmark">Usage</span>
+    <span class="panel-stamp">Synced <b data-glance="updated">—</b></span>
   </header>
+
+  <section class="glance-hero">
+    <div>
+      <span>Tokens today</span>
+      <b data-glance="today-tokens">—</b>
+      <small class="glance-note" data-glance="today-note">Reading the ledger</small>
+    </div>
+    <div>
+      <span>Spend today</span>
+      <b class="money" data-glance="today-cost">—</b>
+      <small class="glance-note" data-glance="today-delta">Reading the ledger</small>
+    </div>
+  </section>
+
   <main class="panel-body">
     <section class="glance-band">
-      <h2>Today</h2>
-      <div class="glance-figures">
-        <p class="glance-value" data-glance="today-tokens">—</p>
-        <p class="glance-value money" data-glance="today-cost">—</p>
+      <div class="glance-band-head">
+        <h2>Traffic / 24h</h2>
+        <span class="glance-meta" data-glance="traffic-peak">—</span>
       </div>
-      <p class="glance-note" data-glance="today-note">Reading the ledger</p>
+      <div class="glance-plot">
+        <div class="glance-traffic" data-glance-traffic></div>
+      </div>
+      <p class="glance-axis" data-glance-axis></p>
     </section>
+
     <section class="glance-band">
-      <h2>Last 7 days</h2>
-      <div class="glance-figures">
-        <p class="glance-value" data-glance="week-tokens">—</p>
-        <p class="glance-value money" data-glance="week-cost">—</p>
+      <div class="glance-band-head">
+        <h2>Activity / 26w</h2>
+        <span class="glance-meta" data-glance="activity-note">—</span>
       </div>
-      <p class="glance-note" data-glance="week-note">Reading the ledger</p>
+      <div class="glance-heatmap" data-glance-heatmap></div>
     </section>
-    <section class="glance-band" data-glance-latest>
-      <h2>Latest session</h2>
-      <p class="glance-name">
-        <span data-glance="latest-project">—</span>
-        <time data-glance="latest-when"></time>
-      </p>
-      <p class="glance-detail" data-glance="latest-detail">—</p>
-      <p class="glance-empty" data-glance-empty hidden>No sessions recorded yet.</p>
+
+    <section class="glance-band">
+      <div class="glance-band-head">
+        <h2>Models / 7d</h2>
+        <span class="glance-meta" data-glance="week-meta">—</span>
+      </div>
+      <ul class="glance-models" data-glance-models></ul>
+      <p class="glance-empty" data-glance-models-empty hidden>No sessions in the last seven days.</p>
     </section>
   </main>
-  <footer class="panel-foot">
-    <button type="button" data-panel-action="open-dashboard">Open dashboard</button>
-  </footer>
+
+  <section class="glance-foot">
+    <div>
+      <span>Top project</span>
+      <b class="glance-name" data-glance="project-name">—</b>
+      <small class="glance-detail" data-glance="project-note">—</small>
+    </div>
+    <div data-glance-latest>
+      <span>Latest / <b data-glance="latest-when">—</b></span>
+      <b class="glance-name" data-glance="latest-project">—</b>
+      <small class="glance-detail" data-glance="latest-detail">—</small>
+    </div>
+  </section>
+
+  <button type="button" class="panel-open" data-panel-action="open-dashboard">Open dashboard</button>
   <script type="module" src="./panel.js"></script>
 </body>
 </html>

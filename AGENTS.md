@@ -63,7 +63,8 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `portal/portal.js`: client-side aggregation, navigation, charts, tables, and detail interactions
 - `portal/usage-format.js`: numeric formats, each bounded to the width of the slot it feeds
 - `portal/usage-model.js`: the one owner of normalization, summing, and calendar bucketing
-- `portal/glance-model.js`: which sessions the status-area panel counts, and the strings it prints
+- `portal/glance-model.js`: which sessions the status-area panel counts, its charts, and the strings it prints
+- `portal/timeline-colors.js`: the portal's two colour axes, project and model family
 - `scripts/portal-probe-runner.mjs`: the one headless-Chrome harness the rendered-layout guards share
 - `scripts/measure-portal-layout.mjs`: catches panels whose numbers wrap or clip
 - `scripts/portal-timeline-probe.js`: reports what each session block on the timeline actually draws
@@ -78,7 +79,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - Never let a recomputation replace a recorded session with lower tokens or cost.
 - A session's project comes from `project-name.ts` and nowhere else. `cwd` is the recorded fact; `project` is derived from it, so a worktree checkout counts toward the project it was cut from rather than the worktree directory. The portal re-derives it for shards written before a layout was known, and otherwise leaves a recorded name alone.
 - Every numeric format that feeds a single-line panel slot is bounded in `portal/usage-format.js` and declared in `SLOT_BUDGET`. Panels are sized once; the values they hold are not.
-- The portal builds two documents from one Vite root: `index.html` for the dashboard and `panel.html` for the status-area glance. Both read the same generated snapshot through `usage-model.js`; neither aggregates the ledger on its own.
+- The portal builds two documents from one Vite root: `index.html` for the dashboard and `panel.html` for the status-area glance. Both read the same generated snapshot, and both take summing, day bucketing, traffic bins, and series colours from `usage-model.js`, `token-traffic.js`, and `timeline-colors.js`; neither aggregates the ledger on its own.
 - The status-area icon exists on Windows only, decided in `status-area-policy.ts`. Wherever it exists, closing the dashboard hands the application to it rather than quitting, and its panel window is what keeps the process alive.
 - Every asset `portal/index.html` references lives inside the Vite root. A path that leaves `portal/` resolves during the build and falls through to the SPA fallback in the development server.
 - Parse JSONL line by line with per-line error isolation. opencode's records are JSON bodies in database columns; parse them per row with the same isolation.

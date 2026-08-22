@@ -113,8 +113,12 @@ interface PanelGlance {
   todayTokens: string | null;
   todayCost: string | null;
   todayNote: string | null;
-  weekNote: string | null;
-  empty: boolean;
+  todayDelta: string | null;
+  weekMeta: string | null;
+  bars: number;
+  cells: number;
+  models: number;
+  modelsEmpty: boolean;
 }
 
 /**
@@ -169,8 +173,12 @@ function readPanelGlance(panel: BrowserWindow): Promise<PanelGlance> {
       todayTokens: read('today-tokens'),
       todayCost: read('today-cost'),
       todayNote: read('today-note'),
-      weekNote: read('week-note'),
-      empty: !document.querySelector('[data-glance-empty]')?.hidden,
+      todayDelta: read('today-delta'),
+      weekMeta: read('week-meta'),
+      bars: document.querySelectorAll('.glance-traffic i').length,
+      cells: document.querySelectorAll('.glance-heatmap i').length,
+      models: document.querySelectorAll('.glance-model').length,
+      modelsEmpty: !document.querySelector('[data-glance-models-empty]')?.hidden,
     };
   })()`);
 }

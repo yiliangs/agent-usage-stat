@@ -69,13 +69,18 @@
   /** The status-area panel, 320px wide at every screen size. Its budgets are
    *  the `glance` entries in `portal/usage-format.js`. */
   const PANEL_SLOTS = [
-    [".glance-value", "line", "panel figure"],
-    [".glance-note", "line", "panel comparison"],
-    [".glance-detail", "line", "latest session figures"],
-    [".glance-name span", "trim", "latest session project"],
-    [".glance-name time", "line", "latest session time"],
+    [".glance-hero span", "line", "headline label"],
+    [".glance-hero b", "line", "headline figure"],
+    [".glance-note", "line", "line under a headline figure"],
+    [".glance-band-head h2", "line", "band label"],
+    [".glance-meta", "line", "band figures"],
+    [".glance-axis span", "line", "traffic axis mark"],
+    [".glance-model span", "trim", "model family and share"],
+    [".glance-foot span", "line", "footer label"],
+    [".glance-name", "trim", "footer name"],
+    [".glance-detail", "trim", "footer figures"],
     [".panel-stamp", "line", "snapshot stamp"],
-    [".panel-foot button", "line", "dashboard control"],
+    [".panel-open", "line", "dashboard control"],
   ];
 
   /** The nearest ancestor that hides overflow. A scrollable ancestor stops the

@@ -26,12 +26,12 @@ export interface Point {
 /**
  * The panel's size, fixed at every screen size and on every display.
  *
- * It is wide enough for two figures side by side and tall enough for the three
- * bands it carries, with room to spare for a taller font fallback. The
- * `glance` entries in `portal/usage-format.js` bound what those figures may
- * print at this width.
+ * It holds two headline figures side by side, then a day of traffic by the
+ * hour, half a year of activity, the week split by model, and a footer naming
+ * the busiest project and the session that just ended. The `glance` entries in
+ * `portal/usage-format.js` bound what its figures may print at this width.
  */
-export const PANEL_SIZE = { width: 320, height: 368 };
+export const PANEL_SIZE = { width: 360, height: 636 };
 
 /** Gap between the panel and both the icon and the edges of the work area. */
 export const PANEL_MARGIN = 8;

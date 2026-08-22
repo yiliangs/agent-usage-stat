@@ -163,13 +163,19 @@ try {
     assert.equal(smoke.statusArea.residentAfterClose, true);
     assert.equal(smoke.statusArea.glance.surface, "panel");
     assert.equal(smoke.statusArea.glance.ready, true);
-    // The fixture ledger is empty, and the panel says so rather than printing
-    // a figure it does not have.
+    // The fixture ledger is empty, and the panel says so in each band rather
+    // than printing a figure it does not have. The charts are still drawn:
+    // a day has twenty-four hours and a half year has 182 days whether or not
+    // anything happened in them.
     assert.equal(smoke.statusArea.glance.todayTokens, "0");
     assert.equal(smoke.statusArea.glance.todayCost, "$0.00");
     assert.equal(smoke.statusArea.glance.todayNote, "No sessions");
-    assert.equal(smoke.statusArea.glance.weekNote, "No prior baseline");
-    assert.equal(smoke.statusArea.glance.empty, true);
+    assert.equal(smoke.statusArea.glance.todayDelta, "No prior baseline");
+    assert.equal(smoke.statusArea.glance.weekMeta, "0 · $0.00");
+    assert.equal(smoke.statusArea.glance.bars, 24);
+    assert.ok(smoke.statusArea.glance.cells >= 182, `heatmap cells: ${smoke.statusArea.glance.cells}`);
+    assert.equal(smoke.statusArea.glance.models, 0);
+    assert.equal(smoke.statusArea.glance.modelsEmpty, true);
   } else {
     assert.equal(smoke.statusArea.installed, false);
   }
