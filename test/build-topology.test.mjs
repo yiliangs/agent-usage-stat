@@ -37,8 +37,8 @@ test("every asset the portal references lives inside the Vite root", () => {
   const page = readFileSync(join(root, "portal", "index.html"), "utf8");
   const referenced = [
     ...page.matchAll(/url\("([^"]+)"\)/g),
-    ...page.matchAll(/<link\s[^>]*href="([^"]+)"/gi),
-    ...page.matchAll(/<img\s[^>]*src="([^"]+)"/gi),
+    ...page.matchAll(/<link\s[^>]*\bhref="([^"]+)"/gi),
+    ...page.matchAll(/<img\s[^>]*\bsrc="([^"]+)"/gi),
   ]
     .map(([, url]) => url)
     .filter((url) => !/^(?:data:|https?:)/i.test(url));
