@@ -294,19 +294,20 @@ function applyLines(state: StoredSnapshot, content: string): void {
       continue;
     }
 
+    const declared = declaredModel(record);
+    if (declared) state.currentModel = declared;
+
     if (
       record.type === "event_msg" &&
-      record.payload?.type === "thread_settings_applied" &&
-      typeof record.payload.thread_settings?.service_tier === "string"
+      record.payload?.type === "thread_settings_applied"
     ) {
-      state.currentServiceTier = record.payload.thread_settings.service_tier;
+      if (typeof record.payload.thread_settings?.service_tier === "string") {
+        state.currentServiceTier = record.payload.thread_settings.service_tier;
+      }
       continue;
     }
 
     if (record.type === "turn_context") {
-      if (record.payload?.model) {
-        state.currentModel = normalizeModelId(record.payload.model);
-      }
       const id = record.payload?.turn_id || `turn-${Object.keys(state.turns).length + 1}`;
       const timestamp = record.timestamp || "";
       state.currentTurnId = id;
@@ -543,14 +544,36 @@ function usageKey(usage: CodexTokenUsage): string {
   ].join(":");
 }
 
+/**
+ * The model a rollout record declares, from either surface Codex uses to
+ * declare one. `turn_context` carries the model a turn opened with; a switch
+ * made inside a turn is announced only through `thread_settings_applied`, and
+ * no fresh `turn_context` follows until the next turn begins. Reading just the
+ * first surface bills every event in that gap to the superseded model.
+ */
+function declaredModel(record: CodexRolloutRecord): string | null {
+  if (record.type === "turn_context" && record.payload?.model) {
+    return normalizeModelId(record.payload.model);
+  }
+  if (
+    record.type === "event_msg" &&
+    record.payload?.type === "thread_settings_applied" &&
+    record.payload.thread_settings?.model
+  ) {
+    return normalizeModelId(record.payload.thread_settings.model);
+  }
+  return null;
+}
+
 function firstDeclaredModel(content: string): string | null {
   for (const line of content.split("\n")) {
-    if (!line.includes("turn_context")) continue;
+    if (
+      !line.includes("turn_context") &&
+      !line.includes("thread_settings_applied")
+    ) continue;
     try {
-      const record = JSON.parse(line) as CodexRolloutRecord;
-      if (record.type === "turn_context" && record.payload?.model) {
-        return normalizeModelId(record.payload.model);
-      }
+      const model = declaredModel(JSON.parse(line) as CodexRolloutRecord);
+      if (model) return model;
     } catch {
       continue;
     }

@@ -737,3 +737,75 @@ test("detached Codex hook performs a quiet usage update", async () => {
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test("Codex credits usage after a mid-turn model switch to the model that produced it", async () => {
+  // Codex announces a /model switch through thread_settings_applied and emits
+  // no fresh turn_context until the next turn starts. Observed in rollout
+  // 019f865c: 20 billing events ran on gpt-5.6-luna while the last
+  // turn_context still declared gpt-5.6-sol.
+  const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-model-switch-"));
+  const path = join(dir, "rollout-model-switch.jsonl");
+  const beforeSwitch = {
+    input_tokens: 1000,
+    cached_input_tokens: 0,
+    output_tokens: 100,
+    total_tokens: 1100,
+  };
+  const afterSwitch = {
+    input_tokens: 2000,
+    cached_input_tokens: 0,
+    output_tokens: 200,
+    total_tokens: 2200,
+  };
+
+  await writeFile(
+    path,
+    [
+      line("turn_context", { turn_id: "one", model: "gpt-5.6-sol" }),
+      line("event_msg", {
+        type: "token_count",
+        info: {
+          total_token_usage: beforeSwitch,
+          last_token_usage: beforeSwitch,
+        },
+      }),
+      line("event_msg", {
+        type: "thread_settings_applied",
+        thread_settings: {
+          model: "gpt-5.6-luna",
+          service_tier: "default",
+        },
+      }),
+      line("event_msg", {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: 3000,
+            cached_input_tokens: 0,
+            output_tokens: 300,
+            total_tokens: 3300,
+          },
+          last_token_usage: afterSwitch,
+        },
+      }),
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    const provider = new CodexProvider();
+    const { sessionData: usage, unknownModels } = await provider.readSession(
+      path,
+      "fallback",
+    );
+
+    assert.deepEqual(
+      usage.modelBreakdowns.map((breakdown) => breakdown.modelName),
+      ["gpt-5.6-sol", "gpt-5.6-luna"],
+    );
+    // Published list rates: Sol $5 in / $30 out, Luna $1 in / $6 out per MTok.
+    assert.equal(Number(usage.totalCost.toFixed(6)), 0.0112);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

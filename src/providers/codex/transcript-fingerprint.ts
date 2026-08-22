@@ -6,7 +6,7 @@ import { pricingFingerprintSource } from "./pricing.js";
 const TAIL_BYTES = 64 * 1024;
 // Bump only for usage-parser semantic changes. Pricing-table changes are
 // included automatically through pricingFingerprintSource().
-const USAGE_ALGORITHM_VERSION = "codex-usage-v4";
+const USAGE_ALGORITHM_VERSION = "codex-usage-v5";
 
 // Lazy, memoized on the feed fingerprint: the remote pricing feed loads after
 // module import, so a version computed at import time would miss it.
