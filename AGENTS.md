@@ -57,12 +57,14 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `portal/scripts/build-data.mjs`: browser artifact builder
 - `portal/index.html`: integrated analytics layout and visual system
 - `portal/logo.svg`: the single brand source, feeding the header mark, the favicon, and every OS icon
+- `portal/fonts/`: the typefaces the application ships, and their licence
 - `portal/portal.js`: client-side aggregation, navigation, charts, tables, and detail interactions
 - `portal/usage-format.js`: numeric formats, each bounded to the width of the slot it feeds
 - `scripts/portal-probe-runner.mjs`: the one headless-Chrome harness the rendered-layout guards share
 - `scripts/measure-portal-layout.mjs`: catches panels whose numbers wrap or clip
 - `scripts/portal-timeline-probe.js`: reports what each session block on the timeline actually draws
 - `scripts/portal-heatmap-probe.js`: reports what clicking each heatmap day cell opens
+- `scripts/typeface-probe.js`: reports faces a rendered surface draws with but does not ship
 - `scripts/install-local.mjs`: refreshes the installed application in place from a packaged build
 
 ## Invariants
@@ -74,6 +76,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - A session's project comes from `project-name.ts` and nowhere else. `cwd` is the recorded fact; `project` is derived from it, so a worktree checkout counts toward the project it was cut from rather than the worktree directory. The portal re-derives it for shards written before a layout was known, and otherwise leaves a recorded name alone.
 - Every numeric format that feeds a single-line panel slot is bounded in `portal/usage-format.js` and declared in `SLOT_BUDGET`. Panels are sized once; the values they hold are not.
 - Every asset `portal/index.html` references lives inside the Vite root. A path that leaves `portal/` resolves during the build and falls through to the SPA fallback in the development server.
+- The application ships the faces it is designed in. Naming a family in `--sans`, `--mono`, or `--serif` only states a preference, so a machine without it falls silently through to the next entry in the list. Both surfaces that declare those tokens carry their own faces: the dashboard from `portal/fonts/`, the first-run window inline, because it loads from a `data:` URL and has no path to resolve against. Bundle the weights the rendered surface asks for, measured rather than read off the declarations.
 - Parse JSONL line by line with per-line error isolation. opencode's records are JSON bodies in database columns; parse them per row with the same isolation.
 - opencode keeps every session in one SQLite database, so `FoundSession.transcriptPath` is that database and the session id is the key, not a fallback. A session's usage folds in its `parent_id` descendants.
 - A host's hook root follows its data root, including an override, unless the host declares a separate hook directory. Only opencode does.

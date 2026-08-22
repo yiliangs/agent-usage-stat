@@ -29,6 +29,38 @@ test("the brand source is the portal's own asset", () => {
   assert.equal(existsSync(join(root, "assets")), false);
 });
 
+test("every asset the portal references lives inside the Vite root", () => {
+  // Only the build resolves these paths on disk. A reference that leaves
+  // portal/ still packages, then 404s in the development server, so the
+  // check is where the reference is written rather than where it is served
+  // (#57). The bundled typefaces joined the brand mark under that rule (#73).
+  const page = readFileSync(join(root, "portal", "index.html"), "utf8");
+  const referenced = [
+    ...page.matchAll(/url\("([^"]+)"\)/g),
+    ...page.matchAll(/<link\s[^>]*href="([^"]+)"/gi),
+    ...page.matchAll(/<img\s[^>]*src="([^"]+)"/gi),
+  ]
+    .map(([, url]) => url)
+    .filter((url) => !/^(?:data:|https?:)/i.test(url));
+  const outside = [...new Set(referenced)]
+    .filter((url) => !existsSync(join(root, "portal", url.replace(/^\.\//, ""))))
+    .sort();
+
+  assert.ok(referenced.length > 0, "the portal must reference its own assets");
+  assert.deepEqual(outside, []);
+});
+
+test("the build carries the typefaces and their licence", () => {
+  // The packaged application takes only dist/, so a face left behind in the
+  // source tree is a face the user never receives, and the Open Font License
+  // asks for its notice to travel with the files it covers.
+  const bundled = readdirSync(join(root, "portal", "fonts")).sort();
+  const built = readdirSync(join(root, "dist", "portal", "fonts")).sort();
+
+  assert.ok(bundled.includes("OFL.txt"));
+  assert.deepEqual(built, bundled);
+});
+
 test("the repository root contains no disposable preview artifacts", () => {
   const disposable = readdirSync(root)
     .filter((name) =>
