@@ -60,6 +60,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `portal/index.html`: integrated analytics layout and visual system
 - `portal/panel.html`: the status-area glance, the portal's second document
 - `portal/logo.svg`: the single brand source, feeding the header mark, the favicon, and every OS icon
+- `portal/fonts/`: the typefaces the application ships, and their licence
 - `portal/portal.js`: client-side aggregation, navigation, charts, tables, and detail interactions
 - `portal/usage-format.js`: numeric formats, each bounded to the width of the slot it feeds
 - `portal/usage-model.js`: the one owner of normalization, summing, and calendar bucketing
@@ -69,6 +70,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `scripts/measure-portal-layout.mjs`: catches panels whose numbers wrap or clip
 - `scripts/portal-timeline-probe.js`: reports what each session block on the timeline actually draws
 - `scripts/portal-heatmap-probe.js`: reports what clicking each heatmap day cell opens
+- `scripts/typeface-probe.js`: reports faces a rendered surface draws with but does not ship
 - `scripts/install-local.mjs`: refreshes the installed application in place from a packaged build
 
 ## Invariants
@@ -82,6 +84,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - The portal builds two documents from one Vite root: `index.html` for the dashboard and `panel.html` for the status-area glance. Both read the same generated snapshot, and both take summing, day bucketing, traffic bins, and series colours from `usage-model.js`, `token-traffic.js`, and `timeline-colors.js`; neither aggregates the ledger on its own.
 - The status-area icon exists on Windows only, decided in `status-area-policy.ts`. Wherever it exists, closing the dashboard hands the application to it rather than quitting, and its panel window is what keeps the process alive.
 - Every asset `portal/index.html` references lives inside the Vite root. A path that leaves `portal/` resolves during the build and falls through to the SPA fallback in the development server.
+- The application ships the faces it is designed in. Naming a family in `--sans`, `--mono`, or `--serif` only states a preference, so a machine without it falls silently through to the next entry in the list. Both surfaces that declare those tokens carry their own faces: the dashboard from `portal/fonts/`, the first-run window inline, because it loads from a `data:` URL and has no path to resolve against. Bundle the weights the rendered surface asks for, measured rather than read off the declarations.
 - Parse JSONL line by line with per-line error isolation. opencode's records are JSON bodies in database columns; parse them per row with the same isolation.
 - opencode keeps every session in one SQLite database, so `FoundSession.transcriptPath` is that database and the session id is the key, not a fallback. A session's usage folds in its `parent_id` descendants.
 - A host's hook root follows its data root, including an override, unless the host declares a separate hook directory. Only opencode does.

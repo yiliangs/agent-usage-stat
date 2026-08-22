@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import type { BrowserWindow } from "electron";
 import type {
   SetupAnswer,
@@ -49,14 +51,69 @@ export const FIRST_RUN_STEPS = [
 
 export type FirstRunStep = (typeof FIRST_RUN_STEPS)[number]["id"];
 
+/**
+ * The faces this window draws in, at the weights it draws them.
+ *
+ * Naming a family in the tokens below does not put it on the machine, so a
+ * workstation that happens to have IBM Plex Sans installed renders the design
+ * while every other machine quietly falls back to Segoe UI (#73). The window
+ * loads from a `data:` URL and therefore has no origin to resolve a font path
+ * against, so each face travels inside the document instead of beside it.
+ *
+ * Latin only, and only these weights. The dashboard bundles more because it
+ * draws more; this window shows fixed English copy plus a folder path, and
+ * every byte here is spent before the first frame. A character outside the
+ * subset still falls back for that glyph alone.
+ *
+ * test/typeface-shipping.test.mjs measures what this window actually asks for
+ * and fails when the two lists part company.
+ */
+const STARTUP_FACES = [
+  { family: "IBM Plex Sans", stem: "ibm-plex-sans", weights: [400, 500, 600] },
+  { family: "Geist Mono", stem: "geist-mono", weights: [400, 600] },
+  { family: "Libre Baskerville", stem: "libre-baskerville", weights: [400] },
+] as const;
+
+/** The `@font-face` rules for those faces, each carrying its own bytes. */
+function startupFaceRules(): string {
+  const rules: string[] = [];
+  for (const { family, stem, weights } of STARTUP_FACES) {
+    for (const weight of weights) {
+      const file = new URL(
+        `../portal/fonts/${stem}-latin-${weight}-normal.woff2`,
+        import.meta.url,
+      );
+      let encoded: string;
+      try {
+        encoded = readFileSync(file).toString("base64");
+      } catch {
+        // A missing face is a broken build, not a reason to refuse to start:
+        // this module is imported on the path to the only window the user
+        // has. The guard test is what turns the omission into a failure.
+        continue;
+      }
+      rules.push(`    @font-face {
+      font-family: "${family}";
+      font-style: normal;
+      font-weight: ${weight};
+      font-display: block;
+      src: url("data:font/woff2;base64,${encoded}") format("woff2");
+    }`);
+    }
+  }
+  return rules.join("\n\n");
+}
+
 const STARTUP_HTML = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:">
   <title>Agent Usage Stat</title>
   <style>
+${startupFaceRules()}
+
     :root {
       color-scheme: light;
       --field: #dfddd6;
