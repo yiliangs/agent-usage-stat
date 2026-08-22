@@ -6,13 +6,14 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'">
   <title>Agent Usage Stat</title>
   <link rel="icon" type="image/svg+xml" href="./logo.svg">
+  <link rel="stylesheet" href="./fonts.css">
   <style>
     /* The status-area panel is the dashboard's smallest surface, so it carries
        the dashboard's own devices: hairline rules between every band, serif
        figures with the same negative tracking, mono for every numeral and
-       label, and one accent. The palette is repeated rather than shared
-       because the dashboard ships its own inline, and a stylesheet split
-       across both documents would be a third place to keep them in step. */
+       label, and one accent. The faces come from fonts.css, which both
+       documents link; the palette is repeated here because the dashboard
+       carries its own inline and a token that differed would be visible. */
     :root {
       color-scheme: light;
       --field: #dfddd6;

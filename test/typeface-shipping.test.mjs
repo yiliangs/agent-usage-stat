@@ -19,10 +19,11 @@ import { buildLayoutFixture } from "./helpers/portal-layout-fixture.mjs";
  * document itself, through `document.fonts`, which sees only the page's own
  * `@font-face` rules.
  *
- * Two surfaces declare the typography tokens and both are checked here. They
- * carry their faces differently, because the first-run window is a `data:` URL
- * document with no path to resolve a font file against, and a guard that
- * covered only the dashboard would let the other one drift back.
+ * Three surfaces declare the typography tokens and all three are checked here.
+ * They carry their faces differently, because the first-run window is a `data:`
+ * URL document with no path to resolve a font file against, while the dashboard
+ * and the status-area panel link the one stylesheet that declares them. A guard
+ * covering only the dashboard would let the others drift back.
  */
 
 const chrome = findChrome();
@@ -64,6 +65,18 @@ test("the dashboard ships every designed face and weight it draws with", { skip 
     widths: [1440],
   });
   assertShipsWhatItDraws("the dashboard", result);
+});
+
+test("the status-area panel ships every designed face and weight it draws with", { skip }, async () => {
+  const [result] = await runPortalProbe({
+    portalDir: join(process.cwd(), "dist", "portal"),
+    data: buildLayoutFixture(),
+    probe,
+    page: "panel.html",
+    widths: [360],
+    height: 636,
+  });
+  assertShipsWhatItDraws("the status-area panel", result);
 });
 
 test("the first-run window ships every designed face and weight it draws with", { skip }, async () => {
