@@ -38,6 +38,19 @@ function localMidnight(now, daysAgo) {
   return day.getTime();
 }
 
+/** How far back the dense day sits, counted in days before `now`.
+ *
+ *  The timeline renders the Monday-anchored week that contains today, so a day
+ *  a fixed three back leaves that week entirely on Monday, Tuesday, and
+ *  Wednesday, and the guard then measures an empty column instead of a dense
+ *  one. Three days back whenever the week is that old, and the week's own
+ *  Monday when it is not, keeps the dense day on screen every weekday without
+ *  ever placing it in the future. */
+function denseDaysAgo(now) {
+  const daysSinceMonday = (new Date(now).getDay() + 6) % 7;
+  return Math.min(3, daysSinceMonday);
+}
+
 function session({ index, start, durationMinutes, project, model }) {
   const tokens = 2_000_000 + index * 25_000;
   const cacheRead = Math.round(tokens * 0.81);
@@ -71,9 +84,10 @@ export function buildTimelineFixture(now = Date.now()) {
   const sessions = [];
   let index = 0;
 
-  // Three days back so the day is fully inside the rendered week whichever
-  // weekday the guard happens to run on, and never in the future.
-  const dense = localMidnight(now, 3);
+  // Placed inside the week the timeline draws, whichever weekday the guard
+  // happens to run on, and never in the future.
+  const denseOffset = denseDaysAgo(now);
+  const dense = localMidnight(now, denseOffset);
 
   // An agent left running overnight. It occupies a lane for the whole day,
   // which is what merges the day into a single concurrency cluster.
@@ -100,7 +114,7 @@ export function buildTimelineFixture(now = Date.now()) {
   // Quieter neighbouring days keep the week from reading as one long spike and
   // give the period comparisons something finite to divide by.
   for (let daysAgo = 1; daysAgo <= 6; daysAgo += 1) {
-    if (daysAgo === 3) continue;
+    if (daysAgo === denseOffset) continue;
     const midnight = localMidnight(now, daysAgo);
     for (let slot = 0; slot < 2; slot += 1) {
       sessions.push(session({
