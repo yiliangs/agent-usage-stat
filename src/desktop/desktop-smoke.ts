@@ -104,7 +104,23 @@ interface StatusAreaSmokeResult {
   opened: boolean;
   dismissed: boolean;
   residentAfterClose: boolean;
+  frame: PanelFrame | null;
   glance: PanelGlance | null;
+}
+
+/**
+ * The rectangle the shell reserves for the panel, beside the one the document
+ * is given inside it.
+ *
+ * The panel draws its own hairline frame at the edge of its content, so any
+ * difference between these two is a second owner of those pixels: the shell
+ * paints its window border over the outermost point of the window rect, and on
+ * an edge where the content is flush with it the document's frame goes under
+ * it (#139).
+ */
+interface PanelFrame {
+  window: Electron.Rectangle;
+  content: Electron.Rectangle;
 }
 
 interface PanelGlance {
@@ -141,6 +157,7 @@ async function inspectStatusArea(
       opened: false,
       dismissed: false,
       residentAfterClose: false,
+      frame: null,
       glance: null,
     };
   }
@@ -149,6 +166,9 @@ async function inspectStatusArea(
   const panel = statusArea.panelWindow();
   const opened = panel?.isVisible() ?? false;
 
+  const frame = panel
+    ? { window: panel.getBounds(), content: panel.getContentBounds() }
+    : null;
   const glance = panel ? await readPanelGlance(panel) : null;
   statusArea.hide();
   const dismissed = !(panel?.isVisible() ?? false);
@@ -156,7 +176,14 @@ async function inspectStatusArea(
   if (!window.isDestroyed()) window.destroy();
   await new Promise((settle) => setTimeout(settle, 500));
 
-  return { installed: true, opened, dismissed, residentAfterClose: true, glance };
+  return {
+    installed: true,
+    opened,
+    dismissed,
+    residentAfterClose: true,
+    frame,
+    glance,
+  };
 }
 
 function readPanelGlance(panel: BrowserWindow): Promise<PanelGlance> {

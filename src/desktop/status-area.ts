@@ -182,6 +182,20 @@ export class StatusArea {
       ...PANEL_SIZE,
       show: false,
       frame: false,
+      // The panel document draws its own hairline frame at the edge of its
+      // content, and it has to be the only thing drawn there. A frameless
+      // window still keeps a one-point non-client margin, on the left and the
+      // bottom but not the top or the right, and Windows paints its window
+      // border over the outermost point of the window rect: on the two edges
+      // where the content is flush with that rect the border lands on the
+      // document's frame and hides it, leaving one stray rule down the left
+      // side (#139). A transparent window reserves no margin at all, so the
+      // window rect is the content rect, the document owns every edge, and
+      // PANEL_SIZE means on screen what `panelPlacement` clamps against.
+      // Nothing shows through: the panel's own paper covers the whole canvas.
+      transparent: true,
+      backgroundColor: "#00000000",
+      roundedCorners: false,
       resizable: false,
       movable: false,
       minimizable: false,
