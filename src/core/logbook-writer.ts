@@ -8,6 +8,7 @@ import { vendorForModel } from "./model-vendor.js";
 import { projectNameForCwd } from "./project-name.js";
 import {
   LOGBOOK_SHARD_DIR,
+  type LogbookModelRecord,
   type LogbookRecord,
 } from "./usage-ledger.js";
 
@@ -109,6 +110,16 @@ export class LogbookWriter {
   /**
    * Detached hook workers can finish out of order. Never let an older partial
    * rollout replace a later, larger usage snapshot for the same session.
+   *
+   * Cumulative tokens are what order two observations of one session. A
+   * session only ever accumulates them, so fewer tokens means an earlier read.
+   * Cost orders nothing: it is those tokens times a rate, and a pricing
+   * correction lowers that rate underneath reads already on disk. A session
+   * that grew and repriced downward is a later observation, not a regression.
+   *
+   * The winner is kept whole rather than merged field by field. A record's
+   * totals, its per-model breakdown, its turns, and its time window all came
+   * from one transcript read, and they agree only with each other.
    */
   private async preserveRecordedUsage(
     path: string,
@@ -128,24 +139,11 @@ export class LogbookWriter {
       return next;
     }
 
-    const regressed =
-      next.total_tokens < existing.total_tokens ||
-      next.total_cost_usd < existing.total_cost_usd;
-    if (!regressed) return next;
+    if (next.total_tokens >= existing.total_tokens) return next;
 
     return {
-      ...next,
-      input_tokens: existing.input_tokens,
-      output_tokens: existing.output_tokens,
-      cache_creation_tokens: existing.cache_creation_tokens,
-      cache_read_tokens: existing.cache_read_tokens,
-      total_tokens: existing.total_tokens,
-      total_cost_usd: existing.total_cost_usd,
-      models: existing.models,
-      // Keep the breakdown with the totals it sums to. Mixing a fresh breakdown
-      // into preserved totals would publish a shard that disagrees with itself.
-      model_breakdowns: existing.model_breakdowns,
-      turns: existing.turns,
+      ...existing,
+      model_breakdowns: existing.model_breakdowns ?? soleModelBreakdown(existing),
       // The source was successfully examined even when its recomputation was
       // lower. Advancing the fingerprint prevents an unchanged truncated or
       // pruned transcript from being retried on every reconciliation.
@@ -209,6 +207,31 @@ export class LogbookWriter {
       provider: sessionData.provider,
     };
   }
+}
+
+/**
+ * The breakdown a shard written before `model_breakdowns` existed already
+ * implies when it names exactly one model: that model holds every token and
+ * every dollar the record carries, so the split is read off the record rather
+ * than estimated from a read that saw less. A record naming several models
+ * implies no such split from its totals alone and is given none, which is what
+ * the reader's legacy `models` fallback exists to cover.
+ */
+function soleModelBreakdown(
+  record: LogbookRecord,
+): LogbookModelRecord[] | undefined {
+  if (record.models?.length !== 1) return undefined;
+  const [model] = record.models;
+  return [{
+    model,
+    vendor: vendorForModel(model),
+    input_tokens: record.input_tokens,
+    output_tokens: record.output_tokens,
+    cache_creation_tokens: record.cache_creation_tokens,
+    cache_read_tokens: record.cache_read_tokens,
+    total_tokens: record.total_tokens,
+    total_cost_usd: record.total_cost_usd,
+  }];
 }
 
 function formatDuration(seconds: number): string {
