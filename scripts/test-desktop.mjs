@@ -14,6 +14,8 @@ import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { PANEL_SIZE } from "../dist/desktop/status-area-policy.js";
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outRelative = `dist/desktop-smoke-${process.pid}`;
 const out = join(root, outRelative);
@@ -161,6 +163,20 @@ try {
     // Written after the dashboard window was destroyed: the application is
     // held open by the status area rather than quitting with its window.
     assert.equal(smoke.statusArea.residentAfterClose, true);
+    // The panel draws its own hairline frame at the very edge of its content,
+    // and Windows paints its window border over the outermost point of the
+    // window rect. A window rect larger than the content rect therefore hides
+    // that frame on whichever edges the content is flush with, which is how
+    // the panel came to show one stray rule down its left side (#139). The
+    // window and its content have to be the same rectangle, and it has to be
+    // the size the placement policy clamps against.
+    assert.deepEqual(
+      smoke.statusArea.frame.window,
+      smoke.statusArea.frame.content,
+      `panel window rect differs from its content rect: ${JSON.stringify(smoke.statusArea.frame)}`,
+    );
+    assert.equal(smoke.statusArea.frame.content.width, PANEL_SIZE.width);
+    assert.equal(smoke.statusArea.frame.content.height, PANEL_SIZE.height);
     assert.equal(smoke.statusArea.glance.surface, "panel");
     assert.equal(smoke.statusArea.glance.ready, true);
     // The fixture ledger is empty, and the panel says so in each band rather
