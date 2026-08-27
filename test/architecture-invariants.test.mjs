@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { join, dirname, relative, resolve } from "node:path";
+import { join, dirname, relative, resolve, sep } from "node:path";
 import test from "node:test";
 
 /**
@@ -10,8 +10,9 @@ import test from "node:test";
  * enforced rather than merely written down. The import-light invariant has
  * already regressed once (52d2c6d, #46), which is what these exist to prevent.
  *
- * Behavioral invariants (recomputation never lowering a record, bracket-suffix
- * normalization, per-line JSONL isolation) need fixtures and are not here.
+ * Behavioral invariants (recomputation never lowering a record, per-line JSONL
+ * isolation) need fixtures and are not here. Bracket-suffix normalization is
+ * guarded structurally below and covered behaviorally by the provider suites.
  */
 
 const root = process.cwd();
@@ -131,4 +132,21 @@ test("project attribution has exactly one owner", () => {
     .map((path) => relative(root, path));
 
   assert.deepEqual(owners, [join("src", "core", "project-name.ts")]);
+});
+
+test("every provider pricing table normalizes through the shared model-id rule", () => {
+  // Bracket suffixes are stripped in one place, src/core/model-id.ts, because
+  // a table that re-derives the rule drops a clause: Codex kept only the date
+  // strip (#101), so a context-routed rollout missed the lookup and billed at
+  // $0. A provider may add its own naming pass, but it reaches the shared rule
+  // either directly or through the sibling table that already does.
+  const shared = /normalizeModelId[\s\S]*?from\s*["'](\.\.\/\.\.\/core\/model-id\.js|\.\.\/claude\/pricing\.js)["']/;
+  const tables = sourceFiles(join(sourceRoot, "providers"))
+    .filter((path) => path.endsWith(`${sep}pricing.ts`));
+  const detached = tables
+    .filter((path) => !shared.test(readCode(path)))
+    .map((path) => relative(root, path));
+
+  assert.ok(tables.length >= 4, "expected a pricing table per provider");
+  assert.deepEqual(detached, []);
 });
