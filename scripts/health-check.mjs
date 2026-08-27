@@ -27,8 +27,9 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { resolveUsageRootFromDisk } from "../dist/utils/usage-root.js";
+import { homeDir } from "../dist/utils/paths.js";
 
-const HOME = process.env.USERPROFILE || process.env.HOME || "";
+const HOME = homeDir();
 const ROOT = resolveUsageRootFromDisk().root;
 const DIR = join(ROOT, "logbook.d");
 const LOCAL_DIR = join(HOME, ".agent-usage-stat", "projects", "logbook.d");

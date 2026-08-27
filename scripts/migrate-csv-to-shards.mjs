@@ -22,9 +22,10 @@
  */
 import { readFileSync, writeFileSync, existsSync, readdirSync, renameSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { homeDir } from "../dist/utils/paths.js";
 
 const APPLY = process.argv.includes("--apply");
-const home = process.env.USERPROFILE || process.env.HOME || "";
+const home = homeDir();
 const CSV = existsSync("H:/My Drive")
   ? "H:/My Drive/agent-usage-stat/logbook.csv"
   : join(home, ".agent-usage-stat", "projects", "logbook.csv");

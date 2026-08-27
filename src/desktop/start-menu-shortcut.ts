@@ -1,5 +1,6 @@
 import { readdir, rename, rm, rmdir } from "node:fs/promises";
 import { join } from "node:path";
+import { homeDirFrom } from "../utils/paths.js";
 
 /**
  * Where the Start Menu entry belongs, and how it gets there.
@@ -13,8 +14,9 @@ import { join } from "node:path";
 
 /** The per-user Start Menu directory Windows enumerates applications from. */
 export function startMenuProgramsDir(env: NodeJS.ProcessEnv): string {
-  const roaming = env.APPDATA
-    ?? join(env.USERPROFILE ?? env.HOME ?? "", "AppData", "Roaming");
+  // Windows-only by construction, so the home rule is pinned to that platform
+  // rather than read off whatever machine is running the resolver.
+  const roaming = env.APPDATA ?? join(homeDirFrom(env, "win32"), "AppData", "Roaming");
   return join(roaming, "Microsoft", "Windows", "Start Menu", "Programs");
 }
 

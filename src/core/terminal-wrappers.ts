@@ -2,7 +2,7 @@ import { constants } from "fs";
 import { copyFile, mkdir, readFile, writeFile } from "fs/promises";
 import { spawnSync } from "child_process";
 import { basename, dirname, join } from "path";
-import { homeDir } from "../utils/paths.js";
+import { homeDir, homeDirFrom } from "../utils/paths.js";
 import { PROVIDER_NAMES } from "./provider-definition.js";
 
 const BLOCK_START = "# >>> Agent Usage Stat terminal message >>>";
@@ -43,7 +43,7 @@ export function detectShellProfile(
   if (platform === "win32") return detectPowerShellProfile(environment);
   if (platform !== "darwin") return null;
 
-  const home = environment.HOME || environment.USERPROFILE || homeDir();
+  const home = homeDirFrom(environment, platform) || homeDir();
   if (!home) return null;
   const shell = basename(environment.SHELL || "/bin/zsh");
   if (shell === "bash") return { kind: "bash", path: join(home, ".bash_profile") };

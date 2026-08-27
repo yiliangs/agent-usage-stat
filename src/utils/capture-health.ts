@@ -1,7 +1,7 @@
 import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "fs/promises";
 import { join } from "path";
 import type { ProviderName } from "../types/provider.js";
-import { homeDir } from "./paths.js";
+import { homeDir, homeDirFrom } from "./paths.js";
 
 export type HookCaptureStatus = "recorded" | "no_usage" | "failed";
 
@@ -78,7 +78,7 @@ function captureHealthPath(
   provider: ProviderName,
   environment: NodeJS.ProcessEnv,
 ): string {
-  const root = environment.HOME || environment.USERPROFILE || homeDir();
+  const root = homeDirFrom(environment) || homeDir();
   return join(root, ".agent-usage-stat", "capture-health", `${provider}.json`);
 }
 
