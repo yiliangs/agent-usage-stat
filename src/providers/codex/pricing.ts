@@ -1,3 +1,4 @@
+import { normalizeModelId as normalizeSharedModelId } from "../../core/model-id.js";
 import {
   feedPriceFor,
   pricingFeedFingerprint,
@@ -127,8 +128,14 @@ export function pricingFingerprintSource(): string {
   });
 }
 
+/**
+ * The shared shape rules first — bracket routing suffix, then date suffix —
+ * then the two names only Codex uses: a feature label that bills as a model,
+ * and the bare family alias that resolves to its default variant. Skipping the
+ * shared pass is how a context-routed rollout bills at $0.
+ */
 export function normalizeModelId(model: string): string {
-  const normalized = model.replace(/-\d{4}-\d{2}-\d{2}$/, "");
+  const normalized = normalizeSharedModelId(model);
   if (FEATURE_LABEL_MODELS[normalized]) return FEATURE_LABEL_MODELS[normalized];
   return normalized === "gpt-5.6" ? "gpt-5.6-sol" : normalized;
 }

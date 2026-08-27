@@ -275,6 +275,53 @@ test("Codex prices the GPT-5.6 alias as Sol", async () => {
   }
 });
 
+test("Codex prices a context-routed model through the shared bracket rule", async () => {
+  // A rollout whose turn_context carries a 1M-context routing suffix. Without
+  // the shared normalizer the lookup misses, the session bills at $0, and the
+  // raw id lands in unknownModels.
+  const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-test-"));
+  const path = join(dir, "rollout-bracket.jsonl");
+  const usageEvent = {
+    input_tokens: 2000,
+    cached_input_tokens: 500,
+    cache_write_tokens: 1000,
+    output_tokens: 100,
+    total_tokens: 2100,
+  };
+
+  await writeFile(
+    path,
+    [
+      line("turn_context", { model: "gpt-5.6-sol[1m]" }),
+      line("event_msg", {
+        type: "token_count",
+        info: {
+          total_token_usage: usageEvent,
+          last_token_usage: usageEvent,
+        },
+      }),
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    const provider = new CodexProvider();
+    const { sessionData: usage, unknownModels } = await provider.readSession(
+      path,
+      "fallback",
+    );
+
+    assert.equal(Number(usage.totalCost.toFixed(6)), 0.012);
+    assert.deepEqual(
+      usage.modelBreakdowns.map((breakdown) => breakdown.modelName),
+      ["gpt-5.6-sol"],
+    );
+    assert.deepEqual(unknownModels, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Codex applies Fast pricing only to turns recorded at the priority tier", async () => {
   const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-fast-tier-"));
   const path = join(dir, "rollout-fast-tier.jsonl");
