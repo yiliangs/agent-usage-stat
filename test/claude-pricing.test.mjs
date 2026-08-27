@@ -141,6 +141,43 @@ test("Claude Opus 5 aliases use current Anthropic pricing", async () => {
   }
 });
 
+test("Claude Sonnet 5 uses its standard $2/$10 rate", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-sonnet-5-"));
+  const sessionId = "77777777-7777-4777-8777-777777777777";
+  const path = join(dir, `${sessionId}.jsonl`);
+  const usage = {
+    input_tokens: 1_000,
+    cache_creation_input_tokens: 2_000,
+    cache_read_input_tokens: 400,
+    output_tokens: 100,
+  };
+
+  await writeFile(
+    path,
+    assistant("resp_sonnet_5", usage, "claude-sonnet-5-20260210"),
+    "utf8",
+  );
+
+  try {
+    const provider = new ClaudeProvider();
+    const { sessionData: result, unknownModels } = await provider.readSession(
+      path,
+      sessionId,
+    );
+
+    assert.equal(result.totalTokens, 3_500);
+    // $2 input / $2.50 5m cache write / $0.20 cache read / $10 output per MTok.
+    assert.equal(Number(result.totalCost.toFixed(6)), 0.00808);
+    assert.deepEqual(
+      result.modelBreakdowns.map((breakdown) => breakdown.modelName),
+      ["claude-sonnet-5"],
+    );
+    assert.deepEqual(unknownModels, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Claude prices each Opus response using its recorded speed", async () => {
   const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-claude-fast-"));
   const sessionId = "66666666-6666-4666-8666-666666666666";
