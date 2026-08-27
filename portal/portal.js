@@ -3,6 +3,7 @@ import { buildTokenTraffic, robustTokenTrafficScale } from './token-traffic.js'
 import { buildProjectColorIndex, modelSeriesFor, projectSeriesFor } from './timeline-colors.js'
 import { selectPortalView } from './portal-navigation.js'
 import { providerMark } from './provider-marks.js'
+import { escapeAttribute, escapeText } from './markup-escape.js'
 import { compact, pct, periodDelta, usd, usdHeadline } from './usage-format.js'
 import {
   DAY,
@@ -338,7 +339,7 @@ function renderSpendChart(sessions, window) {
       const gap = segmentIndex === 0 ? 0 : 1
       const height = segment.rawHeight - gap
       const style = styleForFamily(segment.family)
-      return `<rect class="chart-mark stack-segment" data-family="${escapeHtml(segment.family)}" data-tip="${fmt.date(new Date(bucket.start))} | ${segment.family} | ${fmt.usd(segment.value)}" x="${x.toFixed(1)}" y="${cursor}" width="${barWidth.toFixed(1)}" height="${height}" rx=".8" fill="${style.color}"/>`
+      return `<rect class="chart-mark stack-segment" data-family="${escapeAttribute(segment.family)}" data-tip="${fmt.date(new Date(bucket.start))} | ${escapeAttribute(segment.family)} | ${fmt.usd(segment.value)}" x="${x.toFixed(1)}" y="${cursor}" width="${barWidth.toFixed(1)}" height="${height}" rx=".8" fill="${style.color}"/>`
     }).join('')
   }).join('')
 
@@ -351,7 +352,7 @@ function renderSpendChart(sessions, window) {
 
   $('.legend').innerHTML = families.map((family) => {
     const style = styleForFamily(family)
-    return `<span class="model-legend" data-family="${escapeHtml(family)}"><i style="background:${style.color}"></i>${escapeHtml(family)}</span>`
+    return `<span class="model-legend" data-family="${escapeAttribute(family)}"><i style="background:${style.color}"></i>${escapeText(family)}</span>`
   }).join('')
 
   $('.plot').innerHTML = `
@@ -411,7 +412,7 @@ function renderModels(sessions) {
   $('.model-pie-key').innerHTML = visible.map((row) => {
     const share = row.value / Math.max(1, total)
     const style = styleForFamily(row.key)
-    return `<div class="model-pie-row model-filter" data-family="${escapeHtml(row.key)}" style="--series:${style.color}"><i></i><span>${escapeHtml(row.key.toUpperCase())}</span><b>${fmt.pct(share)}</b></div>`
+    return `<div class="model-pie-row model-filter" data-family="${escapeAttribute(row.key)}" style="--series:${style.color}"><i></i><span>${escapeText(row.key.toUpperCase())}</span><b>${fmt.pct(share)}</b></div>`
   }).join('')
 }
 
@@ -425,9 +426,9 @@ function renderAnalysisViews(current, previous, period, projects) {
 function renderKpis(selector, items) {
   $(selector).innerHTML = items.map((item) => `
     <div class="analysis-kpi">
-      <span class="micro">${escapeHtml(item.label)}</span>
-      <b>${escapeHtml(item.value)}</b>
-      <small>${escapeHtml(item.note || '')}</small>
+      <span class="micro">${escapeText(item.label)}</span>
+      <b>${escapeText(item.value)}</b>
+      <small>${escapeText(item.note || '')}</small>
     </div>`).join('')
 }
 
@@ -448,11 +449,11 @@ function renderLineChart(selector, rows, read, formatValue) {
   const grid = Array.from({ length: 5 }, (_, index) => {
     const value = max * (4 - index) / 4
     const y = top + (bottom - top) * index / 4
-    return `<line class="gridline" x1="${left}" y1="${y}" x2="${right}" y2="${y}"/><text x="${left - 8}" y="${y + 3}" text-anchor="end">${escapeHtml(formatValue(value))}</text>`
+    return `<line class="gridline" x1="${left}" y1="${y}" x2="${right}" y2="${y}"/><text x="${left - 8}" y="${y + 3}" text-anchor="end">${escapeText(formatValue(value))}</text>`
   }).join('')
   const labelIndexes = [...new Set([0, Math.floor((rows.length - 1) / 2), rows.length - 1])]
   const labels = labelIndexes.map((index) => `<text x="${xFor(index)}" y="232" text-anchor="${index === 0 ? 'start' : index === rows.length - 1 ? 'end' : 'middle'}">${fmt.date(new Date(`${rows[index].key}T12:00:00Z`))}</text>`).join('')
-  svg.innerHTML = `${grid}<line class="axis" x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}"/><path class="area" d="${area}"/><path class="line" d="${line}"/>${values.map((value, index) => `<circle cx="${xFor(index)}" cy="${yFor(value)}" r="3" fill="${styleForFamily(Object.entries(rows[index].families || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other').base}" data-tip="${escapeHtml(rows[index].key)} | ${escapeHtml(formatValue(value))}"></circle>`).join('')}${labels}`
+  svg.innerHTML = `${grid}<line class="axis" x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}"/><path class="area" d="${area}"/><path class="line" d="${line}"/>${values.map((value, index) => `<circle cx="${xFor(index)}" cy="${yFor(value)}" r="3" fill="${styleForFamily(Object.entries(rows[index].families || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other').base}" data-tip="${escapeAttribute(rows[index].key)} | ${escapeAttribute(formatValue(value))}"></circle>`).join('')}${labels}`
 }
 
 function brokenBarLayout(values, top, bottom) {
@@ -500,12 +501,12 @@ function renderTokenTraffic(sessions, period) {
   const breakMarkers = outliers.map(({ index }) => brokenBarMarker(index * slot + 2, breakY)).join('')
   const labelEvery = Math.max(1, Math.ceil(176 / slot))
   const labels = buckets.map((bucket, index) => index % labelEvery === 0 || index === buckets.length - 1
-    ? `<text class="traffic-axis-label" x="${index * slot + 1}" y="270" text-anchor="${index === 0 ? 'start' : index === buckets.length - 1 ? 'end' : 'middle'}">${escapeHtml(trafficTimeFormatter.format(new Date(bucket.start)).toUpperCase())}</text>`
+    ? `<text class="traffic-axis-label" x="${index * slot + 1}" y="270" text-anchor="${index === 0 ? 'start' : index === buckets.length - 1 ? 'end' : 'middle'}">${escapeText(trafficTimeFormatter.format(new Date(bucket.start)).toUpperCase())}</text>`
     : '').join('')
   const yLabels = Array.from({ length: 5 }, (_, index) => {
     const value = scale.max * (4 - index) / 4
     const y = breakY + usableHeight * index / 4
-    return `<text x="48" y="${y + 3}" text-anchor="end">${escapeHtml(fmt.compact(value))}</text>`
+    return `<text x="48" y="${y + 3}" text-anchor="end">${escapeText(fmt.compact(value))}</text>`
   }).join('')
   const yBreak = scale.broken
     ? `<text class="traffic-break-label" x="48" y="10" text-anchor="end">BREAK</text><path class="traffic-y-break" d="M42 ${breakY - 4}l3 3l3 -3l3 3 M42 ${breakY + 1}l3 3l3 -3l3 3"/>`
@@ -530,15 +531,15 @@ function renderTokenTraffic(sessions, period) {
     : 'Dense bars show recorded token volume at turn completion times, with session completion as a fallback when turn detail is unavailable.'
   const clip = scale.broken ? `<defs><clipPath id="tokenTrafficClip"><rect x="0" y="${breakY}" width="${width}" height="${usableHeight + 1}"/></clipPath></defs>` : ''
   const barGroup = scale.broken ? `<g clip-path="url(#tokenTrafficClip)">${bars}</g>` : bars
-  svg.innerHTML = `<title id="tokenTrafficTitle">Token traffic through the selected period</title><desc id="tokenTrafficDescription">${escapeHtml(description)}</desc>${clip}${grid}${barGroup}${breakMarkers}<line class="traffic-axis" x1="0" y1="${bottom}" x2="${width}" y2="${bottom}"/>${labels}<rect class="traffic-hover-band" id="tokenTrafficHoverBand" x="0" y="${top}" width="${slot}" height="${plotHeight}" hidden/><line class="traffic-crosshair" id="tokenTrafficCrosshair" x1="0" y1="${top}" x2="0" y2="${bottom}" hidden/><rect class="traffic-hit-field" x="0" y="${top}" width="${width}" height="${plotHeight}"/>`
+  svg.innerHTML = `<title id="tokenTrafficTitle">Token traffic through the selected period</title><desc id="tokenTrafficDescription">${escapeText(description)}</desc>${clip}${grid}${barGroup}${breakMarkers}<line class="traffic-axis" x1="0" y1="${bottom}" x2="${width}" y2="${bottom}"/>${labels}<rect class="traffic-hover-band" id="tokenTrafficHoverBand" x="0" y="${top}" width="${slot}" height="${plotHeight}" hidden/><line class="traffic-crosshair" id="tokenTrafficCrosshair" x1="0" y1="${top}" x2="0" y2="${bottom}" hidden/><rect class="traffic-hit-field" x="0" y="${top}" width="${width}" height="${plotHeight}"/>`
   $('#tokenTrafficTableBody').innerHTML = active.length ? active.map((bucket) => `
     <tr>
-      <td>${escapeHtml(trafficTimeFormatter.format(new Date(bucket.start)).toUpperCase())}</td>
-      <td class="numeric">${escapeHtml(fmt.compact(bucket.totalTokens))}</td>
-      <td class="numeric">${escapeHtml(fmt.compact(bucket.input))}</td>
-      <td class="numeric">${escapeHtml(fmt.compact(bucket.output))}</td>
-      <td class="numeric">${escapeHtml(fmt.compact(bucket.cacheCreate))}</td>
-      <td class="numeric">${escapeHtml(fmt.compact(bucket.cacheRead))}</td>
+      <td>${escapeText(trafficTimeFormatter.format(new Date(bucket.start)).toUpperCase())}</td>
+      <td class="numeric">${escapeText(fmt.compact(bucket.totalTokens))}</td>
+      <td class="numeric">${escapeText(fmt.compact(bucket.input))}</td>
+      <td class="numeric">${escapeText(fmt.compact(bucket.output))}</td>
+      <td class="numeric">${escapeText(fmt.compact(bucket.cacheCreate))}</td>
+      <td class="numeric">${escapeText(fmt.compact(bucket.cacheRead))}</td>
       <td class="numeric">${bucket.turns || bucket.sessions}</td>
     </tr>`).join('') : '<tr><td colspan="7">No recorded activity in this period.</td></tr>'
   $('#tokenTrafficAttribution').textContent = `${turnCount.toLocaleString('en-US')} turn completions; ${sessionCount.toLocaleString('en-US')} session-level fallbacks. Completion-time attribution preserves the selected sessions’ recorded totals.`
@@ -571,12 +572,12 @@ function renderDailyTokenBars(rows) {
   const breakMarkers = outliers.map(({ index }) => brokenBarMarker(index * slot + slot / 2, breakY, Math.max(6, barWidth))).join('')
   const labelEvery = Math.max(1, Math.ceil(104 / slot))
   const labels = rows.map((row, index) => index % labelEvery === 0 || index === rows.length - 1
-    ? `<text class="traffic-axis-label" x="${index * slot + slot / 2}" y="226">${escapeHtml(fmt.date(new Date(`${row.key}T12:00:00Z`)))}</text>`
+    ? `<text class="traffic-axis-label" x="${index * slot + slot / 2}" y="226">${escapeText(fmt.date(new Date(`${row.key}T12:00:00Z`)))}</text>`
     : '').join('')
   const yLabels = Array.from({ length: 5 }, (_, index) => {
     const value = scale.max * (4 - index) / 4
     const y = breakY + usableHeight * index / 4
-    return `<text x="48" y="${y + 3}" text-anchor="end">${escapeHtml(fmt.compact(value))}</text>`
+    return `<text x="48" y="${y + 3}" text-anchor="end">${escapeText(fmt.compact(value))}</text>`
   }).join('')
   const yBreak = scale.broken
     ? `<text class="traffic-break-label" x="48" y="10" text-anchor="end">BREAK</text><path class="traffic-y-break" d="M42 ${breakY - 4}l3 3l3 -3l3 3 M42 ${breakY + 1}l3 3l3 -3l3 3"/>`
@@ -584,7 +585,7 @@ function renderDailyTokenBars(rows) {
   const hitBuckets = rows.map((row, index) => {
     const date = fmt.date(new Date(`${row.key}T12:00:00Z`))
     const tip = `${date}\nTOTAL ${fmt.compact(row.tokens)}\nINPUT ${fmt.compact(row.input)} · OUTPUT ${fmt.compact(row.output)}\nCACHE WRITE ${fmt.compact(row.cacheCreate)} · CACHE READ ${fmt.compact(row.cacheRead)}`
-    return `<rect class="traffic-hit-bucket multiline-tip" x="${index * slot}" y="${top}" width="${slot}" height="${plotHeight}" data-tip="${escapeHtml(tip)}"/>`
+    return `<rect class="traffic-hit-bucket multiline-tip" x="${index * slot}" y="${top}" width="${slot}" height="${plotHeight}" data-tip="${escapeAttribute(tip)}"/>`
   }).join('')
   const description = scale.broken
     ? `Daily token volume shown as bars with ${scale.outlierCount} outlier day${scale.outlierCount === 1 ? '' : 's'} cut above ${fmt.compact(scale.max)} tokens. Hover retains actual values.`
@@ -594,7 +595,7 @@ function renderDailyTokenBars(rows) {
   const svg = $('#tokenTrend')
   svg.setAttribute('viewBox', `0 0 ${width} 245`)
   svg.style.width = `${width}px`
-  svg.innerHTML = `<title id="dailyTokenTitle">Daily token volume</title><desc id="dailyTokenDescription">${escapeHtml(description)}</desc>${clip}${grid}${barGroup}${breakMarkers}<line class="traffic-axis" x1="0" y1="${bottom}" x2="${width}" y2="${bottom}"/>${labels}${hitBuckets}`
+  svg.innerHTML = `<title id="dailyTokenTitle">Daily token volume</title><desc id="dailyTokenDescription">${escapeText(description)}</desc>${clip}${grid}${barGroup}${breakMarkers}<line class="traffic-axis" x1="0" y1="${bottom}" x2="${width}" y2="${bottom}"/>${labels}${hitBuckets}`
   $('#dailyTokenYAxis').innerHTML = `${yLabels}${yBreak}`
   $('#dailyTokenMeta').textContent = scale.broken
     ? `Daily bars / axis break at ${fmt.compact(scale.max)}`
@@ -654,15 +655,15 @@ function renderAnalysisBars(selector, rows, options = {}) {
     const tag = row.sessionId != null || row.project ? 'button' : 'div'
     const attributes = row.sessionId != null
       ? ` data-analysis-session="${row.sessionId}"`
-      : row.project ? ` data-analysis-project="${escapeHtml(row.project)}"` : ''
-    return `<${tag} class="analysis-bar-row"${attributes}><span class="analysis-bar-label">${escapeHtml(row.label)}${row.note ? `<small>${escapeHtml(row.note)}</small>` : ''}</span><span class="analysis-bar-track"><i style="width:${100 * row.value / max}%;${row.color ? `background:${row.color}` : ''}"></i></span><span class="analysis-bar-value">${escapeHtml(options.format ? options.format(row.value) : fmt.compact(row.value))}</span></${tag}>`
+      : row.project ? ` data-analysis-project="${escapeAttribute(row.project)}"` : ''
+    return `<${tag} class="analysis-bar-row"${attributes}><span class="analysis-bar-label">${escapeText(row.label)}${row.note ? `<small>${escapeText(row.note)}</small>` : ''}</span><span class="analysis-bar-track"><i style="width:${100 * row.value / max}%;${row.color ? `background:${row.color}` : ''}"></i></span><span class="analysis-bar-value">${escapeText(options.format ? options.format(row.value) : fmt.compact(row.value))}</span></${tag}>`
   }).join('') : '<p class="note">No recorded activity in this period.</p>'
 }
 
 function renderComposition(selector, rows, total, formatValue = fmt.usd) {
   $(selector).innerHTML = rows.length ? rows.map((row) => `
     <div class="composition-row" style="--series:${row.color || styleForFamily(row.key).base}">
-      <i></i><span>${escapeHtml(row.key)}</span><b>${fmt.pct(row.value / Math.max(1, total))} / ${escapeHtml(formatValue(row.value))}</b>
+      <i></i><span>${escapeText(row.key)}</span><b>${fmt.pct(row.value / Math.max(1, total))} / ${escapeText(formatValue(row.value))}</b>
       <span class="composition-meter"><i style="width:${100 * row.value / Math.max(1, total)}%"></i></span>
     </div>`).join('') : '<p class="note">No recorded activity in this period.</p>'
 }
@@ -761,7 +762,7 @@ function renderProjectAnalysis(projectSummary) {
   const columns = [
     ['project', 'Project'], ['sessions', 'Sessions'], ['cost', 'Spend'], ['tokens', 'Tokens'], ['avgCost', 'Avg / session'], ['durSec', 'Duration'], ['family', 'Top model'], ['machines', 'Boxes'], ['last', 'Last active'],
   ]
-  $('#projectTable').innerHTML = `<thead><tr>${columns.map(([key, label]) => `<th data-project-sort="${key}" class="${['sessions', 'cost', 'tokens', 'avgCost', 'durSec', 'machines'].includes(key) ? 'numeric' : ''}">${label}${sortMark(key, state.projectSort)}</th>`).join('')}</tr></thead><tbody>${sorted.map((row) => `<tr data-analysis-project="${escapeHtml(row.project)}"><td class="primary">${escapeHtml(row.project)}</td><td class="numeric">${row.sessions}</td><td class="numeric">${fmt.usd(row.cost)}</td><td class="numeric">${fmt.compact(row.tokens)}</td><td class="numeric">${fmt.usd(row.avgCost)}</td><td class="numeric">${formatDuration(row.durSec)}</td><td><i class="model-mark" style="--series:${styleForFamily(row.family).base}"></i>${escapeHtml(row.family)}</td><td class="numeric">${row.machineCount}</td><td>${fmt.dateYear(new Date(row.last))}</td></tr>`).join('')}</tbody>`
+  $('#projectTable').innerHTML = `<thead><tr>${columns.map(([key, label]) => `<th data-project-sort="${key}" class="${['sessions', 'cost', 'tokens', 'avgCost', 'durSec', 'machines'].includes(key) ? 'numeric' : ''}">${label}${sortMark(key, state.projectSort)}</th>`).join('')}</tr></thead><tbody>${sorted.map((row) => `<tr data-analysis-project="${escapeAttribute(row.project)}"><td class="primary">${escapeText(row.project)}</td><td class="numeric">${row.sessions}</td><td class="numeric">${fmt.usd(row.cost)}</td><td class="numeric">${fmt.compact(row.tokens)}</td><td class="numeric">${fmt.usd(row.avgCost)}</td><td class="numeric">${formatDuration(row.durSec)}</td><td><i class="model-mark" style="--series:${styleForFamily(row.family).base}"></i>${escapeText(row.family)}</td><td class="numeric">${row.machineCount}</td><td>${fmt.dateYear(new Date(row.last))}</td></tr>`).join('')}</tbody>`
 }
 
 function renderSessionAnalysis(sessions) {
@@ -783,7 +784,7 @@ function renderSessionAnalysis(sessions) {
   ]
   $('#sessionTable').innerHTML = `<thead><tr>${columns.map(([key, label]) => `<th data-session-sort="${key}" class="${['durSec', 'tokens', 'cost'].includes(key) ? 'numeric' : ''}">${label}${sortMark(key, state.sessionSort)}</th>`).join('')}</tr></thead><tbody>${sorted.map((session) => {
     const family = familyOf(session.primaryModel)
-    return `<tr data-analysis-session="${session._i}"><td>${escapeHtml(session.slug || session.sid || 'Session')}</td><td class="primary">${escapeHtml(session.project)}</td><td>${escapeHtml(session.machine)}</td><td><i class="model-mark" style="--series:${styleForFamily(family).base}"></i>${escapeHtml(shortModel(session.primaryModel))}</td><td>${fmt.dateYear(new Date(session.start))} / ${clockTime(Date.parse(session.start))}</td><td class="numeric">${escapeHtml(session.durHuman || formatDuration(session.durSec))}</td><td class="numeric">${fmt.compact(session.totalTokens || 0)}</td><td class="numeric">${fmt.usd(session.cost || 0)}</td></tr>`
+    return `<tr data-analysis-session="${session._i}"><td>${escapeText(session.slug || session.sid || 'Session')}</td><td class="primary">${escapeText(session.project)}</td><td>${escapeText(session.machine)}</td><td><i class="model-mark" style="--series:${styleForFamily(family).base}"></i>${escapeText(shortModel(session.primaryModel))}</td><td>${fmt.dateYear(new Date(session.start))} / ${clockTime(Date.parse(session.start))}</td><td class="numeric">${escapeText(session.durHuman || formatDuration(session.durSec))}</td><td class="numeric">${fmt.compact(session.totalTokens || 0)}</td><td class="numeric">${fmt.usd(session.cost || 0)}</td></tr>`
   }).join('')}</tbody>`
 }
 
@@ -807,7 +808,7 @@ function renderSettings() {
     : ledger.source === 'detected'
       ? 'Detected synchronized ledger'
       : 'Selected folder'
-  $('#settingsLedgerPath').innerHTML = `${escapeHtml(ledger.root)}<span class="settings-path-meta">${ledgerSource}</span>`
+  $('#settingsLedgerPath').innerHTML = `${escapeText(ledger.root)}<span class="settings-path-meta">${ledgerSource}</span>`
   $('#settingsCaptureNote').textContent = capturePolicy.default === 'continuous'
     ? 'Continuous is the default. Best-effort hooks checkpoint usage while you work; opening the app and Sync now always reconcile available transcripts.'
     : 'Batch sync is the default. No hook is installed unless an agent overrides it; opening the app and Sync now reconcile available transcripts.'
@@ -845,10 +846,10 @@ function renderSettings() {
       : 'App open + Sync now only'
     const diagnostic = captureMonitorPresentation(provider.captureMonitor, provider)
     return `<section class="provider-location ${provider.captureMonitor.status}">
-      <div class="provider-identity"><h3>${providerMark(provider.provider)}${escapeHtml(provider.label)}</h3><span class="provider-status">${escapeHtml(status)} / ${captureStatus}</span></div>
-      <div class="capture-diagnostic"><strong>${escapeHtml(diagnostic.title)}</strong>${captureFacts(diagnostic.facts)}${diagnostic.detail ? `<p>${escapeHtml(diagnostic.detail)}</p>` : ''}${diagnostic.remedy ? `<p class="capture-remedy">${escapeHtml(diagnostic.remedy)}</p>` : ''}</div>
-      <div class="settings-path">${escapeHtml(provider.root)}<span class="settings-path-meta">${escapeHtml(source)}</span></div>
-      <div class="settings-segmented" aria-label="${escapeHtml(provider.label)} capture policy">
+      <div class="provider-identity"><h3>${providerMark(provider.provider)}${escapeText(provider.label)}</h3><span class="provider-status">${escapeText(status)} / ${captureStatus}</span></div>
+      <div class="capture-diagnostic"><strong>${escapeText(diagnostic.title)}</strong>${captureFacts(diagnostic.facts)}${diagnostic.detail ? `<p>${escapeText(diagnostic.detail)}</p>` : ''}${diagnostic.remedy ? `<p class="capture-remedy">${escapeText(diagnostic.remedy)}</p>` : ''}</div>
+      <div class="settings-path">${escapeText(provider.root)}<span class="settings-path-meta">${escapeText(source)}</span></div>
+      <div class="settings-segmented" aria-label="${escapeAttribute(provider.label)} capture policy">
         <button class="settings-button${inherited ? ' active' : ''}" aria-pressed="${inherited}" data-settings-action="capture-policy" data-provider="${provider.provider}" data-inherit="true">Use default</button>
         ${captureButtons}
       </div>
@@ -867,12 +868,12 @@ function renderCaptureMonitor(providers) {
   $('#captureMonitorSummary').innerHTML = providers.map((provider) => {
     const presentation = captureMonitorPresentation(provider.captureMonitor, provider)
     const remedy = presentation.remedy
-      ? `<p class="capture-channel-remedy">${escapeHtml(presentation.remedy)}</p>`
+      ? `<p class="capture-channel-remedy">${escapeText(presentation.remedy)}</p>`
       : ''
     const detail = presentation.detail
-      ? `<p class="capture-channel-detail">${escapeHtml(presentation.detail)}</p>`
+      ? `<p class="capture-channel-detail">${escapeText(presentation.detail)}</p>`
       : ''
-    return `<div class="capture-channel ${provider.captureMonitor.status}"><span>${providerMark(provider.provider)}<em class="capture-channel-name">${escapeHtml(provider.label)}</em></span><strong>${escapeHtml(presentation.title)}</strong>${captureFacts(presentation.facts)}${detail}${remedy}</div>`
+    return `<div class="capture-channel ${provider.captureMonitor.status}"><span>${providerMark(provider.provider)}<em class="capture-channel-name">${escapeText(provider.label)}</em></span><strong>${escapeText(presentation.title)}</strong>${captureFacts(presentation.facts)}${detail}${remedy}</div>`
   }).join('')
 
   const aggregate = captureMonitorAggregate(providers)
@@ -1036,7 +1037,7 @@ const FACT_GLYPHS = {
 function captureFacts(facts) {
   if (!facts?.length) return ''
   return `<ul class="capture-facts">${facts.map((fact) => `
-    <li class="capture-fact ${fact.state}"><svg class="capture-fact-mark" viewBox="0 0 12 12" aria-hidden="true" focusable="false">${FACT_GLYPHS[fact.state] || FACT_GLYPHS.neutral}</svg><span class="capture-fact-label">${escapeHtml(fact.label)}</span><span class="capture-fact-value">${escapeHtml(fact.value)}</span></li>`).join('')}</ul>`
+    <li class="capture-fact ${fact.state}"><svg class="capture-fact-mark" viewBox="0 0 12 12" aria-hidden="true" focusable="false">${FACT_GLYPHS[fact.state] || FACT_GLYPHS.neutral}</svg><span class="capture-fact-label">${escapeText(fact.label)}</span><span class="capture-fact-value">${escapeText(fact.value)}</span></li>`).join('')}</ul>`
 }
 
 async function loadSettings() {
@@ -1110,9 +1111,9 @@ function renderProjects(projects) {
   $('.project-list').innerHTML = rows.map((project, index) => {
     const style = styleForFamily(project.family)
     return `
-    <div class="project-row project-filter" data-project="${escapeHtml(project.project)}" data-family="${escapeHtml(project.family)}" style="--series:${style.color}">
+    <div class="project-row project-filter" data-project="${escapeAttribute(project.project)}" data-family="${escapeAttribute(project.family)}" style="--series:${style.color}">
       <span class="rank">${String(index + 1).padStart(2, '0')}</span>
-      <span class="name">${escapeHtml(project.project)}<small><i></i>${escapeHtml(project.family.toUpperCase())}</small></span>
+      <span class="name">${escapeText(project.project)}<small><i></i>${escapeText(project.family.toUpperCase())}</small></span>
       <span class="bar"><i style="width:${100 * project.cost / max}%"></i></span>
       <span class="money">${fmt.usd(project.cost)}</span>
     </div>`
@@ -1175,10 +1176,10 @@ function renderConcentration(projects) {
   if (otherShare) ringParts.push({ share: otherShare, color: cssColor('--token-pale', '#d0cdc4') })
   $('.ring').style.background = segmentedConic(ringParts)
   const detailed = top.map((project, index) => `
-    <div class="conc-row project-filter" data-project="${escapeHtml(project.project)}">
+    <div class="conc-row project-filter" data-project="${escapeAttribute(project.project)}">
       <span class="rank">${String(index + 1).padStart(2, '0')}</span>
       <i style="--series:${styles[index].color}"></i>
-      <span class="name">${escapeHtml(project.project)}<small>${escapeHtml(project.family.toUpperCase())} DOMINANT</small></span>
+      <span class="name">${escapeText(project.project)}<small>${escapeText(project.family.toUpperCase())} DOMINANT</small></span>
       <span class="share">${fmt.pct(shares[index])}</span>
       <span class="value">${fmt.usdHeadline(project.cost)}</span>
     </div>`).join('')
@@ -1283,8 +1284,8 @@ function rhythmDateKeys(window) {
 function wrappedProjectLabel(project) {
   const value = String(project || 'Unassigned')
   const split = value.indexOf('-')
-  if (split < 1) return escapeHtml(value)
-  return `${escapeHtml(value.slice(0, split + 1))}<br>${escapeHtml(value.slice(split + 1))}`
+  if (split < 1) return escapeText(value)
+  return `${escapeText(value.slice(0, split + 1))}<br>${escapeText(value.slice(split + 1))}`
 }
 
 const WEEK_TIMELINE_HEIGHT = 672
@@ -1401,7 +1402,7 @@ function renderRhythmKey(sessions, projectColors) {
     return
   }
   const label = state.rhythmColor === 'project' ? 'Project' : 'Model family'
-  key.innerHTML = `<span class="rhythm-key-label">${label}</span>${series.map((value) => `<span class="rhythm-series-key"><i style="--series:${value.base};--fill:${tintColor(value.base, .46)}"></i>${escapeHtml(value.label)}</span>`).join('')}<span class="rhythm-key-note">Shade = velocity</span>`
+  key.innerHTML = `<span class="rhythm-key-label">${label}</span>${series.map((value) => `<span class="rhythm-series-key"><i style="--series:${value.base};--fill:${tintColor(value.base, .46)}"></i>${escapeText(value.label)}</span>`).join('')}<span class="rhythm-key-note">Shade = velocity</span>`
 }
 
 function minuteLabel(minute) {
@@ -1458,7 +1459,7 @@ function renderWeekRhythmDays(dateKeys, segmentsByDate, projectColors) {
       const fillColor = tintColor(seriesColor, .34 + segment.normalized * .18)
       const durationMinutes = Math.max(1, (segment.end - segment.start) / 60_000)
       const tip = `${segment.session.project} | ${family} | ${clockTime(segment.start)}–${clockTime(segment.end)} | ${Math.round(durationMinutes)} min | ${fmt.compact(segment.session.totalTokens || 0)} tokens | ${fmt.compact(segment.tokensPerMinute)} tokens/min`
-      return `<button class="rhythm-event${compact}" data-session-id="${segment.session._i}" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}" style="top:${top}px;height:${height}px;left:calc(${left}% + 2px);width:calc(${width}% - 4px);background:${fillColor};border-left-color:${seriesColor};color:var(--event-ink)"><span>${wrappedProjectLabel(segment.session.project)}</span><small>${clockTime(segment.start)} · ${fmt.compact(segment.tokensPerMinute)}/min</small></button>`
+      return `<button class="rhythm-event${compact}" data-session-id="${segment.session._i}" data-tip="${escapeAttribute(tip)}" aria-label="${escapeAttribute(tip)}" style="top:${top}px;height:${height}px;left:calc(${left}% + 2px);width:calc(${width}% - 4px);background:${fillColor};border-left-color:${seriesColor};color:var(--event-ink)"><span>${wrappedProjectLabel(segment.session.project)}</span><small>${clockTime(segment.start)} · ${fmt.compact(segment.tokensPerMinute)}/min</small></button>`
     }).join('')
     return `<div class="${rhythmDayClasses(date, dateIndex, segments)}">${events}</div>`
   }).join('')
@@ -1521,8 +1522,8 @@ function renderMonthRhythmDays(dateKeys, segmentsByDate, bandsByDate, projectCol
         text: `${segment.session.project} / ${shortModel(segment.session.primaryModel)} / ${fmt.compact(segment.tokensPerMinute)} tokens/min`,
       })).sort((a, b) => b.velocity - a.velocity).map((item) => item.text)
       const tip = [`${date} ${minuteLabel(band.startMinute)}–${minuteLabel(band.endMinute)}`, `${band.ids.length} active session${band.ids.length === 1 ? '' : 's'} / ${fmt.compact(density)} combined tokens/min`, '', ...sessionLines].join('\n')
-      const tipAttribute = escapeHtml(tip).replace(/\n/g, '&#10;')
-      return `<button class="rhythm-overlap-band" data-session-ids="${band.ids.join(',')}" data-date="${date}" data-start-minute="${band.startMinute}" data-end-minute="${band.endMinute}" data-density="${density}" data-tip="${tipAttribute}" aria-label="${escapeHtml(tip.replace(/\n/g, ', '))}" style="top:${top}px;height:${height}px">${layers}</button>`
+      const tipAttribute = escapeAttribute(tip).replace(/\n/g, '&#10;')
+      return `<button class="rhythm-overlap-band" data-session-ids="${band.ids.join(',')}" data-date="${date}" data-start-minute="${band.startMinute}" data-end-minute="${band.endMinute}" data-density="${density}" data-tip="${tipAttribute}" aria-label="${escapeAttribute(tip.replace(/\n/g, ', '))}" style="top:${top}px;height:${height}px">${layers}</button>`
     }).join('')
     const classes = [rhythmDayClasses(date, dateIndex, segmentsByDate.get(date)), outsideWindow ? 'outside-window' : ''].filter(Boolean).join(' ')
     return `<div class="${classes}">${bands}</div>`
@@ -1555,7 +1556,7 @@ function renderTopology(sessions, projectSummary) {
   const grandTotal = projectSummary.totalCost
   const head = families.map((family) => {
     const style = styleForFamily(family)
-    return `<th><span class="topology-head" style="--series:${style.color}"><i></i>${escapeHtml(family)}</span></th>`
+    return `<th><span class="topology-head" style="--series:${style.color}"><i></i>${escapeText(family)}</span></th>`
   }).join('')
   const body = projects.map((project) => {
     const cellsHtml = families.map((family) => {
@@ -1563,10 +1564,10 @@ function renderTopology(sessions, projectSummary) {
         ? Object.entries(project.families).filter(([key]) => !visible.has(key)).reduce((total, [, amount]) => total + amount, 0)
         : project.families[family] || 0
       if (!value) return '<td><button class="topology-cell empty" aria-label="No recorded value"></button></td>'
-      return `<td><button class="topology-cell topology-filter" data-project="${escapeHtml(project.project)}" data-family="${escapeHtml(family)}" style="--cell:${100 * value / maxCell}%" data-tip="${escapeHtml(project.project)} | ${family} | ${fmt.usd(value)}"><b>${fmt.usd(value)}</b></button></td>`
+      return `<td><button class="topology-cell topology-filter" data-project="${escapeAttribute(project.project)}" data-family="${escapeAttribute(family)}" style="--cell:${100 * value / maxCell}%" data-tip="${escapeAttribute(project.project)} | ${escapeAttribute(family)} | ${fmt.usd(value)}"><b>${fmt.usd(value)}</b></button></td>`
     }).join('')
     const dominant = Object.entries(project.families).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other'
-    return `<tr><th class="topology-project">${escapeHtml(project.project)}<small>${escapeHtml(dominant)} dominant</small></th>${cellsHtml}<td class="topology-total">${fmt.usd(project.cost)}</td></tr>`
+    return `<tr><th class="topology-project">${escapeText(project.project)}<small>${escapeText(dominant)} dominant</small></th>${cellsHtml}<td class="topology-total">${fmt.usd(project.cost)}</td></tr>`
   }).join('')
   const foot = families.map((family) => {
     const value = family === 'Other'
@@ -1597,18 +1598,12 @@ function foldRows(rows, limit) {
   return [...rows.slice(0, limit - 1), { key: 'Other', value: sum(rows.slice(limit - 1), (row) => row.value) }]
 }
 
-function escapeHtml(value) {
-  const node = document.createElement('span')
-  node.textContent = String(value)
-  return node.innerHTML
-}
-
 function openDetail({ eyebrow, title, stats = [], sections = [] }) {
   $('#detailEyebrow').textContent = eyebrow
   $('#detailTitle').textContent = title
   $('#detailBody').innerHTML = `
-    <div class="detail-summary">${stats.map((stat) => `<div class="detail-stat"><span class="micro">${escapeHtml(stat.label)}</span><b>${escapeHtml(stat.value)}</b></div>`).join('')}</div>
-    ${sections.map((section) => `<section class="detail-section"><h3>${escapeHtml(section.title)}</h3>${section.html || `<p>${escapeHtml(section.text || '')}</p>`}</section>`).join('')}`
+    <div class="detail-summary">${stats.map((stat) => `<div class="detail-stat"><span class="micro">${escapeText(stat.label)}</span><b>${escapeText(stat.value)}</b></div>`).join('')}</div>
+    ${sections.map((section) => `<section class="detail-section"><h3>${escapeText(section.title)}</h3>${section.html || `<p>${escapeText(section.text || '')}</p>`}</section>`).join('')}`
   $('#detailScrim').hidden = false
   document.body.style.overflow = 'hidden'
 }
@@ -1619,7 +1614,7 @@ function closeDetail() {
 }
 
 function detailList(rows) {
-  return `<div class="detail-list">${rows.map((row) => `<div><span>${escapeHtml(row.label)}</span><b>${escapeHtml(row.value)}</b></div>`).join('')}</div>`
+  return `<div class="detail-list">${rows.map((row) => `<div><span>${escapeText(row.label)}</span><b>${escapeText(row.value)}</b></div>`).join('')}</div>`
 }
 
 // The heatmap draws the whole ledger while the range chips select a window
