@@ -1,19 +1,41 @@
 /**
  * Home-directory resolution, centralized.
  *
- * Windows has no $HOME — it uses $USERPROFILE. That fallback was hand-copied
- * across config-manager, session-finder, transcript-parser, usage-calculator,
- * and generate; a single call site that forgot the $USERPROFILE half would
- * silently break every path on Windows. Keep it in one place so the invariant
- * can't drift.
+ * Windows names the home directory $USERPROFILE, and $HOME is not simply
+ * absent there: a Git Bash session, a roaming profile, or a home-drive setup
+ * sets it, pointing somewhere else. Reading $HOME first therefore splits the
+ * application's view of its own state (#119) — the Electron app launched from
+ * Explorer resolves the profile while a helper spawned by a host started
+ * inside such a shell resolves $HOME, and the two read different config files,
+ * so hook-driven captures write to the default ledger while the dashboard
+ * reads the configured one.
+ *
+ * The precedence is the platform's, not the caller's, and every path in the
+ * application derives from it, so it lives here alone. A caller holding
+ * another process's environment applies the same rule to it through
+ * `homeDirFrom` rather than re-deriving the order.
  *
  * Built-ins only — no third-party imports — so this stays cheap to load and
  * safe for any module to depend on.
  */
 
-/** The user's home directory, or "" if neither env var is set. */
+/** The user's home directory, or "" if neither variable is set. */
 export function homeDir(): string {
-  return process.env.HOME || process.env.USERPROFILE || "";
+  return homeDirFrom(process.env);
+}
+
+/**
+ * The same rule against a captured environment, such as one about to be handed
+ * to a spawned helper. Falls back to nothing rather than to this process's own
+ * home, so a caller can tell an empty environment from a resolved one.
+ */
+export function homeDirFrom(
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const profile = environment.USERPROFILE || "";
+  const home = environment.HOME || "";
+  return platform === "win32" ? profile || home : home || profile;
 }
 
 /**

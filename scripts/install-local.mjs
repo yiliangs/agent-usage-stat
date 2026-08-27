@@ -24,11 +24,12 @@ import {
   startMenuProgramsDir,
   startMenuShortcutName,
 } from "../dist/desktop/start-menu-shortcut.js";
+import { homeDir } from "../dist/utils/paths.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const productName = manifest.productName;
-const home = process.env.HOME || process.env.USERPROFILE || "";
+const home = homeDir();
 const helperVersionState = join(home, ".agent-usage-stat", "bin", "helper-version.json");
 
 const packaged = packagedApplicationPath();

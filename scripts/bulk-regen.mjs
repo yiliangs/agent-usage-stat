@@ -7,8 +7,9 @@ import { readFile, readdir, stat } from "fs/promises";
 import { join, basename, extname } from "path";
 import { existsSync } from "fs";
 import { resolveUsageRootFromDisk } from "../dist/utils/usage-root.js";
+import { homeDir } from "../dist/utils/paths.js";
 
-const HOME = process.env.USERPROFILE || process.env.HOME || "";
+const HOME = homeDir();
 const PROJECTS = join(HOME, ".claude", "projects");
 const SHARD_DIR = join(resolveUsageRootFromDisk().root, "logbook.d");
 const REGEN = join(process.cwd(), "scripts", "regen-session.mjs");

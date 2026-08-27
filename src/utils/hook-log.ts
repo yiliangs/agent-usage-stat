@@ -1,5 +1,6 @@
 import { mkdirSync, appendFileSync } from "fs";
 import { join } from "path";
+import { homeDir } from "./paths.js";
 
 /**
  * Append a one-line event to ~/.agent-usage-stat/hook.log. Fails silently so
@@ -11,7 +12,7 @@ import { join } from "path";
  */
 export function logHookEvent(message: string): void {
   try {
-    const home = process.env.HOME || process.env.USERPROFILE || "";
+    const home = homeDir();
     if (!home) return;
     const dir = join(home, ".agent-usage-stat");
     mkdirSync(dir, { recursive: true });

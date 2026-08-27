@@ -10,7 +10,7 @@ import {
 } from "fs/promises";
 import { randomBytes, randomUUID } from "crypto";
 import { basename, join, relative, resolve } from "path";
-import { homeDir } from "./paths.js";
+import { homeDir, homeDirFrom } from "./paths.js";
 import type { ProviderName } from "../types/provider.js";
 
 const SCHEMA_VERSION = 1;
@@ -101,7 +101,7 @@ export interface WaitForRunOptions {
 export function captureRunsRoot(
   environment: NodeJS.ProcessEnv = process.env,
 ): string {
-  const home = environment.HOME || environment.USERPROFILE || homeDir();
+  const home = homeDirFrom(environment) || homeDir();
   return join(home, ".agent-usage-stat", RUNS_DIR);
 }
 

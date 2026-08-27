@@ -5,7 +5,13 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-const home = process.env.USERPROFILE || process.env.HOME;
+// The one home-directory rule this file cannot import: the bridge has to
+// locate the installed helper without a build present, so it repeats the
+// precedence src/utils/paths.ts owns instead of loading it from dist/. Keep
+// the two in step — the profile first, because Windows is where they diverge.
+const home = process.platform === "win32"
+  ? process.env.USERPROFILE || process.env.HOME
+  : process.env.HOME || process.env.USERPROFILE;
 const executable = process.platform === "win32"
   ? "agent-usage-stat-helper.exe"
   : "agent-usage-stat-helper";
