@@ -45,7 +45,9 @@ const PRICING: Record<string, ModelPricing> = {
   "claude-opus-5":      { input: 5,  output: 25, cacheWrite: 6.25, cacheRead: 0.50 },
   "claude-opus-4-8":    { input: 5,  output: 25, cacheWrite: 6.25, cacheRead: 0.50 },
   "claude-opus-4-7":    { input: 5,  output: 25, cacheWrite: 6.25, cacheRead: 0.50 },
-  "claude-sonnet-5":    { input: 3,  output: 15, cacheWrite: 3.75, cacheRead: 0.30 },
+  // Sonnet 5 launched at $2/$10 and stayed there: the scheduled rise to
+  // $3/$15 on 2026-09-01 was cancelled, so this rate covers its whole history.
+  "claude-sonnet-5":    { input: 2,  output: 10, cacheWrite: 2.50, cacheRead: 0.20 },
   "claude-sonnet-4-6":  { input: 3,  output: 15, cacheWrite: 3.75, cacheRead: 0.30 },
   "claude-haiku-4-5":   { input: 1,  output: 5,  cacheWrite: 1.25, cacheRead: 0.10 },
 
