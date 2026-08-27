@@ -72,10 +72,16 @@ export function usd(value) {
  * the concentration ring still names the largest project's total to the cent.
  */
 export function usdHeadline(value) {
-  if (Math.abs(value) < 1e3) return usd(value);
-  const whole = Math.round(value);
+  // Round to the precision each branch prints before choosing between them,
+  // for the reason `scaleToUnit` settles its unit after rounding: a value in
+  // the half-cent band below a comma boundary takes the sub-thousand branch
+  // and then rounds up across it, printing the "$1,000.00" the branch exists
+  // to avoid.
+  const cents = Math.round(value * 100) / 100;
+  if (Math.abs(cents) < 1e3) return usd(cents);
+  const whole = Math.round(cents);
   if (Math.abs(whole) < 1e5) return "$" + whole.toLocaleString("en-US");
-  return "$" + scaleToUnit(value, MONEY_UNITS);
+  return "$" + scaleToUnit(cents, MONEY_UNITS);
 }
 
 /**

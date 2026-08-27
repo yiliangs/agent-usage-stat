@@ -23,9 +23,9 @@ import {
 /** Magnitudes that span every branch, including ones no install will reach.
  *  A bound that holds only for plausible data is not a bound. */
 const MAGNITUDES = [
-  0, 0.004, 0.5, 1, 9.99, 99.99, 999.99, 1000, 9999.99, 12_345.67, 99_999.99,
-  100_000, 654_321, 999_999.99, 1e6, 9.87e6, 1e9, 4.2e9, 1e12, 9.9e14, 1e15,
-  4.2e21, Number.MAX_SAFE_INTEGER,
+  0, 0.004, 0.5, 1, 9.99, 99.99, 999.99, 999.995, 999.9999, 1000, 9999.99,
+  12_345.67, 99_999.99, 99_999.995, 100_000, 654_321, 999_999.99, 1e6, 9.87e6,
+  1e9, 4.2e9, 1e12, 9.9e14, 1e15, 4.2e21, Number.MAX_SAFE_INTEGER,
 ];
 
 function widest(label, values, produce) {
@@ -54,6 +54,12 @@ test("the headline currency format stays inside every fixed column it feeds", ()
   assert.equal(usdHeadline(126_987.25), "$127K");
   assert.equal(usdHeadline(99_999.99), "$100K");
   assert.equal(usdHeadline(4.2e6), "$4.2M");
+  // The half-cent band under a comma boundary: the branch is chosen on the
+  // raw value, but `usd` rounds to cents, so the sub-thousand branch used to
+  // print the thousand it was chosen to avoid.
+  assert.equal(usdHeadline(999.994), "$999.99");
+  assert.equal(usdHeadline(999.995), "$1,000");
+  assert.equal(usdHeadline(999.9999), "$1,000");
 });
 
 test("compacted token counts stay inside the metric value budget", () => {
