@@ -10,10 +10,10 @@
  */
 
 const PROJECT_SERIES = [
-  { variable: '--project-1', fallback: '#2a78d6' },
-  { variable: '--project-2', fallback: '#eda100' },
-  { variable: '--project-3', fallback: '#e87ba4' },
-  { variable: '--project-4', fallback: '#008300' },
+  { variable: '--project-1', fallback: '#3f6d99' },
+  { variable: '--project-2', fallback: '#b4832c' },
+  { variable: '--project-3', fallback: '#a8577a' },
+  { variable: '--project-4', fallback: '#4a7a52' },
 ]
 
 export const OTHER_PROJECT_SERIES = {
@@ -22,14 +22,37 @@ export const OTHER_PROJECT_SERIES = {
   fallback: '#66717f',
 }
 
-export function buildProjectColorIndex(sessions, preferredSessions = []) {
-  const index = new Map()
-  for (const session of [...preferredSessions, ...sessions]) {
+/**
+ * Which projects hold the four fixed colour slots: the four largest by volume.
+ *
+ * Two rules used to compete here. Slots were claimed in iteration order, and
+ * the timeline handed its currently visible week the first claim, so the four
+ * coloured projects were an artefact of which week happened to be on screen.
+ * A chart elsewhere could then draw its three largest projects in one neutral
+ * while two projects nobody was reading held blue and green.
+ *
+ * One rule replaces both: colour follows volume, over the same period every
+ * table on the dashboard sorts by. Ties keep first appearance, so a session
+ * list carrying no volume at all still produces a stable index rather than an
+ * arbitrary one.
+ *
+ * The cost is that the timeline, in its opt-in project colouring, can page to
+ * a week whose projects are all outside the four and draw it entirely neutral.
+ * That is the deliberate trade: one project keeping one colour everywhere is
+ * worth more than every week being colourful.
+ */
+export function buildProjectColorIndex(sessions) {
+  const totals = new Map()
+  for (const session of sessions) {
     const project = session.project || 'Unassigned'
-    if (index.has(project)) continue
-    index.set(project, index.size < PROJECT_SERIES.length ? index.size : -1)
+    const entry = totals.get(project) || { tokens: 0, seen: totals.size }
+    entry.tokens += Number(session.totalTokens) || 0
+    totals.set(project, entry)
   }
-  return index
+  const ranked = [...totals.entries()]
+    .sort(([, left], [, right]) => right.tokens - left.tokens || left.seen - right.seen)
+    .map(([project]) => project)
+  return new Map(ranked.map((project, rank) => [project, rank < PROJECT_SERIES.length ? rank : -1]))
 }
 
 export function projectSeriesFor(project, index) {
@@ -60,17 +83,16 @@ export function modelSeriesFor(family) {
 /**
  * The four territories of the folded week, in the Pattern view.
  *
- * They reuse hues the portal already assigns elsewhere rather than adding a
- * palette: work hours take the heat blue that already means concentration,
- * evenings the darker accent, early hours the neutral the cache series uses,
- * and the weekend the terra gold. Each one is a variable rather than a literal
- * because the dark palette redefines every one of them.
+ * They run work hours, evenings, early hours, weekend: an order, not a set of
+ * categories, so they take the four-step tonal ramp the Tokens view already
+ * draws its composition in rather than four competing hues. Reusing that ramp
+ * also means the dark palette, which inverts it wholesale, is already handled.
  */
 const TERRITORY_SERIES = {
-  work: { variable: '--heat-chill', fallback: '#176f98' },
-  evening: { variable: '--accent-dark', fallback: '#92503a' },
-  early: { variable: '--cache-read', fallback: '#8e8b83' },
-  weekend: { variable: '--model-terra', fallback: '#a27b18' },
+  work: { variable: '--token-dark', fallback: '#5f5e59' },
+  evening: { variable: '--token-mid', fallback: '#8f8d86' },
+  early: { variable: '--token-light', fallback: '#bbb8b0' },
+  weekend: { variable: '--token-pale', fallback: '#dedbd2' },
 }
 
 /** The series a time territory draws in. */

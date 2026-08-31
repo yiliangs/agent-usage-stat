@@ -149,14 +149,36 @@ export function buildUsagePattern(sessions, calendar, { projectLimit = 4 } = {})
   }
 }
 
+/**
+ * The recorded days grouped into calendar weeks, each carrying its own folded
+ * matrix.
+ *
+ * A calendar week holds at most one day per weekday, so a week's 7 by 24
+ * matrix is just its days' hour arrays filed by weekday: no second pass over
+ * the sessions, and a week and the period fold are then the same shape. That
+ * is what lets the heatmap page between them without a second renderer.
+ */
 function groupWeeks(days) {
   const weeks = new Map()
   for (const day of days) {
-    const week = weeks.get(day.weekKey) || { key: day.weekKey, days: [] }
+    const week = weeks.get(day.weekKey) || { key: day.weekKey, endKey: sundayOf(day.weekKey), days: [] }
     week.days.push(day)
     weeks.set(day.weekKey, week)
   }
-  return [...weeks.values()].sort((left, right) => left.key.localeCompare(right.key))
+  return [...weeks.values()]
+    .sort((left, right) => left.key.localeCompare(right.key))
+    .map((week) => {
+      const matrix = Array.from({ length: DAYS_IN_WEEK }, () => zeroes(HOURS_IN_DAY))
+      for (const day of week.days) matrix[day.weekday] = day.hours
+      const dayTotals = matrix.map(total)
+      return { ...week, matrix, dayTotals, tokens: total(dayTotals), peakSlot: peakSlotOf(matrix) }
+    })
+}
+
+function sundayOf(mondayKey) {
+  const date = new Date(`${mondayKey}T12:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + 6)
+  return date.toISOString().slice(0, 10)
 }
 
 function weekdayMeans(days) {

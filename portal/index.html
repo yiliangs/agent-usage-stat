@@ -35,10 +35,10 @@
       --model-terra: #a27b18;
       --model-luna: #aa4778;
       --model-codex: #007f9a;
-      --project-1: #2a78d6;
-      --project-2: #eda100;
-      --project-3: #e87ba4;
-      --project-4: #008300;
+      --project-1: #3f6d99;
+      --project-2: #b4832c;
+      --project-3: #a8577a;
+      --project-4: #4a7a52;
       --status-good: #35765f;
       --status-warn: #b8801d;
       --status-error: #a3483a;
@@ -476,6 +476,11 @@
     .pattern-heat-scale .pattern-peak-key { display: inline-flex; align-items: center; gap: 6px; margin-left: 22px; }
     .pattern-heat-scale .pattern-peak-key i { width: 10px; height: 10px; background: none; border-color: var(--accent); outline: 1px solid var(--accent); outline-offset: 1px; }
 
+    /* The three charts set their own viewBox width to their rendered width, so
+       one viewBox unit is one CSS pixel in all of them. That is what makes a
+       size declared here the size it draws at, in a card of any span, and what
+       keeps the type on the charts on the same scale as the type around
+       them. */
     .pattern-chart { width: 100%; display: block; overflow: visible; }
     .pattern-chart text { fill: var(--graphite); font-family: var(--mono); font-size: 9px; }
     .pattern-chart .pattern-grid-label { fill: var(--muted); font-size: 8.5px; }
@@ -486,6 +491,9 @@
     .pattern-chart .pattern-band-label { fill: var(--heat-chill); font-size: 8.5px; letter-spacing: .08em; }
     .pattern-chart .pattern-quiet { stroke: var(--line-dark); stroke-width: 1; stroke-dasharray: 3 3; }
     .pattern-chart .pattern-quiet-label { fill: var(--muted); font-size: 8.5px; letter-spacing: .08em; }
+    /* A mark sitting on the scale ceiling is a clamped outlier, not a reading.
+       The accent ring says the true value is off the top rather than there. */
+    .pattern-chart .pattern-dot.clamped { stroke: var(--accent); stroke-width: 1.2; }
     .pattern-chart .pattern-day-line { fill: none; stroke: var(--ink); stroke-width: 1.4; stroke-linejoin: round; }
     .pattern-chart .pattern-week-line { fill: none; stroke: var(--ink); stroke-width: 1; }
     .pattern-chart .pattern-mean-line { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
@@ -493,13 +501,11 @@
     .pattern-chart .pattern-dot { fill: var(--ink); stroke: var(--paper); stroke-width: .8; cursor: crosshair; }
     .pattern-chart .pattern-stack { fill: var(--series); cursor: crosshair; }
     .pattern-chart .pattern-stack:hover { filter: brightness(.85); }
-    .pattern-week-card { display: flex; flex-direction: column; }
-    .pattern-week-chart { flex: 1; }
     .pattern-week-chart .pattern-dot { stroke-width: 1; }
 
     .pattern-legend { display: flex; flex-wrap: wrap; gap: 8px 15px; margin: 0 0 12px; color: var(--graphite); font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
     .pattern-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-    .pattern-legend-tight { gap: 6px 14px; margin: 12px 0 0; font-size: 8.5px; letter-spacing: .06em; }
+    .pattern-legend-tight { margin: 12px 0 0; }
     .pattern-legend .pattern-ramp { gap: 5px; }
     .pattern-legend .pattern-ramp i { width: 8px; height: 8px; background: var(--ink); border-radius: 50%; }
     .pattern-legend .pattern-swatch-mean { width: 14px; height: 2px; background: var(--accent); }
@@ -514,37 +520,61 @@
     .pattern-stat span { color: var(--muted); font-family: var(--sans); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
     .pattern-stat b { margin-top: 5px; font-family: var(--serif); font-size: 20px; font-weight: 400; }
 
-    .pattern-split-label { display: block; margin-bottom: 7px; color: var(--muted); font-family: var(--mono); font-size: 7.5px; letter-spacing: .08em; text-transform: uppercase; }
-    .pattern-split-label.spaced { margin: 12px 0 7px; }
+    .pattern-split-label { display: block; margin-bottom: 7px; color: var(--muted); font-family: var(--mono); font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
+    .pattern-split-label.spaced { margin: 14px 0 7px; }
     .pattern-split-bars { position: relative; }
     .pattern-split-bar { display: flex; border: 1px solid var(--line-dark); }
-    .pattern-split-bar i { background: var(--series); cursor: crosshair; }
-    .pattern-split-bar.time { height: 18px; }
-    .pattern-split-bar.time i { opacity: .5; }
-    .pattern-split-bar.tokens { height: 34px; }
+    /* The segments are <i> so they can carry the series colour the way every
+       other swatch on the page does, which also means their text inherits the
+       element's italic and has to be put back upright. */
+    .pattern-split-bar i { background: var(--series); font-style: normal; cursor: crosshair; }
+    /* Four steps of one ramp abut with nothing between them, so each boundary
+       gets a hairline of paper. Without it the bar reads as one grey slab. */
+    .pattern-split-bar i + i { border-left: 1px solid var(--paper); }
+    .pattern-split-bar.time { height: 20px; }
+    .pattern-split-bar.time i { opacity: .8; }
+    /* The token bar carries its own legend, so it is sized for type rather
+       than for the stripe: label at the top, share at the bottom, and the
+       volume beneath that. A segment too narrow for a word drops to the share
+       alone, and one too narrow for that draws bare and is named in the
+       caption. */
+    .pattern-split-bar.tokens { height: 104px; }
+    .pattern-split-bar.tokens i { display: flex; flex-direction: column; overflow: hidden; padding: 9px 10px 10px; }
+    /* A segment names which end of the ramp it sits on, not what colour its
+       text should be. The dark palette inverts the ramp, so the heavy end goes
+       from dark ground to light ground and the text has to follow it. */
+    .pattern-split-bar.tokens i.on-heavy { color: var(--paper-hi); }
+    .pattern-split-bar.tokens i.on-faint { color: var(--ink); }
+    .pattern-seg-label { font-family: var(--sans); font-size: 10px; font-weight: 600; line-height: 1.25; }
+    .pattern-seg-range { display: block; margin-top: 1px; font-family: var(--mono); font-size: 8px; font-weight: 400; letter-spacing: .04em; opacity: .78; }
+    .pattern-seg-value { margin-top: auto; font-family: var(--serif); font-size: 24px; font-weight: 400; line-height: 1; letter-spacing: -.035em; }
+    .pattern-seg-meta { margin-top: 4px; font-family: var(--mono); font-size: 8px; letter-spacing: .04em; opacity: .82; white-space: nowrap; }
     /* The dividers drop from the time bar's boundaries across both bars, which
        is what turns two stacks into one comparison. */
     .pattern-split-divider { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--ink); opacity: .45; pointer-events: none; }
 
-    .pattern-rows { display: grid; margin-top: 16px; border-top: 1px solid var(--line-dark); color: var(--graphite); font-family: var(--mono); font-size: 9.5px; }
+    .pattern-rows { display: grid; margin-top: 14px; border-top: 1px solid var(--line-dark); color: var(--graphite); font-family: var(--mono); font-size: 9px; }
     .pattern-row { display: grid; gap: 10px; align-items: center; border-bottom: 1px solid var(--line); }
     .pattern-row i { background: var(--series); }
     .pattern-row-name { overflow: hidden; color: var(--ink); font-family: var(--sans); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
-    .pattern-row-name small { color: var(--muted); }
     .pattern-row-muted { color: var(--muted); text-align: right; }
-    .pattern-row-value { color: var(--ink); font-size: 12px; text-align: right; }
-    .pattern-row-foot { display: grid; gap: 10px; min-height: 20px; align-items: center; color: var(--muted); font-family: var(--mono); font-size: 7.5px; text-transform: uppercase; }
+    .pattern-row-foot { display: grid; gap: 10px; min-height: 20px; align-items: center; color: var(--muted); font-family: var(--mono); font-size: 8px; text-transform: uppercase; }
     .pattern-row-foot span { text-align: right; }
-    .pattern-territory-rows .pattern-row,
-    .pattern-territory-rows .pattern-row-foot { grid-template-columns: 12px minmax(0, 1fr) 64px 52px 76px; }
-    .pattern-territory-rows .pattern-row { min-height: 34px; }
-    .pattern-territory-rows .pattern-row i { width: 10px; height: 10px; border: 1px solid var(--line-dark); }
-    .pattern-project-rows { margin-top: 12px; }
     .pattern-project-rows .pattern-row,
     .pattern-project-rows .pattern-row-foot { grid-template-columns: 12px minmax(0, 1fr) 64px 76px; }
     .pattern-project-rows .pattern-row { min-height: 32px; }
     .pattern-project-rows .pattern-row i { width: 10px; height: 14px; }
     .pattern-project-rows .pattern-row-name { font-weight: 600; }
+
+    /* Week paging for the heatmap, matching the calendar nav the Overview's
+       session timeline already uses so the two read as one control. */
+    .pattern-nav { display: inline-flex; align-items: center; margin-left: auto; border: 1px solid var(--line-dark); }
+    .pattern-nav button { height: 22px; min-width: 24px; border: 0; border-left: 1px solid var(--line-dark); background: transparent; color: var(--graphite); padding: 0 7px; font-family: var(--mono); font-size: 10px; line-height: 1; cursor: pointer; }
+    .pattern-nav button:first-child { border-left: 0; }
+    .pattern-nav button:hover:not(:disabled) { background: rgba(var(--ink-rgb),.06); color: var(--ink); }
+    .pattern-nav button:disabled { color: var(--line-dark); cursor: default; opacity: .55; }
+    .pattern-nav button.active { background: var(--ink); color: var(--paper-hi); }
+    .pattern-nav span { min-width: 132px; padding: 0 10px; border-left: 1px solid var(--line-dark); color: var(--ink); font-family: var(--mono); font-size: 9px; letter-spacing: .06em; text-align: center; text-transform: uppercase; }
 
     .pattern-note { min-height: 0; display: grid; grid-template-columns: 24px 1fr; gap: 10px; padding: 17px 18px 19px; color: var(--graphite); font-family: var(--sans); font-size: 10px; line-height: 1.45; }
     .pattern-note .pattern-index { color: var(--accent); font-family: var(--mono); font-size: 10.5px; }
@@ -2482,10 +2512,10 @@
         --model-terra: #c7a34f;
         --model-luna: #d276a1;
         --model-codex: #43a9c1;
-        --project-1: #3987e5;
-        --project-2: #c98500;
-        --project-3: #d55181;
-        --project-4: #008300;
+        --project-1: #7ba3cc;
+        --project-2: #d3a558;
+        --project-3: #c98aa8;
+        --project-4: #7fa987;
         --status-good: #75b79a;
         --status-warn: #dcab5c;
         --status-error: #dc7866;
@@ -2516,6 +2546,9 @@
       .stack-segment:hover,
       .pattern-chart .pattern-stack:hover,
       .project-row:hover .bar i { filter: brightness(1.18); }
+
+      .pattern-split-bar.tokens i.on-heavy { color: var(--field); }
+      .pattern-split-bar.tokens i.on-faint { color: var(--ink); }
     }
 
     @media (min-width: 1920px) {
@@ -3023,8 +3056,13 @@
         <section class="analysis-card full">
           <div class="analysis-card-head">
             <span class="pattern-index">01</span>
-            <div class="pattern-card-title"><h2>The week at a glance</h2><p>Every hour of the folded week, shaded by recorded token volume.</p></div>
-            <span>168 hour-slots / hour &times; weekday</span>
+            <div class="pattern-card-title"><h2>The week at a glance</h2><p>168 hour-slots, hour by weekday, shaded by recorded token volume.</p></div>
+            <div class="pattern-nav" id="patternWeekNav">
+              <button type="button" data-pattern-week="older" aria-label="Previous week">&lsaquo;</button>
+              <span id="patternWeekLabel"></span>
+              <button type="button" data-pattern-week="newer" aria-label="Next week">&rsaquo;</button>
+              <button type="button" data-pattern-week="all" id="patternWeekAll">All</button>
+            </div>
           </div>
           <p class="pattern-caption" id="patternHeatCaption"></p>
           <div class="pattern-heat" id="patternHeat"></div>
@@ -3041,7 +3079,7 @@
           <div class="pattern-stats" id="patternDayStats"></div>
         </section>
 
-        <section class="analysis-card narrow pattern-week-card">
+        <section class="analysis-card narrow">
           <div class="analysis-card-head">
             <span class="pattern-index">03</span>
             <div class="pattern-card-title"><h2>The shape of a week</h2><p>One dot per recorded day on its weekday; darker dots are more recent.</p></div>
@@ -3058,7 +3096,6 @@
             <span>Share of volume</span>
           </div>
           <div id="patternSplit"></div>
-          <div class="pattern-rows pattern-territory-rows" id="patternTerritoryRows"></div>
           <p class="pattern-caption pattern-caption-foot" id="patternSplitCaption"></p>
         </section>
 
