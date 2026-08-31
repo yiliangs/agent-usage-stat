@@ -1,6 +1,12 @@
 import { createIcons, Settings } from 'lucide'
 import { buildTokenTraffic, robustTokenTrafficScale } from './token-traffic.js'
-import { buildProjectColorIndex, modelSeriesFor, projectSeriesFor } from './timeline-colors.js'
+import { OTHER_PROJECT_SERIES, buildProjectColorIndex, modelSeriesFor, projectSeriesFor, territorySeriesFor } from './timeline-colors.js'
+import {
+  SLOTS_IN_WEEK,
+  WEEKDAY_LABELS,
+  WEEKDAY_NAMES,
+  buildUsagePattern,
+} from './pattern-model.js'
 import { selectPortalView } from './portal-navigation.js'
 import { providerMark } from './provider-marks.js'
 import { escapeAttribute, escapeText } from './markup-escape.js'
@@ -31,7 +37,7 @@ const state = {
   tokenTraffic: null,
   rhythmView: 'week',
   rhythmColor: 'model',
-  rhythmProjectColors: null,
+  projectColors: null,
   rhythmAnchor: null,
   focusFamily: null,
   projectSort: { key: 'cost', direction: -1 },
@@ -419,6 +425,11 @@ function renderModels(sessions) {
 function renderAnalysisViews(current, previous, period, projects) {
   renderSpendAnalysis(current, previous, period, projects)
   renderTokenAnalysis(current, previous, period, projects)
+  // The Pattern view draws projects in the colours the timeline already gave
+  // them, so a project keeps one colour wherever the portal names it. The
+  // fallback only matters if the timeline is ever rendered after this point.
+  state.projectColors ||= buildProjectColorIndex(state.sessions)
+  renderPatternAnalysis(current, state.projectColors)
   renderProjectAnalysis(projects)
   renderSessionAnalysis(current)
 }
@@ -711,6 +722,297 @@ function renderTokenAnalysis(current, previous, period, projects) {
   renderAnalysisBars('#tokenProjects', byTokens.map((project) => ({ label: project.project, note: project.family, value: project.tokens, project: project.project, color: styleForFamily(project.family).base })))
   const cacheRows = days.filter((row) => row.tokens > 0).slice(-10).map((row) => ({ label: row.key.slice(5), note: `${fmt.compact(row.cacheRead)} cache-read tokens`, value: row.cacheRead / row.tokens }))
   renderAnalysisBars('#cacheDays', cacheRows, { format: fmt.pct })
+}
+
+/**
+ * The two hour charts on the Pattern view share one geometry.
+ *
+ * That is what lets a reader carry a peak down from the dot chart into the
+ * stacked one: the same hour occupies the same column in both, so the two
+ * cards read as one axis seen twice rather than as two charts that happen to
+ * cover the same range.
+ */
+const PATTERN_HOUR = { width: 640, top: 18, baseline: 190, span: 172, step: 26.7, dotInset: 13.35, barInset: 3, barWidth: 20 }
+const PATTERN_WEEK = { left: 10, right: 310, origin: 30, step: 42, top: 24, baseline: 196, span: 172 }
+const PATTERN_GRID_STEPS = [0, .25, .5, .75]
+const PATTERN_HOUR_TICKS = [0, 3, 6, 9, 12, 15, 18, 21]
+
+/**
+ * How many recorded days the two dot charts scatter.
+ *
+ * Every figure printed on this view covers the whole selected period; the cap
+ * thins only the scatter, which shows spread rather than any total. Without it
+ * an ALL range over a year-old ledger puts nine thousand circles on the page,
+ * each one carrying a tooltip binding, and the card says so whenever the cap
+ * actually bites.
+ */
+const PATTERN_SCATTER_DAYS = 60
+
+const clockHour = (hour) => String(((Math.round(hour) % 24) + 24) % 24).padStart(2, '0')
+const clockLabel = (hour) => `${clockHour(hour)}:00`
+const clockRange = (from, to) => `${clockHour(from)}–${clockHour(to)}H`
+const hourColumn = (hour) => hour * PATTERN_HOUR.step
+const hourDotX = (hour) => hour * PATTERN_HOUR.step + PATTERN_HOUR.dotInset
+const hourBarX = (hour) => hour * PATTERN_HOUR.step + PATTERN_HOUR.barInset
+const patternDayDate = (key) => new Date(`${key}T12:00:00Z`)
+
+/** Older days fade rather than vanish. The exponent holds the last week or two
+ *  at full strength without erasing the month behind them. */
+const recencyFade = (day, floor, range) => (floor + range * day.recency ** 1.4).toFixed(2)
+
+/** The heat ramp, mixed in CSS rather than resolved here, so a system theme
+ *  change repaints the map without waiting for a re-render. */
+const heatMix = (shade) => `color-mix(in srgb, var(--heat-chill) ${(clamp(shade, 0, 1) * 100).toFixed(1)}%, var(--paper-hi))`
+
+/** A series as a live `var()` reference rather than a resolved colour, for the
+ *  same reason. */
+const seriesColor = (series) => `var(${series.variable}, ${series.fallback})`
+
+function renderPatternAnalysis(sessions, projectColors) {
+  const pattern = buildUsagePattern(sessions, { dateKey: localDateKey, hour: localHour })
+  renderPatternKpis(pattern)
+  if (!pattern.tokens) {
+    renderPatternEmpty()
+    return
+  }
+  renderPatternHeat(pattern)
+  renderPatternDay(pattern)
+  renderPatternWeek(pattern)
+  renderPatternTerritories(pattern)
+  renderPatternProjects(pattern, projectColors)
+  const quiet = pattern.quietStretch
+  $('#patternNote').textContent = quiet
+    ? `The ${clockRange(quiet.start, quiet.end)} stretch carries ${fmt.pct(quiet.tokens / pattern.tokens)} of period volume, against ${fmt.pct(pattern.peakHour.tokens / pattern.tokens)} in the single hour beginning ${clockLabel(pattern.peakHour.index)}.`
+    : 'Volume is spread evenly enough across the clock that no run of hours stays under 12% of the busiest one.'
+}
+
+function renderPatternKpis(pattern) {
+  const quiet = pattern.quietStretch
+  renderKpis('#patternKpis', [
+    {
+      label: 'Peak slot',
+      value: pattern.tokens ? `${WEEKDAY_LABELS[pattern.peakSlot.weekday]} ${clockLabel(pattern.peakSlot.hour)}` : '—',
+      note: pattern.tokens ? `${fmt.compact(pattern.peakSlot.tokens)} tokens in one hour-slot` : 'No recorded volume',
+    },
+    {
+      label: 'Daypart lead',
+      value: pattern.tokens ? `${pattern.dayparts.lead.range} / ${fmt.pct(pattern.dayparts.lead.share)}` : '—',
+      note: 'Largest six-hour share of volume',
+    },
+    { label: 'Half-volume footprint', value: `${pattern.halfVolumeSlots} / ${SLOTS_IN_WEEK}`, note: 'Hour-slots holding 50% of tokens' },
+    { label: 'Quiet stretch', value: quiet ? clockRange(quiet.start, quiet.end) : '—', note: 'Longest run under 12% of the peak hour' },
+  ])
+}
+
+function renderPatternEmpty() {
+  const message = 'No recorded volume in the selected period.'
+  $('#patternHeat').innerHTML = `<p class="pattern-empty">${message}</p>`
+  for (const selector of ['#patternDayLegend', '#patternDayStats', '#patternWeekLegend', '#patternSplit', '#patternTerritoryRows', '#patternProjectRows', '#patternDayChart', '#patternWeekChart', '#patternProjectChart']) {
+    $(selector).innerHTML = ''
+  }
+  for (const selector of ['#patternHeatCaption', '#patternWeekCaption', '#patternSplitCaption', '#patternProjectCaption']) {
+    $(selector).textContent = ''
+  }
+  $('#patternDayMeta').textContent = 'Hour-of-day totals'
+  $('#patternNote').textContent = message
+}
+
+function renderPatternHeat(pattern) {
+  const max = Math.max(1, pattern.peakSlot.tokens)
+  const cells = []
+  for (let weekday = 0; weekday < WEEKDAY_LABELS.length; weekday += 1) {
+    for (let hour = 0; hour < 24; hour += 1) {
+      const tokens = pattern.matrix[weekday][hour]
+      // The ramp is deliberately not linear: token volume is heavy-tailed, and
+      // a linear map leaves every hour but the peak indistinguishable.
+      const shade = (tokens / max) ** .65
+      const peak = weekday === pattern.peakSlot.weekday && hour === pattern.peakSlot.hour
+      const classes = [shade > .55 ? 'solid' : '', peak ? 'peak' : ''].filter(Boolean).join(' ')
+      cells.push(`<i class="${classes}" style="--heat:${heatMix(shade)}" data-tip="${WEEKDAY_LABELS[weekday]} ${clockLabel(hour)} | ${escapeAttribute(fmt.compact(tokens))} tokens"></i>`)
+    }
+  }
+  const totals = pattern.dayTotals.map((tokens, weekday) => weekday === pattern.peakDay.index
+    ? `<b>${escapeText(fmt.compact(tokens))}</b>`
+    : `<span>${escapeText(fmt.compact(tokens))}</span>`).join('')
+  $('#patternHeat').innerHTML = `
+    <div class="pattern-heat-grid">
+      <div class="pattern-heat-labels">${WEEKDAY_LABELS.map((label) => `<span>${label}</span>`).join('')}</div>
+      <div class="pattern-heat-cells">${cells.join('')}<div class="pattern-heat-weekend"></div></div>
+      <div class="pattern-heat-totals">${totals}</div>
+    </div>
+    <div class="pattern-heat-axis">
+      <span></span>
+      <div class="pattern-heat-hours">${Array.from({ length: 24 }, (_, hour) => `<span>${hour % 3 === 0 ? clockHour(hour) : ''}</span>`).join('')}</div>
+      <span class="pattern-heat-sigma">DAY &Sigma;</span>
+    </div>
+    <div class="pattern-heat-scale">Less${[0, .25, .5, .75, 1].map((shade) => `<i class="${shade > .5 ? 'solid' : ''}" style="--heat:${heatMix(shade)}"></i>`).join('')}More<span class="pattern-peak-key"><i></i>Peak slot</span></div>`
+  $('#patternHeatCaption').textContent = `${fmt.compact(pattern.tokens)} tokens across ${SLOTS_IN_WEEK} hour-slots. Half of that volume sits in ${pattern.halfVolumeSlots} of them. Heaviest slot: ${WEEKDAY_NAMES[pattern.peakSlot.weekday]} ${clockLabel(pattern.peakSlot.hour)}, ${fmt.compact(pattern.peakSlot.tokens)} tokens.`
+}
+
+/** Gridlines, baseline and hour ticks, shared by the two charts that carry the
+ *  hour axis so neither can drift from the other. */
+function patternHourFrame(max) {
+  const { width, top, baseline, span } = PATTERN_HOUR
+  const grid = PATTERN_GRID_STEPS.map((step) => {
+    const y = top + span * step
+    return `<line class="pattern-gridline" x1="0" y1="${y.toFixed(1)}" x2="${width}" y2="${y.toFixed(1)}"/><text class="pattern-grid-label" x="0" y="${(y - 4).toFixed(1)}">${escapeText(fmt.compact(max * (1 - step)))}</text>`
+  }).join('')
+  const axis = `<line class="pattern-axis" x1="0" y1="${baseline}" x2="${width}" y2="${baseline}"/>`
+  const ticks = PATTERN_HOUR_TICKS.map((hour) => `<text x="${hourBarX(hour).toFixed(1)}" y="207">${clockHour(hour)}</text>`).join('')
+  return { grid, axis, ticks }
+}
+
+function renderPatternDay(pattern) {
+  const { top, baseline, span } = PATTERN_HOUR
+  const max = Math.max(1, pattern.dayHourMax)
+  // A recorded hour of zero still earns a pixel above the baseline, so an
+  // empty hour reads as measured rather than as missing.
+  const y = (tokens) => baseline - Math.max(1, span * tokens / max)
+  const scatter = pattern.days.slice(-PATTERN_SCATTER_DAYS)
+  const { grid, axis, ticks } = patternHourFrame(max)
+  const band = `<rect class="pattern-band" x="${hourColumn(9)}" y="${top}" width="${hourColumn(9)}" height="${baseline - top}"/><text class="pattern-band-label" x="${hourColumn(13.5)}" y="${top + 12}" text-anchor="middle">WORKING HOURS 09&ndash;18</text>`
+  const quiet = pattern.quietStretch
+  const quietMarks = quiet
+    ? `<line class="pattern-quiet" x1="${hourColumn(quiet.start)}" y1="${top}" x2="${hourColumn(quiet.start)}" y2="${baseline}"/><line class="pattern-quiet" x1="${hourColumn(quiet.end)}" y1="${top}" x2="${hourColumn(quiet.end)}" y2="${baseline}"/><text class="pattern-quiet-label" x="${hourColumn((quiet.start + quiet.length / 2) % 24)}" y="${baseline - 6}" text-anchor="middle">QUIET</text>`
+    : ''
+  const lines = scatter.map((day) => {
+    const path = day.hours.map((tokens, hour) => `${hour ? 'L' : 'M'}${hourDotX(hour).toFixed(1)} ${y(tokens).toFixed(1)}`).join(' ')
+    const opacity = day.recency === 1 ? '0.45' : recencyFade(day, .03, .12)
+    return `<path class="pattern-day-line" d="${path}" stroke-opacity="${opacity}" data-tip="${escapeAttribute(fmt.dateYear(patternDayDate(day.key)))} | ${escapeAttribute(fmt.compact(day.tokens))} tokens"/>`
+  }).join('')
+  const mean = pattern.hourMeans.map((tokens, hour) => `${hour ? 'L' : 'M'}${hourDotX(hour).toFixed(1)} ${y(tokens).toFixed(1)}`).join(' ')
+  const dots = scatter.flatMap((day) => day.hours.map((tokens, hour) => `<circle class="pattern-dot" cx="${hourDotX(hour).toFixed(1)}" cy="${y(tokens).toFixed(1)}" r="2.2" fill-opacity="${recencyFade(day, .1, .75)}" data-tip="${escapeAttribute(fmt.date(patternDayDate(day.key)))} ${clockLabel(hour)} | ${escapeAttribute(fmt.compact(tokens))} tokens"/>`)).join('')
+
+  $('#patternDayChart').innerHTML = `${grid}${band}${quietMarks}${lines}<path class="pattern-mean-line" d="${mean}"/>${dots}${axis}${ticks}`
+  $('#patternDayLegend').innerHTML = `
+    <span class="pattern-ramp"><i style="opacity:.2"></i><i style="opacity:.55"></i><i></i> Older &rarr; recent day</span>
+    <span><i class="pattern-swatch-mean"></i> Hourly mean</span>
+    <span><i class="pattern-swatch-thin"></i> Same day</span>
+    <span><i class="pattern-swatch-band"></i> Working hours 09&ndash;18</span>
+    <span><i class="pattern-swatch-dashed"></i> Quiet stretch (&lt;12% of peak)</span>`
+  $('#patternDayStats').innerHTML = [
+    ['Busiest hour', clockLabel(pattern.peakHour.index)],
+    ['Heaviest slot', `${WEEKDAY_LABELS[pattern.peakSlot.weekday]} ${clockLabel(pattern.peakSlot.hour)}`],
+    ['Quietest stretch', quiet ? clockRange(quiet.start, quiet.end) : '—'],
+  ].map(([label, value]) => `<div class="pattern-stat"><span>${label}</span><b>${escapeText(value)}</b></div>`).join('')
+  $('#patternDayMeta').textContent = scatter.length < pattern.days.length
+    ? `${scatter.length} most recent of ${pattern.days.length} recorded days`
+    : `${pattern.days.length} recorded day${pattern.days.length === 1 ? '' : 's'}`
+}
+
+function renderPatternWeek(pattern) {
+  const { left, right, origin, step, top, baseline, span } = PATTERN_WEEK
+  const max = Math.max(1, pattern.dayMax)
+  const x = (weekday) => origin + weekday * step
+  const y = (tokens) => baseline - span * tokens / max
+  const scatter = pattern.days.slice(-PATTERN_SCATTER_DAYS)
+  const drawn = new Set(scatter.map((day) => day.key))
+  const weeks = pattern.weeks
+    .map((week) => ({ key: week.key, days: week.days.filter((day) => drawn.has(day.key)) }))
+    .filter((week) => week.days.length > 1)
+  const latestWeek = weeks[weeks.length - 1]?.key
+
+  const grid = PATTERN_GRID_STEPS.map((gridStep) => {
+    const line = top + span * gridStep
+    return `<line class="pattern-gridline" x1="${left}" y1="${line.toFixed(1)}" x2="${right}" y2="${line.toFixed(1)}"/><text class="pattern-grid-label" x="${left}" y="${(line - 4).toFixed(1)}">${escapeText(fmt.compact(max * (1 - gridStep)))}</text>`
+  }).join('')
+  const band = `<rect class="pattern-band" x="${x(0) - 14}" y="${top}" width="${x(4) - x(0) + 28}" height="${baseline - top}"/>`
+  const lines = weeks.map((week) => {
+    const days = week.days.slice().sort((one, other) => one.weekday - other.weekday)
+    const path = days.map((day, index) => `${index ? 'L' : 'M'}${x(day.weekday)} ${y(day.tokens).toFixed(1)}`).join(' ')
+    const label = `${fmt.date(patternDayDate(days[0].key))} &ndash; ${fmt.date(patternDayDate(days[days.length - 1].key))}`
+    return `<path class="pattern-week-line" d="${path}" stroke-opacity="${week.key === latestWeek ? '0.65' : '0.18'}" data-tip="${escapeAttribute(`${label}${week.key === latestWeek ? ' | most recent week' : ''}`)}"/>`
+  }).join('')
+  const means = pattern.weekdayMeans.map((tokens, weekday) => tokens
+    ? `<line class="pattern-mean-tick" x1="${x(weekday) - 12}" y1="${y(tokens).toFixed(1)}" x2="${x(weekday) + 12}" y2="${y(tokens).toFixed(1)}" data-tip="${WEEKDAY_NAMES[weekday]} mean | ${escapeAttribute(fmt.compact(tokens))} tokens"/>`
+    : '').join('')
+  const dots = scatter.map((day) => `<circle class="pattern-dot" cx="${x(day.weekday)}" cy="${y(day.tokens).toFixed(1)}" r="4" fill-opacity="${recencyFade(day, .14, .8)}" data-tip="${escapeAttribute(`${fmt.dateYear(patternDayDate(day.key))} (${WEEKDAY_NAMES[day.weekday]})`)} | ${escapeAttribute(fmt.compact(day.tokens))} tokens"/>`).join('')
+  const ticks = WEEKDAY_LABELS.map((label, weekday) => `<text class="${weekday >= 5 ? 'pattern-weekend-tick' : ''}" x="${x(weekday)}" y="212" text-anchor="middle">${label}</text>`).join('')
+
+  $('#patternWeekChart').innerHTML = `${band}${grid}${lines}${means}${dots}<line class="pattern-axis" x1="${left}" y1="${baseline}" x2="${right}" y2="${baseline}"/>${ticks}`
+  $('#patternWeekLegend').innerHTML = `
+    <span class="pattern-ramp"><i style="opacity:.2"></i><i style="opacity:.55"></i><i></i> Older &rarr; recent day</span>
+    <span><i class="pattern-swatch-thin"></i> Most recent week</span>
+    <span><i class="pattern-swatch-mean"></i> Weekday mean</span>
+    <span><i class="pattern-swatch-band"></i> Working days MON&ndash;FRI</span>`
+
+  const { peakDay, leastDay } = pattern
+  const ratio = leastDay.tokens ? peakDay.tokens / leastDay.tokens : null
+  const spread = ratio === null ? '' : ` (${ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1)}× apart)`
+  const weekend = (pattern.dayTotals[5] + pattern.dayTotals[6]) / pattern.tokens
+  $('#patternWeekCaption').textContent = `${WEEKDAY_NAMES[peakDay.index]}: ${fmt.compact(peakDay.tokens)}. ${WEEKDAY_NAMES[leastDay.index]}: ${fmt.compact(leastDay.tokens)}${spread}. Weekend: ${fmt.pct(weekend)} of the period.`
+}
+
+function renderPatternTerritories(pattern) {
+  const series = pattern.territories.map((territory) => ({ ...territory, color: seriesColor(territorySeriesFor(territory.key)) }))
+  const segment = (territory, share) => `<i style="--series:${territory.color};width:${(share * 100).toFixed(1)}%" data-tip="${escapeAttribute(territory.label)} | ${fmt.pct(territory.timeShare)} of the week | ${fmt.pct(territory.share)} of tokens"></i>`
+  let carried = 0
+  const dividers = series.slice(0, -1).map((territory) => {
+    carried += territory.timeShare * 100
+    return `<div class="pattern-split-divider" style="left:${carried.toFixed(2)}%"></div>`
+  }).join('')
+
+  $('#patternSplit').innerHTML = `
+    <span class="pattern-split-label">Share of the week's hours</span>
+    <div class="pattern-split-bars">
+      <div class="pattern-split-bar time">${series.map((territory) => segment(territory, territory.timeShare)).join('')}</div>
+      <span class="pattern-split-label spaced">Share of recorded tokens</span>
+      <div class="pattern-split-bar tokens">${series.map((territory) => segment(territory, territory.share)).join('')}</div>
+      ${dividers}
+    </div>`
+  $('#patternTerritoryRows').innerHTML = `${series.map((territory) => `
+    <div class="pattern-row">
+      <i style="--series:${territory.color}"></i>
+      <span class="pattern-row-name">${escapeText(territory.label)} <small>${escapeText(territory.range)}</small></span>
+      <span class="pattern-row-muted">${fmt.pct(territory.timeShare)} time</span>
+      <b class="pattern-row-value">${fmt.pct(territory.share)}</b>
+      <span class="pattern-row-muted">${escapeText(fmt.compact(territory.tokens))}</span>
+    </div>`).join('')}
+    <div class="pattern-row-foot"><span></span><span></span><span>Time</span><span>Tokens</span><span>Volume</span></div>`
+
+  const [work, evening] = series
+  $('#patternSplitCaption').textContent = `${fmt.pct(1 - work.share)} of recorded volume ran outside MON–FRI 09–18H, which is ${fmt.pct(1 - work.timeShare)} of the week's hours. Weekday evenings: ${fmt.pct(evening.share)}; work hours: ${fmt.pct(work.share)}.`
+}
+
+function renderPatternProjects(pattern, projectColors) {
+  const { baseline, span, barWidth } = PATTERN_HOUR
+  const max = Math.max(1, ...pattern.hourTotals)
+  const rows = pattern.projects.map((row) => ({
+    ...row,
+    color: seriesColor(row.other ? OTHER_PROJECT_SERIES : projectSeriesFor(row.project, projectColors)),
+  }))
+  const { grid, axis, ticks } = patternHourFrame(max)
+  const stack = []
+  for (let hour = 0; hour < 24; hour += 1) {
+    let carried = 0
+    for (const row of rows) {
+      const tokens = row.hours[hour]
+      if (tokens <= 0) continue
+      const height = span * tokens / max
+      const y = baseline - span * (carried + tokens) / max
+      stack.push(`<rect class="pattern-stack" style="--series:${row.color}" x="${hourBarX(hour).toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth}" height="${Math.max(.5, height).toFixed(1)}" data-tip="${escapeAttribute(row.project)} | ${clockLabel(hour)} | ${escapeAttribute(fmt.compact(tokens))} tokens"/>`)
+      carried += tokens
+    }
+  }
+
+  $('#patternProjectChart').innerHTML = `${grid}${stack.join('')}${axis}${ticks}`
+  $('#patternProjectRows').innerHTML = `${rows.map((row) => `
+    <div class="pattern-row">
+      <i style="--series:${row.color}"></i>
+      <span class="pattern-row-name">${escapeText(row.project)}</span>
+      <span class="pattern-row-muted">${fmt.pct(row.share)}</span>
+      <span class="pattern-row-muted">${row.peakHour === null ? '—' : escapeText(clockRange(row.windowStart, row.windowEnd))}</span>
+    </div>`).join('')}
+    <div class="pattern-row-foot"><span></span><span></span><span>Share</span><span>Peak window</span></div>`
+
+  const peaked = rows.filter((row) => row.peakHour !== null).sort((one, other) => one.peakHour - other.peakHour)
+  const earliest = peaked[0]
+  const latest = peaked[peaked.length - 1]
+  $('#patternProjectCaption').textContent = peaked.length > 1
+    ? `Earliest peak: ${earliest.project} at ${clockLabel(earliest.peakHour)}. Latest: ${latest.project} at ${clockLabel(latest.peakHour)}.`
+    : peaked.length === 1
+      ? `${earliest.project} peaks at ${clockLabel(earliest.peakHour)} and is the only project carrying recorded volume.`
+      : ''
 }
 
 function formatDuration(seconds) {
@@ -1302,8 +1604,8 @@ function renderWorkRhythm(sessions, window) {
   })
   const segmentsByDate = new Map(dateKeys.map((date) => [date, []]))
   const densityFor = densityScale(visibleSessions)
-  state.rhythmProjectColors ||= buildProjectColorIndex(state.sessions, visibleSessions)
-  const projectColors = state.rhythmProjectColors
+  state.projectColors ||= buildProjectColorIndex(state.sessions, visibleSessions)
+  const projectColors = state.projectColors
 
   for (const session of visibleSessions) {
     const { start, end } = sessionTimes(session)
@@ -1960,7 +2262,7 @@ async function load() {
       fetch('./data/meta.json', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null),
     ])
     state.sessions = sessions.map(normalizeSession).filter((session) => Number.isFinite(session.t))
-    state.rhythmProjectColors = null
+    state.projectColors = null
     state.meta = meta
     const requestedView = window.location.hash.slice(1)
     if (['overview', 'spend', 'tokens', 'projects', 'sessions', 'settings'].includes(requestedView)) state.view = requestedView

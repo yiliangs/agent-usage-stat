@@ -64,6 +64,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `portal/portal.js`: client-side aggregation, navigation, charts, tables, and detail interactions
 - `portal/usage-format.js`: numeric formats, each bounded to the width of the slot it feeds
 - `portal/usage-model.js`: the one owner of normalization, summing, and calendar bucketing
+- `portal/pattern-model.js`: the selected period folded onto the clock and the week, behind the Pattern view
 - `portal/glance-model.js`: which sessions the status-area panel counts, its charts, and the strings it prints
 - `portal/timeline-colors.js`: the portal's two colour axes, project and model family
 - `scripts/portal-probe-runner.mjs`: the one headless-Chrome harness the rendered-layout guards share
@@ -81,6 +82,9 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - Never let a recomputation replace a recorded session with lower tokens. Cumulative tokens order two observations of one session; cost does not, because a pricing correction lowers the rate underneath reads already on disk. Keep the winning observation whole rather than merging the two: totals, breakdown, turns, and time window came from one transcript read and agree only with each other.
 - A session's project comes from `project-name.ts` and nowhere else. `cwd` is the recorded fact; `project` is derived from it, so a worktree checkout counts toward the project it was cut from rather than the worktree directory. The portal re-derives it for shards written before a layout was known, and otherwise leaves a recorded name alone.
 - Every numeric format that feeds a single-line panel slot is bounded in `portal/usage-format.js` and declared in `SLOT_BUDGET`. Panels are sized once; the values they hold are not.
+- Which events carry a session's tokens is decided once, by `usageEvents` in `portal/usage-model.js`: the turns when their breakdown accounts for the session total, the session itself otherwise. Every view that plots completion time reads it, so two views cannot disagree about when volume landed.
+- A project's colour is assigned once per snapshot, into `state.projectColors`, and every surface drawing projects reads that index. A view building its own gives one project two colours.
+- The portal names no colour a palette variable does not own. Dark mode redefines every entry in `:root` and leaves a literal untouched, so a hard-coded hue survives the switch and lands unreadable.
 - The portal builds two documents from one Vite root: `index.html` for the dashboard and `panel.html` for the status-area glance. Both read the same generated snapshot, and both take summing, day bucketing, traffic bins, and series colours from `usage-model.js`, `token-traffic.js`, and `timeline-colors.js`; neither aggregates the ledger on its own.
 - The status-area icon exists on Windows only, decided in `status-area-policy.ts`. Wherever it exists, closing the dashboard hands the application to it rather than quitting, and its panel window is what keeps the process alive.
 - The panel document draws the panel's only frame. Its window is transparent so it reserves no non-client margin: the window rect is the content rect, `PANEL_SIZE` means on screen what `panelPlacement` clamps against, and the shell's own window border never lands on the hairline the document draws at the edge of its content.

@@ -438,6 +438,119 @@
     .composition-meter { grid-column: 2 / -1; height: 5px; background: rgba(var(--line-rgb),.55); }
     .composition-meter i { display: block; height: 100%; background: var(--series); }
 
+    /* Pattern view: the selected period folded onto the 24-hour clock and the
+       7-day week. Every colour here resolves through a palette variable or a
+       color-mix over one, because the dark palette redefines all of them and a
+       literal would survive the switch unchanged. */
+    .analysis-card-head .pattern-index { margin-left: 0; color: var(--accent); font-family: var(--mono); font-size: 10px; letter-spacing: 0; text-transform: none; }
+    .pattern-card-title h2 { margin: 0; font-family: var(--sans); font-size: 13px; font-weight: 600; }
+    .pattern-card-title p { margin: 3px 0 0; color: var(--graphite); font-family: var(--sans); font-size: 10.5px; }
+    .pattern-caption { max-width: 60em; margin: 0 0 18px; color: var(--graphite); font-family: var(--sans); font-size: 10.5px; line-height: 1.5; }
+    .pattern-caption-foot { margin: 16px 0 0; }
+
+    /* The heatmap gutters are variables so the weekend divider, which has to
+       reach across both of them, follows when a narrow window shrinks them. */
+    .pattern-heat { --heat-gutter-left: 36px; --heat-gutter-right: 64px; --heat-gap: 10px; }
+    .pattern-heat-grid,
+    .pattern-heat-axis { display: grid; grid-template-columns: var(--heat-gutter-left) minmax(0, 1fr) var(--heat-gutter-right); gap: var(--heat-gap); }
+    .pattern-heat-grid { align-items: start; }
+    .pattern-heat-axis { margin-top: 5px; }
+    .pattern-heat-labels,
+    .pattern-heat-totals { display: grid; grid-template-rows: repeat(7, 24px); gap: 3px; align-items: center; font-family: var(--mono); font-size: 9px; }
+    .pattern-heat-labels { color: var(--muted); }
+    .pattern-heat-totals { color: var(--graphite); text-align: right; }
+    .pattern-heat-totals b { color: var(--ink); font-weight: 700; }
+    .pattern-heat-cells { position: relative; display: grid; grid-template-columns: repeat(24, 1fr); grid-auto-rows: 24px; gap: 3px; }
+    .pattern-heat-cells i { background: var(--heat); border: 1px solid var(--line); cursor: crosshair; }
+    .pattern-heat-cells i.solid { border-color: var(--heat); }
+    .pattern-heat-cells i:hover { outline: 1px solid var(--ink); outline-offset: 1px; }
+    .pattern-heat-cells i.peak { border-color: var(--accent); outline: 1px solid var(--accent); outline-offset: 1px; }
+    /* Five 24px rows and four 3px gaps put the sixth row, Saturday, at 135px;
+       the rule sits in the middle of the gap before it. */
+    .pattern-heat-weekend { position: absolute; top: 133px; left: calc(-1 * (var(--heat-gutter-left) + var(--heat-gap))); right: calc(-1 * (var(--heat-gutter-right) + var(--heat-gap))); border-top: 1px dashed var(--line-dark); pointer-events: none; }
+    .pattern-heat-hours { display: grid; grid-template-columns: repeat(24, 1fr); color: var(--muted); font-family: var(--mono); font-size: 8px; }
+    .pattern-heat-sigma { align-self: center; color: var(--muted); font-family: var(--mono); font-size: 8px; text-align: right; }
+    .pattern-heat-scale { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 15px; color: var(--muted); font-family: var(--sans); font-size: 9px; text-transform: uppercase; }
+    .pattern-heat-scale i { width: 13px; height: 13px; background: var(--heat); border: 1px solid var(--line); }
+    .pattern-heat-scale i.solid { border-color: var(--heat); }
+    .pattern-heat-scale .pattern-peak-key { display: inline-flex; align-items: center; gap: 6px; margin-left: 22px; }
+    .pattern-heat-scale .pattern-peak-key i { width: 10px; height: 10px; background: none; border-color: var(--accent); outline: 1px solid var(--accent); outline-offset: 1px; }
+
+    .pattern-chart { width: 100%; display: block; overflow: visible; }
+    .pattern-chart text { fill: var(--graphite); font-family: var(--mono); font-size: 9px; }
+    .pattern-chart .pattern-grid-label { fill: var(--muted); font-size: 8.5px; }
+    .pattern-chart .pattern-weekend-tick { fill: var(--muted); }
+    .pattern-chart .pattern-gridline { stroke: var(--line); stroke-width: 1; }
+    .pattern-chart .pattern-axis { stroke: var(--ink); stroke-width: 1.2; }
+    .pattern-chart .pattern-band { fill: var(--heat-chill); fill-opacity: .055; }
+    .pattern-chart .pattern-band-label { fill: var(--heat-chill); font-size: 8.5px; letter-spacing: .08em; }
+    .pattern-chart .pattern-quiet { stroke: var(--line-dark); stroke-width: 1; stroke-dasharray: 3 3; }
+    .pattern-chart .pattern-quiet-label { fill: var(--muted); font-size: 8.5px; letter-spacing: .08em; }
+    .pattern-chart .pattern-day-line { fill: none; stroke: var(--ink); stroke-width: 1.4; stroke-linejoin: round; }
+    .pattern-chart .pattern-week-line { fill: none; stroke: var(--ink); stroke-width: 1; }
+    .pattern-chart .pattern-mean-line { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+    .pattern-chart .pattern-mean-tick { stroke: var(--accent); stroke-width: 1.5; }
+    .pattern-chart .pattern-dot { fill: var(--ink); stroke: var(--paper); stroke-width: .8; cursor: crosshair; }
+    .pattern-chart .pattern-stack { fill: var(--series); cursor: crosshair; }
+    .pattern-chart .pattern-stack:hover { filter: brightness(.85); }
+    .pattern-week-card { display: flex; flex-direction: column; }
+    .pattern-week-chart { flex: 1; }
+    .pattern-week-chart .pattern-dot { stroke-width: 1; }
+
+    .pattern-legend { display: flex; flex-wrap: wrap; gap: 8px 15px; margin: 0 0 12px; color: var(--graphite); font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+    .pattern-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .pattern-legend-tight { gap: 6px 14px; margin: 12px 0 0; font-size: 8.5px; letter-spacing: .06em; }
+    .pattern-legend .pattern-ramp { gap: 5px; }
+    .pattern-legend .pattern-ramp i { width: 8px; height: 8px; background: var(--ink); border-radius: 50%; }
+    .pattern-legend .pattern-swatch-mean { width: 14px; height: 2px; background: var(--accent); }
+    .pattern-legend .pattern-swatch-thin { width: 14px; height: 1px; background: rgba(var(--ink-rgb),.45); }
+    .pattern-legend .pattern-swatch-band { width: 11px; height: 11px; background: color-mix(in srgb, var(--heat-chill) 12%, transparent); border: 1px solid color-mix(in srgb, var(--heat-chill) 40%, transparent); }
+    .pattern-legend .pattern-swatch-dashed { width: 17px; height: 0; border-top: 1px dashed var(--line-dark); }
+
+    .pattern-stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 16px; border-top: 1px solid var(--line-dark); }
+    .pattern-stat { min-height: 58px; display: flex; flex-direction: column; justify-content: center; padding: 0 14px 0 0; border-right: 1px solid var(--line); }
+    .pattern-stat + .pattern-stat { padding-left: 14px; }
+    .pattern-stat:last-child { border-right: 0; }
+    .pattern-stat span { color: var(--muted); font-family: var(--sans); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+    .pattern-stat b { margin-top: 5px; font-family: var(--serif); font-size: 20px; font-weight: 400; }
+
+    .pattern-split-label { display: block; margin-bottom: 7px; color: var(--muted); font-family: var(--mono); font-size: 7.5px; letter-spacing: .08em; text-transform: uppercase; }
+    .pattern-split-label.spaced { margin: 12px 0 7px; }
+    .pattern-split-bars { position: relative; }
+    .pattern-split-bar { display: flex; border: 1px solid var(--line-dark); }
+    .pattern-split-bar i { background: var(--series); cursor: crosshair; }
+    .pattern-split-bar.time { height: 18px; }
+    .pattern-split-bar.time i { opacity: .5; }
+    .pattern-split-bar.tokens { height: 34px; }
+    /* The dividers drop from the time bar's boundaries across both bars, which
+       is what turns two stacks into one comparison. */
+    .pattern-split-divider { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--ink); opacity: .45; pointer-events: none; }
+
+    .pattern-rows { display: grid; margin-top: 16px; border-top: 1px solid var(--line-dark); color: var(--graphite); font-family: var(--mono); font-size: 9.5px; }
+    .pattern-row { display: grid; gap: 10px; align-items: center; border-bottom: 1px solid var(--line); }
+    .pattern-row i { background: var(--series); }
+    .pattern-row-name { overflow: hidden; color: var(--ink); font-family: var(--sans); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+    .pattern-row-name small { color: var(--muted); }
+    .pattern-row-muted { color: var(--muted); text-align: right; }
+    .pattern-row-value { color: var(--ink); font-size: 12px; text-align: right; }
+    .pattern-row-foot { display: grid; gap: 10px; min-height: 20px; align-items: center; color: var(--muted); font-family: var(--mono); font-size: 7.5px; text-transform: uppercase; }
+    .pattern-row-foot span { text-align: right; }
+    .pattern-territory-rows .pattern-row,
+    .pattern-territory-rows .pattern-row-foot { grid-template-columns: 12px minmax(0, 1fr) 64px 52px 76px; }
+    .pattern-territory-rows .pattern-row { min-height: 34px; }
+    .pattern-territory-rows .pattern-row i { width: 10px; height: 10px; border: 1px solid var(--line-dark); }
+    .pattern-project-rows { margin-top: 12px; }
+    .pattern-project-rows .pattern-row,
+    .pattern-project-rows .pattern-row-foot { grid-template-columns: 12px minmax(0, 1fr) 64px 76px; }
+    .pattern-project-rows .pattern-row { min-height: 32px; }
+    .pattern-project-rows .pattern-row i { width: 10px; height: 14px; }
+    .pattern-project-rows .pattern-row-name { font-weight: 600; }
+
+    .pattern-note { min-height: 0; display: grid; grid-template-columns: 24px 1fr; gap: 10px; padding: 17px 18px 19px; color: var(--graphite); font-family: var(--sans); font-size: 10px; line-height: 1.45; }
+    .pattern-note .pattern-index { color: var(--accent); font-family: var(--mono); font-size: 10.5px; }
+
+    .pattern-empty { color: var(--muted); font-family: var(--sans); font-size: 10.5px; }
+
     .analysis-table-tools { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 18px 0 10px; }
     .analysis-search { width: min(360px, 100%); height: 32px; border: 1px solid var(--line-dark); background: rgba(var(--paper-hi-rgb),.72); padding: 0 11px; color: var(--ink); font-family: var(--sans); font-size: 11px; outline: 0; }
     .analysis-search:focus { border-color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
@@ -2401,6 +2514,7 @@
       .detail-scrim { background: rgba(0, 0, 0, .58); }
       .tooltip { background: var(--paper-hi); color: var(--ink); border: 1px solid var(--line-dark); border-left: 4px solid var(--accent); }
       .stack-segment:hover,
+      .pattern-chart .pattern-stack:hover,
       .project-row:hover .bar i { filter: brightness(1.18); }
     }
 
@@ -2479,6 +2593,11 @@
       .portal-tab { flex: 0 0 auto; }
       .analysis-view { padding: 22px 14px 28px; }
       .analysis-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .pattern-heat { --heat-gutter-left: 28px; --heat-gutter-right: 50px; --heat-gap: 6px; }
+      .pattern-stats { grid-template-columns: 1fr; }
+      .pattern-stat { border-right: 0; border-bottom: 1px solid var(--line); padding-left: 0; }
+      .pattern-stat + .pattern-stat { padding-left: 0; }
+      .pattern-stat:last-child { border-bottom: 0; }
       .analysis-kpi:nth-child(2) { border-right: 0; }
       .analysis-kpi:nth-child(-n+2) { border-bottom: 1px solid var(--line-dark); }
       .module-grid { grid-template-columns: 1fr; }
@@ -2603,6 +2722,7 @@
         <button class="portal-tab active" role="tab" aria-selected="true" data-portal-view="overview">Overview</button>
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="spend">Spend</button>
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="tokens">Tokens</button>
+        <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="pattern">Pattern</button>
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="projects">Projects</button>
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="sessions">Sessions</button>
       </div>
@@ -2890,6 +3010,73 @@
         <section class="analysis-card narrow"><div class="analysis-card-head"><h2>Token mix</h2><span>Composition</span></div><div class="composition-list" id="tokenComposition"></div></section>
         <section class="analysis-card"><div class="analysis-card-head"><h2>Tokens by project</h2><span>Click for detail</span></div><div class="analysis-bars" id="tokenProjects"></div></section>
         <section class="analysis-card"><div class="analysis-card-head"><h2>Cache hit by day</h2><span>Cache-read share</span></div><div class="analysis-bars" id="cacheDays"></div></section>
+      </div>
+    </section>
+
+    <section class="analysis-view portal-view" id="patternView" data-view="pattern" hidden>
+      <header class="analysis-head">
+        <div><span class="micro">Temporal habit</span><h1>Pattern</h1></div>
+        <p>When the work happens. The selected period folded onto the clock and onto the week, so the habit underneath the volume becomes visible.</p>
+      </header>
+      <div class="analysis-kpis" id="patternKpis"></div>
+      <div class="analysis-grid">
+        <section class="analysis-card full">
+          <div class="analysis-card-head">
+            <span class="pattern-index">01</span>
+            <div class="pattern-card-title"><h2>The week at a glance</h2><p>Every hour of the folded week, shaded by recorded token volume.</p></div>
+            <span>168 hour-slots / hour &times; weekday</span>
+          </div>
+          <p class="pattern-caption" id="patternHeatCaption"></p>
+          <div class="pattern-heat" id="patternHeat"></div>
+        </section>
+
+        <section class="analysis-card wide">
+          <div class="analysis-card-head">
+            <span class="pattern-index">02</span>
+            <div class="pattern-card-title"><h2>The shape of a day</h2><p>One dot per recorded day at each hour; darker dots are more recent days.</p></div>
+            <span id="patternDayMeta">Hour-of-day totals</span>
+          </div>
+          <div class="pattern-legend" id="patternDayLegend"></div>
+          <svg class="pattern-chart" id="patternDayChart" viewBox="0 0 640 230" role="img" aria-label="Recorded volume by hour of day, one dot per recorded day"></svg>
+          <div class="pattern-stats" id="patternDayStats"></div>
+        </section>
+
+        <section class="analysis-card narrow pattern-week-card">
+          <div class="analysis-card-head">
+            <span class="pattern-index">03</span>
+            <div class="pattern-card-title"><h2>The shape of a week</h2><p>One dot per recorded day on its weekday; darker dots are more recent.</p></div>
+          </div>
+          <p class="pattern-caption" id="patternWeekCaption"></p>
+          <svg class="pattern-chart pattern-week-chart" id="patternWeekChart" viewBox="0 0 320 226" role="img" aria-label="Recorded volume by weekday, one dot per recorded day"></svg>
+          <div class="pattern-legend pattern-legend-tight" id="patternWeekLegend"></div>
+        </section>
+
+        <section class="analysis-card">
+          <div class="analysis-card-head">
+            <span class="pattern-index">04</span>
+            <div class="pattern-card-title"><h2>Where the hours land</h2><p>Four time territories on the folded week, and the share of volume each one carries.</p></div>
+            <span>Share of volume</span>
+          </div>
+          <div id="patternSplit"></div>
+          <div class="pattern-rows pattern-territory-rows" id="patternTerritoryRows"></div>
+          <p class="pattern-caption pattern-caption-foot" id="patternSplitCaption"></p>
+        </section>
+
+        <section class="analysis-card">
+          <div class="analysis-card-head">
+            <span class="pattern-index">05</span>
+            <div class="pattern-card-title"><h2>Each project keeps its own clock</h2><p>Hourly volume stacked by project; the window each project favours is listed below.</p></div>
+            <span>Hour-of-day / by project</span>
+          </div>
+          <svg class="pattern-chart" id="patternProjectChart" viewBox="0 0 640 230" role="img" aria-label="Hour-of-day volume stacked by project"></svg>
+          <div class="pattern-rows pattern-project-rows" id="patternProjectRows"></div>
+          <p class="pattern-caption pattern-caption-foot" id="patternProjectCaption"></p>
+        </section>
+
+        <aside class="analysis-card full pattern-note">
+          <span class="pattern-index">06</span>
+          <span id="patternNote"></span>
+        </aside>
       </div>
     </section>
 
