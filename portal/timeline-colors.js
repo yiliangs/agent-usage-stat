@@ -1,9 +1,12 @@
 /**
- * The portal's two colour axes, project and model family, in one place.
+ * The portal's colour axes -- project, model family, and time territory -- in
+ * one place.
  *
  * Both the dashboard and the status-area panel draw the same families, so the
  * mapping from a family to its series lives here rather than beside whichever
- * surface happened to need it first.
+ * surface happened to need it first. The territory axis has one surface today
+ * and still lives here: an axis is defined by the set it partitions, not by
+ * how many views happen to draw it.
  */
 
 const PROJECT_SERIES = [
@@ -13,7 +16,7 @@ const PROJECT_SERIES = [
   { variable: '--project-4', fallback: '#008300' },
 ]
 
-const OTHER_PROJECTS = {
+export const OTHER_PROJECT_SERIES = {
   label: 'Other projects',
   variable: '--muted',
   fallback: '#66717f',
@@ -32,7 +35,7 @@ export function buildProjectColorIndex(sessions, preferredSessions = []) {
 export function projectSeriesFor(project, index) {
   const label = project || 'Unassigned'
   const slot = index.get(label) ?? -1
-  if (slot < 0) return OTHER_PROJECTS
+  if (slot < 0) return OTHER_PROJECT_SERIES
   return { label, ...PROJECT_SERIES[slot] }
 }
 
@@ -52,4 +55,25 @@ const MODEL_SERIES = {
 /** The series a model family draws in, falling back to the neutral one. */
 export function modelSeriesFor(family) {
   return MODEL_SERIES[(family || 'other').toLowerCase()] || MODEL_SERIES.other
+}
+
+/**
+ * The four territories of the folded week, in the Pattern view.
+ *
+ * They reuse hues the portal already assigns elsewhere rather than adding a
+ * palette: work hours take the heat blue that already means concentration,
+ * evenings the darker accent, early hours the neutral the cache series uses,
+ * and the weekend the terra gold. Each one is a variable rather than a literal
+ * because the dark palette redefines every one of them.
+ */
+const TERRITORY_SERIES = {
+  work: { variable: '--heat-chill', fallback: '#176f98' },
+  evening: { variable: '--accent-dark', fallback: '#92503a' },
+  early: { variable: '--cache-read', fallback: '#8e8b83' },
+  weekend: { variable: '--model-terra', fallback: '#a27b18' },
+}
+
+/** The series a time territory draws in. */
+export function territorySeriesFor(territory) {
+  return TERRITORY_SERIES[territory] || MODEL_SERIES.other
 }
