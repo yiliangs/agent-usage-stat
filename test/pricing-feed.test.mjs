@@ -8,6 +8,7 @@ import {
   feedPriceFor,
   initializePricingFeed,
   pricingFeedFingerprint,
+  refreshPricingFeedForMisses,
 } from "../dist/core/pricing-feed.js";
 import { priceFor as claudePriceFor } from "../dist/providers/claude/pricing.js";
 import { priceFor as codexPriceFor } from "../dist/providers/codex/pricing.js";
@@ -89,9 +90,32 @@ const countingFetch = (inner) => {
   return impl;
 };
 
+// The same upstream, one release later: the model a capture is about to miss.
+const EXPANDED_FEED = {
+  ...FEED,
+  "claude-quartz-2": {
+    litellm_provider: "anthropic",
+    mode: "chat",
+    input_cost_per_token: 0.000006,
+    output_cost_per_token: 0.00003,
+  },
+};
+
 async function freshRoot() {
   return mkdtemp(join(tmpdir(), "agent-usage-stat-pricing-feed-"));
 }
+
+/** Backdate the cache so age and the attempt backoff can be posed separately. */
+async function ageCache(root, ms) {
+  const path = join(root, "pricing-feed.json");
+  const cache = JSON.parse(await readFile(path, "utf-8"));
+  const shifted = new Date(Date.now() - ms).toISOString();
+  cache.fetchedAt = shifted;
+  cache.attemptedAt = shifted;
+  await writeFile(path, JSON.stringify(cache), "utf-8");
+}
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 test("extractFeedRates keeps first-party chat entries and converts to per-MTok", () => {
   const rates = extractFeedRates(FEED);
@@ -199,4 +223,73 @@ test("the feed snapshot is pinned into transcript fingerprints", async () => {
   // Reloading the identical snapshot leaves the fingerprint stable.
   await initializePricingFeed(feedRoot, { fetchImpl: fetchFail() });
   assert.equal(claudeSnapshotVersion(), withFeed);
+});
+
+test("a pricing miss refreshes a snapshot that age still considers fresh", async () => {
+  const root = await freshRoot();
+  await initializePricingFeed(root, { fetchImpl: fetchOk(FEED) });
+  assert.equal(feedPriceFor("claude-quartz-2"), null);
+
+  // A day old: still fresh against the 7-day interval, past the 6-hour backoff.
+  await ageCache(root, ONE_DAY_MS);
+
+  // Age alone reaches for nothing — by that measure the snapshot is current,
+  // which is exactly how a snapshot goes on missing a model for a week.
+  const untouched = countingFetch(fetchOk(EXPANDED_FEED));
+  await initializePricingFeed(root, { fetchImpl: untouched });
+  assert.equal(untouched.calls, 0);
+  assert.equal(feedPriceFor("claude-quartz-2"), null);
+
+  // The miss is the evidence age cannot carry.
+  const changed = await refreshPricingFeedForMisses(root, {
+    fetchImpl: fetchOk(EXPANDED_FEED),
+  });
+  assert.equal(changed, true);
+  assert.equal(feedPriceFor("claude-quartz-2").input, 6);
+  assert.equal(claudePriceFor("claude-quartz-2").output, 30);
+  // Baked tables stay authoritative across a miss-triggered refresh.
+  assert.equal(claudePriceFor("claude-opus-5").input, 5);
+});
+
+test("the attempt backoff bounds how often a miss can spend a fetch", async () => {
+  const root = await freshRoot();
+  await initializePricingFeed(root, { fetchImpl: fetchOk(FEED) });
+  await ageCache(root, ONE_DAY_MS);
+
+  const impl = countingFetch(fetchOk(EXPANDED_FEED));
+  assert.equal(await refreshPricingFeedForMisses(root, { fetchImpl: impl }), true);
+  assert.equal(impl.calls, 1);
+
+  // A model upstream has never published misses on every capture forever.
+  // Without the backoff each one would spend the fetch timeout again.
+  assert.equal(await refreshPricingFeedForMisses(root, { fetchImpl: impl }), false);
+  assert.equal(await refreshPricingFeedForMisses(root, { fetchImpl: impl }), false);
+  assert.equal(impl.calls, 1);
+});
+
+test("a refresh that changes nothing reports no change, sparing a re-read", async () => {
+  const root = await freshRoot();
+  await initializePricingFeed(root, { fetchImpl: fetchOk(FEED) });
+  await ageCache(root, ONE_DAY_MS);
+
+  // Upstream has not published the model either: the fetch happens, the
+  // snapshot comes back identical, and the caller is told not to read again.
+  const impl = countingFetch(fetchOk(FEED));
+  assert.equal(await refreshPricingFeedForMisses(root, { fetchImpl: impl }), false);
+  assert.equal(impl.calls, 1);
+  assert.equal(feedPriceFor("claude-quartz-2"), null);
+});
+
+test("a failed miss refresh leaves the cached snapshot and its pricing intact", async () => {
+  const root = await freshRoot();
+  await initializePricingFeed(root, { fetchImpl: fetchOk(FEED) });
+  await ageCache(root, ONE_DAY_MS);
+  const before = pricingFeedFingerprint();
+
+  assert.equal(
+    await refreshPricingFeedForMisses(root, { fetchImpl: fetchFail() }),
+    false,
+  );
+  assert.equal(pricingFeedFingerprint(), before);
+  assert.equal(feedPriceFor("claude-nova-6").input, 8);
 });

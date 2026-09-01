@@ -24,6 +24,7 @@ const DISPLAY_NAMES: Record<string, string> = {
   "gpt-5.3-codex": "GPT-5.3 Codex",
 
   // Current Claude generation (July 2026)
+  "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",
   "claude-opus-5": "Claude Opus 5",
   "claude-sonnet-5": "Claude Sonnet 5",

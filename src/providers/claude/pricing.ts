@@ -40,7 +40,10 @@ export interface ModelPricing {
 
 const PRICING: Record<string, ModelPricing> = {
   // Current generation (July 2026)
-  // Fable 5 is the top tier above Opus at $10/$50 per MTok.
+  // Fable 5 is the top tier above Opus at $10/$50 per MTok. Fable 5.1
+  // succeeds it at the same input and output rates but a deeper cache-read
+  // discount: $0.25 per MTok rather than Fable 5's $1.00.
+  "claude-fable-5-1":   { input: 10, output: 50, cacheWrite: 12.50, cacheRead: 0.25 },
   "claude-fable-5":     { input: 10, output: 50, cacheWrite: 12.50, cacheRead: 1.00 },
   "claude-opus-5":      { input: 5,  output: 25, cacheWrite: 6.25, cacheRead: 0.50 },
   "claude-opus-4-8":    { input: 5,  output: 25, cacheWrite: 6.25, cacheRead: 0.50 },
