@@ -4,10 +4,12 @@
  * Refresh the installed desktop application from the current working tree.
  *
  * The machine keeps one installation. The Start Menu shortcut, the Squirrel
- * stub launcher, the uninstall entry, and `~/.agent-usage-stat` all stay
- * exactly where the installer put them; only the application payload behind
- * them is replaced. That is what lets a single install serve both daily use
- * and local iteration: build, run this, launch from the Start Menu.
+ * stub launcher, and the uninstall entry all stay exactly where the installer
+ * put them; the application payload behind them is replaced, and so is the
+ * capture helper the agent hooks invoke. That is what lets a single install
+ * serve both daily use and local iteration: build, run this, launch from the
+ * Start Menu. Capture is current when this command returns, without waiting
+ * for a launch.
  *
  * Run `npm run install:local`, which packages first. Running this file alone
  * only copies whatever `dist/forge` already holds.
@@ -24,13 +26,16 @@ import {
   startMenuProgramsDir,
   startMenuShortcutName,
 } from "../dist/desktop/start-menu-shortcut.js";
+import {
+  helperBinaryName,
+  installHelperBinary,
+} from "../dist/core/helper-installation.js";
 import { homeDir } from "../dist/utils/paths.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const productName = manifest.productName;
 const home = homeDir();
-const helperVersionState = join(home, ".agent-usage-stat", "bin", "helper-version.json");
 
 const packaged = packagedApplicationPath();
 if (!existsSync(packaged)) {
@@ -46,10 +51,19 @@ await closeRunningApplication();
 const copied = await copyChanged(packaged, installed);
 console.log(`Refreshed ${installed} (${copied} file${copied === 1 ? "" : "s"} copied)`);
 
-// The application skips its helper sync when the recorded version matches the
-// one it is running. Local iteration reuses a version, so clear the record and
-// let the next launch compare the binaries themselves.
-await rm(helperVersionState, { force: true });
+// The agent hooks run the installed helper at every session end, whether or
+// not the application is ever launched, so install it here rather than leaving
+// capture on the previous build until somebody opens the dashboard. The same
+// staged copy the application uses, through the same module.
+const replacedHelper = await installHelperBinary(
+  installedHelperSource(),
+  manifest.version,
+);
+console.log(
+  replacedHelper
+    ? "Installed the refreshed capture helper"
+    : "Capture helper was already current",
+);
 
 await ensureStartMenuShortcut();
 
@@ -95,6 +109,17 @@ async function installedApplicationPath() {
   const newest = versions.at(-1);
   if (!newest) fail(missingInstallMessage(installRoot));
   return join(installRoot, newest);
+}
+
+/**
+ * The helper inside the payload just copied, so the binary the hooks run is
+ * the one this installation ships rather than whatever the build tree holds.
+ */
+function installedHelperSource() {
+  const resources = process.platform === "darwin"
+    ? join(installed, "Contents", "Resources")
+    : join(installed, "resources");
+  return join(resources, helperBinaryName());
 }
 
 function missingInstallMessage(location) {

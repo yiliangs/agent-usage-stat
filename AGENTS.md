@@ -41,7 +41,8 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `src/commands/capture.ts`: session ingestion
 - `src/commands/run.ts`: current-terminal agent wrapper and completion status
 - `src/desktop/main.ts`: Electron lifecycle, windows, menus, and user-facing setup flows
-- `src/desktop/helper-runtime.ts`: stable helper installation, execution, and first-run state
+- `src/core/helper-installation.ts`: the one owner of putting the capture helper on disk
+- `src/desktop/helper-runtime.ts`: helper execution and first-run state
 - `src/desktop/portal-runtime.ts`: `aus://` protocol, refresh serialization, and analytics snapshots
 - `src/desktop/logbook-watcher.ts`: debounced shard-write observer behind the dashboard's auto-refresh
 - `src/desktop/status-area.ts`: the notification-area icon and the glance panel window behind it
