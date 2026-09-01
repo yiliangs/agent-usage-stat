@@ -19,7 +19,10 @@ import {
 import { ConfigManager } from "../core/config-manager.js";
 import { LogbookWriter } from "../core/logbook-writer.js";
 import { projectNameForCwd } from "../core/project-name.js";
-import { initializePricingFeed } from "../core/pricing-feed.js";
+import {
+  initializePricingFeed,
+  refreshPricingFeedForMisses,
+} from "../core/pricing-feed.js";
 import { resolveUsageRoot } from "../utils/usage-root.js";
 import type { HookData } from "../types/session-hook.js";
 import type { SessionProvider } from "../types/provider.js";
@@ -101,19 +104,30 @@ export class CaptureCommand {
       }
 
       spinner.text = "Computing usage...";
-      const snapshot = await provider.readSession(
-        transcriptPath,
-        sessionId ?? "",
-      );
-      const { sessionData, unknownModels } = snapshot;
+      let snapshot = await provider.readSession(transcriptPath, sessionId ?? "");
+
+      // A model no pricing source covers says the cached feed snapshot is
+      // incomplete, days before its age would. Ask for a refresh on that
+      // evidence, bounded by the feed's own attempt backoff, and read the
+      // transcript again when the snapshot actually changed: cost and the
+      // fingerprint pinning it must come from one read.
+      if (snapshot.unknownModels.length > 0) {
+        logHookEvent(
+          `pricing miss provider=${provider.name} models=${snapshot.unknownModels.join(",")} billed at $0`,
+        );
+        if (await refreshPricingFeedForMisses(root)) {
+          snapshot = await provider.readSession(transcriptPath, sessionId ?? "");
+          logHookEvent(
+            snapshot.unknownModels.length > 0
+              ? `pricing miss unresolved models=${snapshot.unknownModels.join(",")} after feed refresh`
+              : `pricing miss resolved by feed refresh`,
+          );
+        }
+      }
+
+      const { sessionData } = snapshot;
       let { transcriptData } = snapshot;
       sessionId = sessionData.sessionId || sessionId;
-
-      if (unknownModels.length > 0) {
-        logHookEvent(
-          `pricing miss provider=${provider.name} models=${unknownModels.join(",")} billed at $0`,
-        );
-      }
 
       if (sessionData.totalTokens <= 0) {
         outcome = { status: "no_usage", reason: "zero_tokens" };

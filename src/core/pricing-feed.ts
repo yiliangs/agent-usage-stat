@@ -15,6 +15,14 @@ import { normalizeModelId } from "./model-id.js";
  * everything they cover, including fast-mode multipliers and long-context
  * premiums, which the feed does not carry.
  *
+ * Two things trigger a refresh. Age is the weaker one: the snapshot is reloaded
+ * once it passes REFRESH_INTERVAL_MS. A pricing miss is the stronger one, and
+ * it is why refreshPricingFeedForMisses exists — a model no source covers is
+ * direct evidence that the snapshot is incomplete, which age cannot express. A
+ * snapshot five days old and considered fresh can still be missing a model
+ * released yesterday, so no interval short of continuous polling substitutes
+ * for the miss.
+ *
  * Refresh is best-effort and silent: hook-triggered capture must never fail or
  * block on the network, so a fetch failure keeps the cached snapshot (or the
  * baked tables alone) and is retried no sooner than RETRY_INTERVAL_MS later.
@@ -77,8 +85,45 @@ export async function initializePricingFeed(
   const cached = await readCache(path);
   applySnapshot(cached?.rates ?? {});
 
-  if (!needsRefresh(cached)) return;
+  const fresh = withinInterval(
+    cached?.fetchedAt,
+    options.refreshIntervalMs ?? REFRESH_INTERVAL_MS,
+  );
+  if (fresh || !attemptAllowed(cached, options)) return;
 
+  await refreshSnapshot(path, cached, options);
+}
+
+/**
+ * Refresh because a capture priced a model no source covers, rather than
+ * because the snapshot aged out. Returns true when the active snapshot
+ * changed, which obliges the caller to read the transcript again so the
+ * record's cost and its pinned fingerprint come from one snapshot.
+ *
+ * The attempt backoff is what makes this safe to call on every capture. A
+ * model upstream has never published — a private alias, a typo, a test
+ * fixture — misses on every session forever, and without the backoff each one
+ * would spend the fetch timeout again.
+ */
+export async function refreshPricingFeedForMisses(
+  root: string,
+  options: PricingFeedOptions = {},
+): Promise<boolean> {
+  const path = join(root, CACHE_FILE);
+  const cached = await readCache(path);
+  if (!attemptAllowed(cached, options)) return false;
+
+  const before = activeFingerprint;
+  await refreshSnapshot(path, cached, options);
+  return activeFingerprint !== before;
+}
+
+/** Fetch, cache, and activate a snapshot. Never throws; logs either outcome. */
+async function refreshSnapshot(
+  path: string,
+  cached: FeedCacheFile | null,
+  options: PricingFeedOptions,
+): Promise<void> {
   const url = options.url ??
     process.env.AGENT_USAGE_STAT_PRICING_FEED_URL ??
     DEFAULT_FEED_URL;
@@ -112,18 +157,23 @@ export async function initializePricingFeed(
       rates: cached?.rates ?? {},
     }).catch(() => undefined);
   }
-
-  function needsRefresh(cache: FeedCacheFile | null): boolean {
-    const now = Date.now();
-    const fetchedAt = Date.parse(cache?.fetchedAt ?? "");
-    const fresh = Number.isFinite(fetchedAt) &&
-      now - fetchedAt < (options.refreshIntervalMs ?? REFRESH_INTERVAL_MS);
-    if (fresh) return false;
-    const attemptedAt = Date.parse(cache?.attemptedAt ?? "");
-    return !Number.isFinite(attemptedAt) ||
-      now - attemptedAt >= (options.retryIntervalMs ?? RETRY_INTERVAL_MS);
-  }
 }
+
+/** Whether the backoff since the last fetch attempt, failed or not, elapsed. */
+const attemptAllowed = (
+  cache: FeedCacheFile | null,
+  options: PricingFeedOptions,
+): boolean =>
+  !withinInterval(
+    cache?.attemptedAt,
+    options.retryIntervalMs ?? RETRY_INTERVAL_MS,
+  );
+
+const withinInterval = (timestamp: string | undefined, interval: number):
+  boolean => {
+  const parsed = Date.parse(timestamp ?? "");
+  return Number.isFinite(parsed) && Date.now() - parsed < interval;
+};
 
 /** Rates for a normalized model ID the baked tables missed, or null. */
 export const feedPriceFor = (normalizedId: string): FeedRates | null =>
