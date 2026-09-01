@@ -445,8 +445,13 @@
     .analysis-card-head .pattern-index { margin-left: 0; color: var(--accent); font-family: var(--mono); font-size: 10px; letter-spacing: 0; text-transform: none; }
     .pattern-card-title h2 { margin: 0; font-family: var(--sans); font-size: 13px; font-weight: 600; }
     .pattern-card-title p { margin: 3px 0 0; color: var(--graphite); font-family: var(--sans); font-size: 10.5px; }
-    .pattern-caption { max-width: 60em; margin: 0 0 18px; color: var(--graphite); font-family: var(--sans); font-size: 10.5px; line-height: 1.5; }
-    .pattern-caption-foot { margin: 16px 0 0; }
+    /* A caption states computed numbers, so its length changes as the reader
+       pages weeks or switches period. Reserving the tallest form it takes is
+       what stops the chart underneath it moving 16px every time it goes from
+       one line to two: the box is sized once, the sentence inside it is not.
+       Same rule as SLOT_BUDGET in usage-format.js, applied to prose. */
+    .pattern-caption { min-height: 3em; max-width: 60em; margin: 0 0 18px; color: var(--graphite); font-family: var(--sans); font-size: 10.5px; line-height: 1.5; }
+    .pattern-caption-foot { min-height: 4.5em; margin: 16px 0 0; }
 
     /* The heatmap gutters are variables so the weekend divider, which has to
        reach across both of them, follows when a narrow window shrinks them. */
@@ -2574,6 +2579,11 @@
       /* Four agents no longer fit across this row, and auto-fit would seat
          three and strand the fourth alone. Two even rows instead. */
       .capture-monitor-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      /* Between 960 and 1280 the six- and four-column cards are at their
+         narrowest while still sharing a row, so every caption takes one line
+         more than it does above this width. */
+      .pattern-caption { min-height: 4.5em; }
+      .pattern-caption-foot { min-height: 6em; }
     }
 
     @media (max-width: 959px) {

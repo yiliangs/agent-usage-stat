@@ -948,7 +948,10 @@ function renderPatternHeat(pattern) {
     <div class="pattern-heat-scale">None${[0, .25, .5, .75, 1].map((shade) => `<i class="${shade > .5 ? 'solid' : ''}" style="--heat:${heatMix(shade)}"></i>`).join('')}${escapeText(fmt.compact(ceiling))}${clamped ? ' and above' : ''}<span class="pattern-peak-key"><i></i>Peak slot</span></div>`
 
   const heaviest = peak.tokens > 0 ? ` Heaviest slot: ${WEEKDAY_NAMES[peak.weekday]} ${clockLabel(peak.hour)}, ${fmt.compact(peak.tokens)} tokens.` : ''
-  const clampSentence = clamped ? ` ${clampNote(clamped, 'slot')}, drawn at the ceiling so the rest stays readable.` : ''
+  // The legend already reads "N and above", so the caption only has to say how
+  // many. Spelling out what clamping means here cost the caption a second line
+  // on some weeks and not others, which is the shift this card cannot afford.
+  const clampSentence = clamped ? ` ${clampNote(clamped, 'slot')}.` : ''
   $('#patternHeatCaption').textContent = active
     ? `Week of ${fmt.dateYear(patternDayDate(active.key))}: ${fmt.compact(tokens)} tokens, ${fmt.pct(tokens / pattern.tokens)} of the period.${heaviest}${clampSentence}`
     : `${fmt.compact(tokens)} tokens across ${SLOTS_IN_WEEK} hour-slots. Half of that volume sits in ${pattern.halfVolumeSlots} of them.${heaviest}${clampSentence}`
