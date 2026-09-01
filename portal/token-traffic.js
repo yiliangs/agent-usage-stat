@@ -1,6 +1,7 @@
+import { TOKEN_FIELDS, usageEvents } from './usage-model.js'
+
 const MINUTE = 60_000
 const DAY = 86_400_000
-const TOKEN_FIELDS = ['input', 'output', 'cacheCreate', 'cacheRead', 'totalTokens']
 
 export function tokenTrafficIntervalMinutes(start, end) {
   return end - start <= 14 * DAY ? 15 : 60
@@ -43,7 +44,7 @@ export function buildTokenTraffic(sessions, start, end, intervalMinutes = tokenT
   }))
 
   for (const session of sessions) {
-    const events = completeTurnBreakdown(session) ? session.turns : [session]
+    const events = usageEvents(session)
     for (const event of events) {
       const rawTime = Date.parse(event.end || event.start || session.end || session.start)
       const time = Math.max(start, Math.min(end - 1, Number.isFinite(rawTime) ? rawTime : end - 1))
@@ -74,11 +75,3 @@ function quantile(sorted, percentile) {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower)
 }
 
-function completeTurnBreakdown(session) {
-  if (!Array.isArray(session.turns) || !session.turns.length) return false
-  return TOKEN_FIELDS.every((field) => {
-    const sessionValue = Number(session[field]) || 0
-    const turnValue = session.turns.reduce((total, turn) => total + (Number(turn[field]) || 0), 0)
-    return Math.abs(sessionValue - turnValue) < .5
-  })
-}

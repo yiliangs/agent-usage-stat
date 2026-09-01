@@ -1,7 +1,35 @@
 export const DAY = 86_400_000
 
+/** The token fields a shard records, and therefore the fields a turn has to
+ *  account for before it can stand in for its session. */
+export const TOKEN_FIELDS = ['input', 'output', 'cacheCreate', 'cacheRead', 'totalTokens']
+
 const sum = (items, read) => items.reduce((total, item) => total + read(item), 0)
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+
+/**
+ * The token-bearing events of one session, placed at the times they completed.
+ *
+ * A session records one window; its turns record where inside that window the
+ * volume actually landed, which is what any view plotting completion time
+ * needs. Turns are only trusted when every field they carry adds back up to
+ * the session, because a partial list would silently drop the difference. The
+ * check is all-or-nothing rather than per-field for the same reason: a mix of
+ * turn-level input and session-level output would count neither window
+ * correctly.
+ *
+ * The returned array is `session.turns` itself when the turns win, so a caller
+ * can tell the two cases apart by identity.
+ */
+export function usageEvents(session) {
+  if (!Array.isArray(session.turns) || !session.turns.length) return [session]
+  const complete = TOKEN_FIELDS.every((field) => {
+    const sessionValue = Number(session[field]) || 0
+    const turnValue = session.turns.reduce((total, turn) => total + (Number(turn[field]) || 0), 0)
+    return Math.abs(sessionValue - turnValue) < .5
+  })
+  return complete ? session.turns : [session]
+}
 
 export function familyOf(model) {
   const value = (model || '').toLowerCase()

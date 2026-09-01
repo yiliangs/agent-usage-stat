@@ -35,10 +35,10 @@
       --model-terra: #a27b18;
       --model-luna: #aa4778;
       --model-codex: #007f9a;
-      --project-1: #2a78d6;
-      --project-2: #eda100;
-      --project-3: #e87ba4;
-      --project-4: #008300;
+      --project-1: #3f6d99;
+      --project-2: #b4832c;
+      --project-3: #a8577a;
+      --project-4: #4a7a52;
       --status-good: #35765f;
       --status-warn: #b8801d;
       --status-error: #a3483a;
@@ -437,6 +437,154 @@
     .composition-row b { font-family: var(--mono); font-size: 10px; font-weight: 500; }
     .composition-meter { grid-column: 2 / -1; height: 5px; background: rgba(var(--line-rgb),.55); }
     .composition-meter i { display: block; height: 100%; background: var(--series); }
+
+    /* Pattern view: the selected period folded onto the 24-hour clock and the
+       7-day week. Every colour here resolves through a palette variable or a
+       color-mix over one, because the dark palette redefines all of them and a
+       literal would survive the switch unchanged. */
+    .analysis-card-head .pattern-index { margin-left: 0; color: var(--accent); font-family: var(--mono); font-size: 10px; letter-spacing: 0; text-transform: none; }
+    .pattern-card-title h2 { margin: 0; font-family: var(--sans); font-size: 13px; font-weight: 600; }
+    .pattern-card-title p { margin: 3px 0 0; color: var(--graphite); font-family: var(--sans); font-size: 10.5px; }
+    /* A caption states computed numbers, so its length changes as the reader
+       pages weeks or switches period. Reserving the tallest form it takes is
+       what stops the chart underneath it moving 16px every time it goes from
+       one line to two: the box is sized once, the sentence inside it is not.
+       Same rule as SLOT_BUDGET in usage-format.js, applied to prose. */
+    .pattern-caption { min-height: 3em; max-width: 60em; margin: 0 0 18px; color: var(--graphite); font-family: var(--sans); font-size: 10.5px; line-height: 1.5; }
+    .pattern-caption-foot { min-height: 4.5em; margin: 16px 0 0; }
+
+    /* The heatmap gutters are variables so the weekend divider, which has to
+       reach across both of them, follows when a narrow window shrinks them. */
+    .pattern-heat { --heat-gutter-left: 36px; --heat-gutter-right: 64px; --heat-gap: 10px; }
+    .pattern-heat-grid,
+    .pattern-heat-axis { display: grid; grid-template-columns: var(--heat-gutter-left) minmax(0, 1fr) var(--heat-gutter-right); gap: var(--heat-gap); }
+    .pattern-heat-grid { align-items: start; }
+    .pattern-heat-axis { margin-top: 5px; }
+    .pattern-heat-labels,
+    .pattern-heat-totals { display: grid; grid-template-rows: repeat(7, 24px); gap: 3px; align-items: center; font-family: var(--mono); font-size: 9px; }
+    .pattern-heat-labels { color: var(--muted); }
+    .pattern-heat-totals { color: var(--graphite); text-align: right; }
+    .pattern-heat-totals b { color: var(--ink); font-weight: 700; }
+    .pattern-heat-cells { position: relative; display: grid; grid-template-columns: repeat(24, 1fr); grid-auto-rows: 24px; gap: 3px; }
+    .pattern-heat-cells i { background: var(--heat); border: 1px solid var(--line); cursor: crosshair; }
+    .pattern-heat-cells i.solid { border-color: var(--heat); }
+    .pattern-heat-cells i:hover { outline: 1px solid var(--ink); outline-offset: 1px; }
+    .pattern-heat-cells i.peak { border-color: var(--accent); outline: 1px solid var(--accent); outline-offset: 1px; }
+    /* Five 24px rows and four 3px gaps put the sixth row, Saturday, at 135px;
+       the rule sits in the middle of the gap before it. */
+    .pattern-heat-weekend { position: absolute; top: 133px; left: calc(-1 * (var(--heat-gutter-left) + var(--heat-gap))); right: calc(-1 * (var(--heat-gutter-right) + var(--heat-gap))); border-top: 1px dashed var(--line-dark); pointer-events: none; }
+    .pattern-heat-hours { display: grid; grid-template-columns: repeat(24, 1fr); color: var(--muted); font-family: var(--mono); font-size: 8px; }
+    .pattern-heat-sigma { align-self: center; color: var(--muted); font-family: var(--mono); font-size: 8px; text-align: right; }
+    .pattern-heat-scale { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 15px; color: var(--muted); font-family: var(--sans); font-size: 9px; text-transform: uppercase; }
+    .pattern-heat-scale i { width: 13px; height: 13px; background: var(--heat); border: 1px solid var(--line); }
+    .pattern-heat-scale i.solid { border-color: var(--heat); }
+    .pattern-heat-scale .pattern-peak-key { display: inline-flex; align-items: center; gap: 6px; margin-left: 22px; }
+    .pattern-heat-scale .pattern-peak-key i { width: 10px; height: 10px; background: none; border-color: var(--accent); outline: 1px solid var(--accent); outline-offset: 1px; }
+
+    /* The three charts set their own viewBox width to their rendered width, so
+       one viewBox unit is one CSS pixel in all of them. That is what makes a
+       size declared here the size it draws at, in a card of any span, and what
+       keeps the type on the charts on the same scale as the type around
+       them. */
+    .pattern-chart { width: 100%; display: block; overflow: visible; }
+    .pattern-chart text { fill: var(--graphite); font-family: var(--mono); font-size: 9px; }
+    .pattern-chart .pattern-grid-label { fill: var(--muted); font-size: 8.5px; }
+    .pattern-chart .pattern-weekend-tick { fill: var(--muted); }
+    .pattern-chart .pattern-gridline { stroke: var(--line); stroke-width: 1; }
+    .pattern-chart .pattern-axis { stroke: var(--ink); stroke-width: 1.2; }
+    .pattern-chart .pattern-band { fill: var(--heat-chill); fill-opacity: .055; }
+    .pattern-chart .pattern-band-label { fill: var(--heat-chill); font-size: 8.5px; letter-spacing: .08em; }
+    .pattern-chart .pattern-quiet { stroke: var(--line-dark); stroke-width: 1; stroke-dasharray: 3 3; }
+    .pattern-chart .pattern-quiet-label { fill: var(--muted); font-size: 8.5px; letter-spacing: .08em; }
+    /* A mark sitting on the scale ceiling is a clamped outlier, not a reading.
+       The accent ring says the true value is off the top rather than there. */
+    .pattern-chart .pattern-dot.clamped { stroke: var(--accent); stroke-width: 1.2; }
+    .pattern-chart .pattern-day-line { fill: none; stroke: var(--ink); stroke-width: 1.4; stroke-linejoin: round; }
+    .pattern-chart .pattern-week-line { fill: none; stroke: var(--ink); stroke-width: 1; }
+    .pattern-chart .pattern-mean-line { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+    .pattern-chart .pattern-mean-tick { stroke: var(--accent); stroke-width: 1.5; }
+    .pattern-chart .pattern-dot { fill: var(--ink); stroke: var(--paper); stroke-width: .8; cursor: crosshair; }
+    .pattern-chart .pattern-stack { fill: var(--series); cursor: crosshair; }
+    .pattern-chart .pattern-stack:hover { filter: brightness(.85); }
+    .pattern-week-chart .pattern-dot { stroke-width: 1; }
+
+    .pattern-legend { display: flex; flex-wrap: wrap; gap: 8px 15px; margin: 0 0 12px; color: var(--graphite); font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+    .pattern-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .pattern-legend-tight { margin: 12px 0 0; }
+    .pattern-legend .pattern-ramp { gap: 5px; }
+    .pattern-legend .pattern-ramp i { width: 8px; height: 8px; background: var(--ink); border-radius: 50%; }
+    .pattern-legend .pattern-swatch-mean { width: 14px; height: 2px; background: var(--accent); }
+    .pattern-legend .pattern-swatch-thin { width: 14px; height: 1px; background: rgba(var(--ink-rgb),.45); }
+    .pattern-legend .pattern-swatch-band { width: 11px; height: 11px; background: color-mix(in srgb, var(--heat-chill) 12%, transparent); border: 1px solid color-mix(in srgb, var(--heat-chill) 40%, transparent); }
+    .pattern-legend .pattern-swatch-dashed { width: 17px; height: 0; border-top: 1px dashed var(--line-dark); }
+
+    .pattern-stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 16px; border-top: 1px solid var(--line-dark); }
+    .pattern-stat { min-height: 58px; display: flex; flex-direction: column; justify-content: center; padding: 0 14px 0 0; border-right: 1px solid var(--line); }
+    .pattern-stat + .pattern-stat { padding-left: 14px; }
+    .pattern-stat:last-child { border-right: 0; }
+    .pattern-stat span { color: var(--muted); font-family: var(--sans); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+    .pattern-stat b { margin-top: 5px; font-family: var(--serif); font-size: 20px; font-weight: 400; }
+
+    .pattern-split-label { display: block; margin-bottom: 7px; color: var(--muted); font-family: var(--mono); font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
+    .pattern-split-label.spaced { margin: 14px 0 7px; }
+    .pattern-split-bars { position: relative; }
+    .pattern-split-bar { display: flex; border: 1px solid var(--line-dark); }
+    /* The segments are <i> so they can carry the series colour the way every
+       other swatch on the page does, which also means their text inherits the
+       element's italic and has to be put back upright. */
+    .pattern-split-bar i { background: var(--series); font-style: normal; cursor: crosshair; }
+    /* Four steps of one ramp abut with nothing between them, so each boundary
+       gets a hairline of paper. Without it the bar reads as one grey slab. */
+    .pattern-split-bar i + i { border-left: 1px solid var(--paper); }
+    .pattern-split-bar.time { height: 20px; }
+    .pattern-split-bar.time i { opacity: .8; }
+    /* The token bar carries its own legend, so it is sized for type rather
+       than for the stripe: label at the top, share at the bottom, and the
+       volume beneath that. A segment too narrow for a word drops to the share
+       alone, and one too narrow for that draws bare and is named in the
+       caption. */
+    .pattern-split-bar.tokens { height: 104px; }
+    .pattern-split-bar.tokens i { display: flex; flex-direction: column; overflow: hidden; padding: 9px 10px 10px; }
+    /* A segment names which end of the ramp it sits on, not what colour its
+       text should be. The dark palette inverts the ramp, so the heavy end goes
+       from dark ground to light ground and the text has to follow it. */
+    .pattern-split-bar.tokens i.on-heavy { color: var(--paper-hi); }
+    .pattern-split-bar.tokens i.on-faint { color: var(--ink); }
+    .pattern-seg-label { font-family: var(--sans); font-size: 10px; font-weight: 600; line-height: 1.25; }
+    .pattern-seg-range { display: block; margin-top: 1px; font-family: var(--mono); font-size: 8px; font-weight: 400; letter-spacing: .04em; opacity: .78; }
+    .pattern-seg-value { margin-top: auto; font-family: var(--serif); font-size: 24px; font-weight: 400; line-height: 1; letter-spacing: -.035em; }
+    .pattern-seg-meta { margin-top: 4px; font-family: var(--mono); font-size: 8px; letter-spacing: .04em; opacity: .82; white-space: nowrap; }
+    /* The dividers drop from the time bar's boundaries across both bars, which
+       is what turns two stacks into one comparison. */
+    .pattern-split-divider { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--ink); opacity: .45; pointer-events: none; }
+
+    .pattern-rows { display: grid; margin-top: 14px; border-top: 1px solid var(--line-dark); color: var(--graphite); font-family: var(--mono); font-size: 9px; }
+    .pattern-row { display: grid; gap: 10px; align-items: center; border-bottom: 1px solid var(--line); }
+    .pattern-row i { background: var(--series); }
+    .pattern-row-name { overflow: hidden; color: var(--ink); font-family: var(--sans); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+    .pattern-row-muted { color: var(--muted); text-align: right; }
+    .pattern-row-foot { display: grid; gap: 10px; min-height: 20px; align-items: center; color: var(--muted); font-family: var(--mono); font-size: 8px; text-transform: uppercase; }
+    .pattern-row-foot span { text-align: right; }
+    .pattern-project-rows .pattern-row,
+    .pattern-project-rows .pattern-row-foot { grid-template-columns: 12px minmax(0, 1fr) 64px 76px; }
+    .pattern-project-rows .pattern-row { min-height: 32px; }
+    .pattern-project-rows .pattern-row i { width: 10px; height: 14px; }
+    .pattern-project-rows .pattern-row-name { font-weight: 600; }
+
+    /* Week paging for the heatmap, matching the calendar nav the Overview's
+       session timeline already uses so the two read as one control. */
+    .pattern-nav { display: inline-flex; align-items: center; margin-left: auto; border: 1px solid var(--line-dark); }
+    .pattern-nav button { height: 22px; min-width: 24px; border: 0; border-left: 1px solid var(--line-dark); background: transparent; color: var(--graphite); padding: 0 7px; font-family: var(--mono); font-size: 10px; line-height: 1; cursor: pointer; }
+    .pattern-nav button:first-child { border-left: 0; }
+    .pattern-nav button:hover:not(:disabled) { background: rgba(var(--ink-rgb),.06); color: var(--ink); }
+    .pattern-nav button:disabled { color: var(--line-dark); cursor: default; opacity: .55; }
+    .pattern-nav button.active { background: var(--ink); color: var(--paper-hi); }
+    .pattern-nav span { min-width: 132px; padding: 0 10px; border-left: 1px solid var(--line-dark); color: var(--ink); font-family: var(--mono); font-size: 9px; letter-spacing: .06em; text-align: center; text-transform: uppercase; }
+
+    .pattern-note { min-height: 0; display: grid; grid-template-columns: 24px 1fr; gap: 10px; padding: 17px 18px 19px; color: var(--graphite); font-family: var(--sans); font-size: 10px; line-height: 1.45; }
+    .pattern-note .pattern-index { color: var(--accent); font-family: var(--mono); font-size: 10.5px; }
+
+    .pattern-empty { color: var(--muted); font-family: var(--sans); font-size: 10.5px; }
 
     .analysis-table-tools { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 18px 0 10px; }
     .analysis-search { width: min(360px, 100%); height: 32px; border: 1px solid var(--line-dark); background: rgba(var(--paper-hi-rgb),.72); padding: 0 11px; color: var(--ink); font-family: var(--sans); font-size: 11px; outline: 0; }
@@ -2369,10 +2517,10 @@
         --model-terra: #c7a34f;
         --model-luna: #d276a1;
         --model-codex: #43a9c1;
-        --project-1: #3987e5;
-        --project-2: #c98500;
-        --project-3: #d55181;
-        --project-4: #008300;
+        --project-1: #7ba3cc;
+        --project-2: #d3a558;
+        --project-3: #c98aa8;
+        --project-4: #7fa987;
         --status-good: #75b79a;
         --status-warn: #dcab5c;
         --status-error: #dc7866;
@@ -2401,7 +2549,11 @@
       .detail-scrim { background: rgba(0, 0, 0, .58); }
       .tooltip { background: var(--paper-hi); color: var(--ink); border: 1px solid var(--line-dark); border-left: 4px solid var(--accent); }
       .stack-segment:hover,
+      .pattern-chart .pattern-stack:hover,
       .project-row:hover .bar i { filter: brightness(1.18); }
+
+      .pattern-split-bar.tokens i.on-heavy { color: var(--field); }
+      .pattern-split-bar.tokens i.on-faint { color: var(--ink); }
     }
 
     @media (min-width: 1920px) {
@@ -2427,6 +2579,11 @@
       /* Four agents no longer fit across this row, and auto-fit would seat
          three and strand the fourth alone. Two even rows instead. */
       .capture-monitor-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      /* Between 960 and 1280 the six- and four-column cards are at their
+         narrowest while still sharing a row, so every caption takes one line
+         more than it does above this width. */
+      .pattern-caption { min-height: 4.5em; }
+      .pattern-caption-foot { min-height: 6em; }
     }
 
     @media (max-width: 959px) {
@@ -2479,6 +2636,11 @@
       .portal-tab { flex: 0 0 auto; }
       .analysis-view { padding: 22px 14px 28px; }
       .analysis-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .pattern-heat { --heat-gutter-left: 28px; --heat-gutter-right: 50px; --heat-gap: 6px; }
+      .pattern-stats { grid-template-columns: 1fr; }
+      .pattern-stat { border-right: 0; border-bottom: 1px solid var(--line); padding-left: 0; }
+      .pattern-stat + .pattern-stat { padding-left: 0; }
+      .pattern-stat:last-child { border-bottom: 0; }
       .analysis-kpi:nth-child(2) { border-right: 0; }
       .analysis-kpi:nth-child(-n+2) { border-bottom: 1px solid var(--line-dark); }
       .module-grid { grid-template-columns: 1fr; }
@@ -2603,6 +2765,7 @@
         <button class="portal-tab active" role="tab" aria-selected="true" data-portal-view="overview">Overview</button>
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="spend">Spend</button>
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="tokens">Tokens</button>
+        <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="pattern">Pattern</button>
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="projects">Projects</button>
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="sessions">Sessions</button>
       </div>
@@ -2890,6 +3053,77 @@
         <section class="analysis-card narrow"><div class="analysis-card-head"><h2>Token mix</h2><span>Composition</span></div><div class="composition-list" id="tokenComposition"></div></section>
         <section class="analysis-card"><div class="analysis-card-head"><h2>Tokens by project</h2><span>Click for detail</span></div><div class="analysis-bars" id="tokenProjects"></div></section>
         <section class="analysis-card"><div class="analysis-card-head"><h2>Cache hit by day</h2><span>Cache-read share</span></div><div class="analysis-bars" id="cacheDays"></div></section>
+      </div>
+    </section>
+
+    <section class="analysis-view portal-view" id="patternView" data-view="pattern" hidden>
+      <header class="analysis-head">
+        <div><span class="micro">Temporal habit</span><h1>Pattern</h1></div>
+        <p>When the work happens. The selected period folded onto the clock and onto the week, so the habit underneath the volume becomes visible.</p>
+      </header>
+      <div class="analysis-kpis" id="patternKpis"></div>
+      <div class="analysis-grid">
+        <section class="analysis-card full">
+          <div class="analysis-card-head">
+            <span class="pattern-index">01</span>
+            <div class="pattern-card-title"><h2>The week at a glance</h2><p>168 hour-slots, hour by weekday, shaded by recorded token volume.</p></div>
+            <div class="pattern-nav" id="patternWeekNav">
+              <button type="button" data-pattern-week="older" aria-label="Previous week">&lsaquo;</button>
+              <span id="patternWeekLabel"></span>
+              <button type="button" data-pattern-week="newer" aria-label="Next week">&rsaquo;</button>
+              <button type="button" data-pattern-week="all" id="patternWeekAll">All</button>
+            </div>
+          </div>
+          <p class="pattern-caption" id="patternHeatCaption"></p>
+          <div class="pattern-heat" id="patternHeat"></div>
+        </section>
+
+        <section class="analysis-card wide">
+          <div class="analysis-card-head">
+            <span class="pattern-index">02</span>
+            <div class="pattern-card-title"><h2>The shape of a day</h2><p>One dot per recorded day at each hour; darker dots are more recent days.</p></div>
+            <span id="patternDayMeta">Hour-of-day totals</span>
+          </div>
+          <div class="pattern-legend" id="patternDayLegend"></div>
+          <svg class="pattern-chart" id="patternDayChart" viewBox="0 0 640 230" role="img" aria-label="Recorded volume by hour of day, one dot per recorded day"></svg>
+          <div class="pattern-stats" id="patternDayStats"></div>
+        </section>
+
+        <section class="analysis-card narrow">
+          <div class="analysis-card-head">
+            <span class="pattern-index">03</span>
+            <div class="pattern-card-title"><h2>The shape of a week</h2><p>One dot per recorded day on its weekday; darker dots are more recent.</p></div>
+          </div>
+          <p class="pattern-caption" id="patternWeekCaption"></p>
+          <svg class="pattern-chart pattern-week-chart" id="patternWeekChart" viewBox="0 0 320 226" role="img" aria-label="Recorded volume by weekday, one dot per recorded day"></svg>
+          <div class="pattern-legend pattern-legend-tight" id="patternWeekLegend"></div>
+        </section>
+
+        <section class="analysis-card">
+          <div class="analysis-card-head">
+            <span class="pattern-index">04</span>
+            <div class="pattern-card-title"><h2>Where the hours land</h2><p>Four time territories on the folded week, and the share of volume each one carries.</p></div>
+            <span>Share of volume</span>
+          </div>
+          <div id="patternSplit"></div>
+          <p class="pattern-caption pattern-caption-foot" id="patternSplitCaption"></p>
+        </section>
+
+        <section class="analysis-card">
+          <div class="analysis-card-head">
+            <span class="pattern-index">05</span>
+            <div class="pattern-card-title"><h2>Each project keeps its own clock</h2><p>Hourly volume stacked by project; the window each project favours is listed below.</p></div>
+            <span>Hour-of-day / by project</span>
+          </div>
+          <svg class="pattern-chart" id="patternProjectChart" viewBox="0 0 640 230" role="img" aria-label="Hour-of-day volume stacked by project"></svg>
+          <div class="pattern-rows pattern-project-rows" id="patternProjectRows"></div>
+          <p class="pattern-caption pattern-caption-foot" id="patternProjectCaption"></p>
+        </section>
+
+        <aside class="analysis-card full pattern-note">
+          <span class="pattern-index">06</span>
+          <span id="patternNote"></span>
+        </aside>
       </div>
     </section>
 
