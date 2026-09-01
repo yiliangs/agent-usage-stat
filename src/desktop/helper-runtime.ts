@@ -1,22 +1,17 @@
 import { app } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import {
-  chmod,
-  copyFile,
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   desktopSetupStatePath,
   installedHelperPath,
-  installedHelperStatePath,
 } from "../core/application-paths.js";
+import {
+  helperBinaryName,
+  installHelperBinary,
+  installedHelperVersion,
+} from "../core/helper-installation.js";
 import { ConfigManager } from "../core/config-manager.js";
 import { PROVIDER_NAMES } from "../core/provider-definition.js";
 import {
@@ -55,48 +50,21 @@ export class HelperRuntime {
     return !existsSync(desktopSetupStatePath());
   }
 
+  /**
+   * A packaged launch settles the common case on a version string rather than
+   * comparing 92 MB of binary. Anything else — an unpackaged run, a version
+   * the state does not vouch for, a missing helper — falls through to the
+   * installer, which compares the binaries themselves.
+   */
   async syncInstallation(): Promise<void> {
-    const source = this.bundledPath();
-    const destination = installedHelperPath();
-    const versionState = installedHelperStatePath();
-    if (!existsSync(source)) {
-      throw new Error(`Bundled application helper is missing: ${source}`);
-    }
-
-    await mkdir(join(destination, ".."), { recursive: true });
-    if (app.isPackaged && existsSync(destination)) {
-      try {
-        const state = JSON.parse(await readFile(versionState, "utf8")) as {
-          version?: string;
-        };
-        if (state.version === app.getVersion()) return;
-      } catch {
-        // Missing or invalid state requires reinstalling the helper.
-      }
-    }
-    if (await filesEqual(source, destination)) {
-      await this.writeVersionState();
+    if (
+      app.isPackaged &&
+      existsSync(installedHelperPath()) &&
+      (await installedHelperVersion()) === app.getVersion()
+    ) {
       return;
     }
-
-    const staged = `${destination}.${process.pid}.new`;
-    const previous = `${destination}.previous`;
-    await copyFile(source, staged);
-    if (process.platform !== "win32") await chmod(staged, 0o755);
-
-    try {
-      await rm(previous, { force: true });
-      if (existsSync(destination)) await rename(destination, previous);
-      await rename(staged, destination);
-      await rm(previous, { force: true });
-      await this.writeVersionState();
-    } catch (error) {
-      await rm(staged, { force: true }).catch(() => undefined);
-      if (!existsSync(destination) && existsSync(previous)) {
-        await rename(previous, destination).catch(() => undefined);
-      }
-      throw error;
-    }
+    await installHelperBinary(this.bundledPath(), app.getVersion());
   }
 
   async run(args: string[]): Promise<HelperRunResult> {
@@ -294,20 +262,10 @@ export class HelperRuntime {
   }
 
   private bundledPath(): string {
-    const name = process.platform === "win32"
-      ? "agent-usage-stat-helper.exe"
-      : "agent-usage-stat-helper";
+    const name = helperBinaryName();
     return app.isPackaged
       ? join(process.resourcesPath, name)
       : join(app.getAppPath(), "dist", "helper", name);
-  }
-
-  private writeVersionState(): Promise<void> {
-    return writeFile(
-      installedHelperStatePath(),
-      JSON.stringify({ version: app.getVersion() }, null, 2),
-      "utf8",
-    );
   }
 }
 
@@ -328,16 +286,3 @@ function sameCapturePolicy(left: CapturePolicy, right: CapturePolicy): boolean {
     );
 }
 
-async function filesEqual(left: string, right: string): Promise<boolean> {
-  try {
-    const [leftStat, rightStat] = await Promise.all([stat(left), stat(right)]);
-    if (leftStat.size !== rightStat.size) return false;
-    const [leftData, rightData] = await Promise.all([
-      readFile(left),
-      readFile(right),
-    ]);
-    return leftData.equals(rightData);
-  } catch {
-    return false;
-  }
-}
