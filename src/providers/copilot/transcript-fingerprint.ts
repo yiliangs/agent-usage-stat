@@ -2,8 +2,8 @@ import { createHash } from "crypto";
 import { open } from "fs/promises";
 import { pricingFeedFingerprint } from "../../core/pricing-feed.js";
 import { pricingFingerprintSource } from "./pricing.js";
+import { TAIL_BYTES } from "./transcript-reader.js";
 
-const TAIL_BYTES = 64 * 1024;
 const USAGE_ALGORITHM_VERSION = "copilot-usage-v2";
 
 // Lazy, memoized on the feed fingerprint: the remote pricing feed loads after

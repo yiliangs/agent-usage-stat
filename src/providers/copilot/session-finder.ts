@@ -2,7 +2,7 @@ import { readdir, stat } from "fs/promises";
 import { join } from "path";
 import { homeDir } from "../../utils/paths.js";
 import type { FoundSession } from "../../types/provider.js";
-import { readCopilotEvents } from "./transcript-reader.js";
+import { hasShutdownRecord } from "./transcript-reader.js";
 
 export class SessionFinder {
   private root: string;
@@ -43,11 +43,13 @@ export class SessionFinder {
       if (!entry.isDirectory()) continue;
       const transcriptPath = join(this.root, entry.name, "events.jsonl");
       try {
-        const [info, events] = await Promise.all([
+        // Discovery runs on every launch, so completion is decided from a
+        // bounded tail rather than a full parse of the whole history.
+        const [info, complete] = await Promise.all([
           stat(transcriptPath),
-          readCopilotEvents(transcriptPath),
+          hasShutdownRecord(transcriptPath),
         ]);
-        if (!events.some((event) => event.type === "session.shutdown")) continue;
+        if (!complete) continue;
         sessions.push({
           sessionId: entry.name,
           transcriptPath,
