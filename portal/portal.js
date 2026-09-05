@@ -149,17 +149,38 @@ function currentWindow() {
   const end = Number.isFinite(generated) ? Math.max(generated, latest) : latest
   const days = RANGE_DAYS[state.range]
   const start = days ? end - days * DAY : Math.min(...state.sessions.map((session) => session.t))
-  return { start, end, days: days || Math.max(1, Math.ceil((end - start) / DAY)) }
+  return { start, end }
 }
 
 function sessionsIn(start, end) {
   return state.sessions.filter((session) => session.t >= start && session.t <= end)
 }
 
+/**
+ * The sessions in the period before the selected one, which only a fixed range
+ * has.
+ *
+ * A fixed range is a length, so the period before it is that same length
+ * ending where it begins. The upper bound is exclusive: a session recorded
+ * exactly on the boundary belongs to the selected period, and counting it in
+ * both is counting it twice.
+ *
+ * ALL is not a length but the whole ledger, and its window starts on the
+ * oldest session recorded, so nothing precedes it. It has no prior period at
+ * all, and every comparison drawn from this reads as no baseline, which is
+ * what a fixed range with nothing behind it already reads.
+ */
+function priorSessions(period) {
+  const days = RANGE_DAYS[state.range]
+  if (!days) return []
+  const start = period.start - days * DAY
+  return state.sessions.filter((session) => session.t >= start && session.t < period.start)
+}
+
 function render() {
   const period = currentWindow()
   const current = sessionsIn(period.start, period.end)
-  const previous = sessionsIn(period.start - period.days * DAY, period.start)
+  const previous = priorSessions(period)
   const currentTotals = summarizeUsage(current)
   const previousTotals = summarizeUsage(previous)
   const projectSummary = summarizeProjects(current)
