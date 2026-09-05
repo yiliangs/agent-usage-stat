@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
+import { isBuiltin } from "node:module";
 import { join, dirname, relative, resolve, sep } from "node:path";
 import test from "node:test";
 
@@ -40,42 +41,73 @@ function readCode(path) {
   return stripComments(readFileSync(path, "utf8"));
 }
 
-/** Every `import … from "x"` that survives compilation: type-only imports erase,
- *  and `await import()` is deferred, so neither weighs on a cold start. */
+/** Every specifier that survives compilation as a static dependency: the
+ *  `import … from` and `export … from` bindings plus the bare `import "x"`
+ *  side-effect form. Type-only imports erase and `await import()` is deferred,
+ *  so neither weighs on a cold start. The clause between the keyword and `from`
+ *  is matched narrowly, by the characters an import clause can hold, so a later
+ *  `export` of a function or a type cannot swallow the import that follows it. */
 function staticImports(path) {
   const specifiers = [];
-  const pattern = /import\s+(type\s+)?[\s\S]*?from\s*["']([^"']+)["']/g;
-  for (const [, typeOnly, specifier] of readCode(path).matchAll(pattern)) {
-    if (!typeOnly) specifiers.push(specifier);
+  const pattern =
+    /import\s*["']([^"']+)["']|\b(?:import|export)\s+(type\s+)?[\w\s{},*$]*?from\s*["']([^"']+)["']/g;
+  for (const [, sideEffect, typeOnly, bound] of readCode(path).matchAll(pattern)) {
+    if (sideEffect) specifiers.push(sideEffect);
+    else if (!typeOnly) specifiers.push(bound);
   }
   return specifiers;
 }
 
-function resolveLocal(fromPath, specifier) {
-  if (!specifier.startsWith(".")) return null;
-  return resolve(dirname(fromPath), specifier.replace(/\.js$/, ".ts"));
-}
-
+/**
+ * Walk the static graph from `entry` and report what it reaches: the local
+ * modules, and the third-party packages that hang off any of them.
+ *
+ * The walk once resolved only relative specifiers and dropped everything else
+ * on the floor, which made the import-light guard blind to the one regression
+ * shape it exists to catch (#137): a `chalk` or `ora` in the shim changes no
+ * local module, so the closure stayed exactly as asserted while cold-start cost
+ * arrived anyway. A bare specifier is now classified rather than discarded: a
+ * Node built-in in either spelling is free, anything else is a package.
+ */
 function staticClosure(entry) {
-  const seen = new Set();
+  const modules = new Set();
+  const packages = new Set();
   const queue = [entry];
   while (queue.length > 0) {
     const current = queue.pop();
     for (const specifier of staticImports(current)) {
-      const local = resolveLocal(current, specifier);
-      if (!local || seen.has(local)) continue;
-      seen.add(local);
+      if (!specifier.startsWith(".")) {
+        if (!isBuiltin(specifier)) {
+          packages.add(`${relative(root, current)} imports "${specifier}"`);
+        }
+        continue;
+      }
+      const local = resolve(dirname(current), specifier.replace(/\.js$/, ".ts"));
+      if (modules.has(local)) continue;
+      modules.add(local);
       queue.push(local);
     }
   }
-  return [...seen].map((path) => relative(root, path)).sort();
+  return {
+    modules: [...modules].map((path) => relative(root, path)).sort(),
+    packages: [...packages].sort(),
+  };
 }
 
 test("the hook entry path stays import-light", () => {
   // helper.ts is the standalone hook entry point: it runs on every SessionEnd,
   // so anything it pulls in statically is paid on every captured session. The
   // command modules are reached through `await import()` and must stay there.
-  assert.deepEqual(staticClosure(join(sourceRoot, "helper.ts")), [
+  const closure = staticClosure(join(sourceRoot, "helper.ts"));
+
+  // Node built-ins are already in the process; a package is the weight the
+  // invariant is about, so the entry path may reach none of them at any depth.
+  assert.deepEqual(
+    closure.packages,
+    [],
+    `the import-light entry path reached third-party packages: ${closure.packages.join("; ")}`,
+  );
+  assert.deepEqual(closure.modules, [
     join("src", "commands", "detach-shim.ts"),
     join("src", "utils", "atomic-file.ts"),
     join("src", "utils", "capture-run.ts"),
