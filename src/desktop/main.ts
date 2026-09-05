@@ -25,9 +25,8 @@ import {
   PANEL_URL,
   PORTAL_ORIGIN,
   PORTAL_URL,
-  PortalRuntime,
-  registerPortalScheme,
-} from "./portal-runtime.js";
+} from "./portal-request.js";
+import { PortalRuntime, registerPortalScheme } from "./portal-runtime.js";
 import { StatusArea } from "./status-area.js";
 import {
   closesToStatusArea,
@@ -362,8 +361,10 @@ async function createWindow(
     }
     return { action: "deny" };
   });
+  // The startup screen's data: URL is loaded by the main process, which does
+  // not raise will-navigate, so the portal origin is the whole allowance.
   window.webContents.on("will-navigate", (event, url) => {
-    if (url.startsWith(`${PORTAL_ORIGIN}/`) || url.startsWith("data:text/html")) return;
+    if (url.startsWith(`${PORTAL_ORIGIN}/`)) return;
     event.preventDefault();
   });
   if (show) window.once("ready-to-show", () => window.show());

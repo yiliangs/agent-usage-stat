@@ -143,6 +143,37 @@ test("production opens no localhost server", () => {
   assert.deepEqual(offenders, []);
 });
 
+test("every renderer window is sandboxed and none is given a bridge into main", () => {
+  // The renderer draws transcript-derived strings, and `aus://` is the only
+  // channel it has back into the application. contextIsolation, a disabled
+  // node integration, and the sandbox are what keep it the only one; a preload
+  // script or an ipcMain handler is a second one, opened for every window at
+  // once. The dashboard and the status-area glance both go through here.
+  const windows = sourceFiles()
+    .filter((path) => /new BrowserWindow\(/.test(readCode(path)));
+
+  assert.ok(windows.length >= 2, "expected the dashboard and the glance panel");
+  for (const path of windows) {
+    const code = readCode(path);
+    const name = relative(root, path);
+    const declared = [...code.matchAll(/new BrowserWindow\(/g)].length;
+    const preferences = [...code.matchAll(/webPreferences: \{[\s\S]*?\}/g)];
+
+    assert.equal(preferences.length, declared, `${name} opens a window without webPreferences`);
+    for (const [block] of preferences) {
+      assert.match(block, /contextIsolation: true/, name);
+      assert.match(block, /nodeIntegration: false/, name);
+      assert.match(block, /sandbox: true/, name);
+    }
+  }
+
+  const offenders = sourceFiles()
+    .filter((path) => /\bipcMain\b|\bpreload\b|\bwebSecurity\b/.test(readCode(path)))
+    .map((path) => relative(root, path));
+
+  assert.deepEqual(offenders, []);
+});
+
 test("the logbook shard directory name has exactly one owner", () => {
   // Every consumer reaches the shards through LOGBOOK_SHARD_DIR and
   // resolveUsageRoot, so a redirected data root stays authoritative instead of
