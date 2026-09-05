@@ -151,7 +151,7 @@ globalThis.waitForRender = async function (rendered, timeoutMs = 20000) {
 `;
 
 /** Measure one width in a fresh browser so no earlier width leaks state. */
-async function probeWidth({ chrome, port, page, width, height, script }) {
+async function probeWidth({ chrome, port, page, width, height, script, timeZone }) {
   const profile = await mkdtemp(join(tmpdir(), "aus-layout-"));
   const browser = spawn(chrome, [
     "--headless=new",
@@ -186,6 +186,11 @@ async function probeWidth({ chrome, port, page, width, height, script }) {
     });
     const session = attached.result.sessionId;
     await client.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false }, session);
+    // A guard about dates needs a viewer somewhere other than this machine.
+    // `TZ` in the environment is not that lever: Chrome on Windows reads the
+    // zone from the OS and ignores it, so the zone is set in the renderer,
+    // where `Date` and `Intl` both answer to it.
+    if (timeZone) await client.send("Emulation.setTimezoneOverride", { timezoneId: timeZone }, session);
     await client.send("Page.enable", {}, session);
     const loaded = client.once("Page.loadEventFired");
     await client.send("Page.navigate", { url: `http://127.0.0.1:${port}/${page}` }, session);
@@ -209,9 +214,11 @@ async function probeWidth({ chrome, port, page, width, height, script }) {
  * Render the portal at each width and return one probe result per width.
  * `data` supplies `sessions.json` and `meta.json` exactly as the desktop build
  * writes them; `probe` is the URL of a script file to evaluate in the page;
- * `page` selects the document, and is empty for the dashboard at the root.
+ * `page` selects the document, and is empty for the dashboard at the root;
+ * `timeZone` is an IANA zone the page renders in, for a guard whose subject is
+ * where the reader is standing rather than how wide their window is.
  */
-export async function runPortalProbe({ portalDir, data, probe, page = "", widths = SUPPORTED_WIDTHS, height = 960 }) {
+export async function runPortalProbe({ portalDir, data, probe, page = "", widths = SUPPORTED_WIDTHS, height = 960, timeZone = null }) {
   const chrome = findChrome();
   if (!chrome) throw new Error("no Chrome binary found");
   const script = await readFile(probe, "utf8");
@@ -221,7 +228,7 @@ export async function runPortalProbe({ portalDir, data, probe, page = "", widths
   try {
     const results = [];
     for (const width of widths) {
-      results.push({ width, ...(await probeWidth({ chrome, port, page, width, height, script })) });
+      results.push({ width, ...(await probeWidth({ chrome, port, page, width, height, script, timeZone })) });
     }
     return results;
   } finally {
