@@ -11,7 +11,8 @@
  * The harness is shared; each guard supplies its own probe script, which runs
  * in the page and returns whatever that guard needs to assert. The harness
  * navigates and waits for the load event; the probe calls `waitForRender` with
- * the condition that means "drawn" for the thing it measures.
+ * the condition that means "drawn" for the thing it measures, and reads
+ * whatever the guard handed it from `probeInput`.
  */
 
 import { spawn } from "node:child_process";
@@ -151,7 +152,7 @@ globalThis.waitForRender = async function (rendered, timeoutMs = 20000) {
 `;
 
 /** Measure one width in a fresh browser so no earlier width leaks state. */
-async function probeWidth({ chrome, port, page, width, height, script, timeZone }) {
+async function probeWidth({ chrome, port, page, width, height, script, timeZone, input }) {
   const profile = await mkdtemp(join(tmpdir(), "aus-layout-"));
   const browser = spawn(chrome, [
     "--headless=new",
@@ -195,9 +196,10 @@ async function probeWidth({ chrome, port, page, width, height, script, timeZone 
     const loaded = client.once("Page.loadEventFired");
     await client.send("Page.navigate", { url: `http://127.0.0.1:${port}/${page}` }, session);
     await withDeadline(loaded, 30_000);
+    const preamble = `${PROBE_PREAMBLE}globalThis.probeInput = ${JSON.stringify(input ?? null)};\n`;
     const evaluated = await client.send(
       "Runtime.evaluate",
-      { expression: PROBE_PREAMBLE + script, awaitPromise: true, returnByValue: true },
+      { expression: preamble + script, awaitPromise: true, returnByValue: true },
       session,
     );
     client.close();
@@ -216,9 +218,11 @@ async function probeWidth({ chrome, port, page, width, height, script, timeZone 
  * writes them; `probe` is the URL of a script file to evaluate in the page;
  * `page` selects the document, and is empty for the dashboard at the root;
  * `timeZone` is an IANA zone the page renders in, for a guard whose subject is
- * where the reader is standing rather than how wide their window is.
+ * where the reader is standing rather than how wide their window is; `input`
+ * is any JSON value the probe reads back as `probeInput`, for a guard whose
+ * cases are computed in Node rather than discovered in the page.
  */
-export async function runPortalProbe({ portalDir, data, probe, page = "", widths = SUPPORTED_WIDTHS, height = 960, timeZone = null }) {
+export async function runPortalProbe({ portalDir, data, probe, page = "", widths = SUPPORTED_WIDTHS, height = 960, timeZone = null, input = null }) {
   const chrome = findChrome();
   if (!chrome) throw new Error("no Chrome binary found");
   const script = await readFile(probe, "utf8");
@@ -228,7 +232,7 @@ export async function runPortalProbe({ portalDir, data, probe, page = "", widths
   try {
     const results = [];
     for (const width of widths) {
-      results.push({ width, ...(await probeWidth({ chrome, port, page, width, height, script, timeZone })) });
+      results.push({ width, ...(await probeWidth({ chrome, port, page, width, height, script, timeZone, input })) });
     }
     return results;
   } finally {
