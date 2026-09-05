@@ -1,7 +1,8 @@
 import { mkdirSync } from "fs";
-import { writeFile, readFile, open, stat, unlink } from "fs/promises";
+import { readFile, open, stat, unlink } from "fs/promises";
 import { join } from "path";
 import { hostname } from "os";
+import { writeJsonAtomic } from "../utils/atomic-file.js";
 import type { SessionUsage } from "../types/session.js";
 import type { ParsedTranscript } from "../types/transcript.js";
 import { vendorForModel } from "./model-vendor.js";
@@ -49,7 +50,7 @@ export class LogbookWriter {
 
     return this.withShardLock(path, async () => {
       record = await this.preserveRecordedUsage(path, record);
-      await writeFile(path, JSON.stringify(record, null, 2), "utf-8");
+      await writeJsonAtomic(path, record, 2);
 
       // Read the bytes back: Drive can accept a write and later revert it, and a
       // unique new file is the case that has always persisted, so a mismatch here

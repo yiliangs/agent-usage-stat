@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
-import { mkdir, readFile, rm, writeFile } from "fs/promises";
+import { mkdir, readFile, rm } from "fs/promises";
 import { join } from "path";
+import { writeFileAtomic } from "../utils/atomic-file.js";
 import {
   captureHookInvocation,
   isAgentUsageStatCommand,
@@ -57,7 +58,7 @@ function installedInvocation(contents: string): string | null {
 /** Write the plugin, replacing any previous version of our own file. */
 export async function installOpencodeHook(pluginPath: string): Promise<void> {
   await mkdir(join(pluginPath, ".."), { recursive: true });
-  await writeFile(pluginPath, pluginSource(), "utf-8");
+  await writeFileAtomic(pluginPath, pluginSource());
 }
 
 export async function removeOpencodeHook(pluginPath: string): Promise<void> {

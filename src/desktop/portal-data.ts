@@ -1,13 +1,7 @@
 import { existsSync } from "node:fs";
-import {
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readFile, readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
+import { writeJsonAtomic } from "../utils/atomic-file.js";
 import {
   vendorForModel,
   type ModelVendor,
@@ -293,16 +287,6 @@ function addSession(
   if (!session) return;
   if (session.sid) byId.set(session.sid, session);
   else noId.push(session);
-}
-
-async function writeJsonAtomic(
-  path: string,
-  value: unknown,
-  space?: number,
-): Promise<void> {
-  const staged = `${path}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
-  await writeFile(staged, JSON.stringify(value, null, space), "utf8");
-  await rename(staged, path);
 }
 
 async function mapConcurrent<T, R>(

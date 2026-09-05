@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
-import { mkdir, readFile, rename, writeFile } from "fs/promises";
+import { mkdir, readFile } from "fs/promises";
 import { join, resolve } from "path";
+import { writeJsonAtomic } from "../utils/atomic-file.js";
 import { logHookEvent } from "../utils/hook-log.js";
 import { normalizeModelId } from "./model-id.js";
 
@@ -269,7 +270,5 @@ async function readCache(path: string): Promise<FeedCacheFile | null> {
 
 async function writeCache(path: string, cache: FeedCacheFile): Promise<void> {
   await mkdir(resolve(path, ".."), { recursive: true });
-  const temp = `${path}.${process.pid}-${Date.now()}.tmp`;
-  await writeFile(temp, JSON.stringify(cache), "utf-8");
-  await rename(temp, path);
+  await writeJsonAtomic(path, cache);
 }

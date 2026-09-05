@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile } from "fs/promises";
 import { join } from "path";
+import { backupOnce, writeJsonAtomic } from "../utils/atomic-file.js";
 import {
   captureHookCommands,
   isAgentUsageStatCommand,
@@ -51,8 +52,10 @@ export async function installCodexHooks(hooksPath: string): Promise<boolean> {
 
   let config: CodexHooksFile = {};
   if (existsSync(hooksPath)) {
+    // Only the first install sees the file as the user had it. A later one
+    // would copy our own hooks over that record and lose it (#114).
+    await backupOnce(hooksPath, `${hooksPath}.backup`);
     const content = await readFile(hooksPath, "utf-8");
-    await writeFile(`${hooksPath}.backup`, content, "utf-8");
     try {
       config = JSON.parse(content);
     } catch {
@@ -90,7 +93,7 @@ export async function installCodexHooks(hooksPath: string): Promise<boolean> {
     config.hooks[event].push({ hooks: [handler] });
   }
 
-  await writeFile(hooksPath, JSON.stringify(config, null, 2), "utf-8");
+  await writeJsonAtomic(hooksPath, config, 2);
   return !alreadyInstalled;
 }
 
@@ -113,7 +116,7 @@ export async function removeCodexHooks(hooksPath: string): Promise<void> {
   }
   if (Object.keys(config.hooks).length === 0) delete config.hooks;
 
-  await writeFile(hooksPath, JSON.stringify(config, null, 2), "utf-8");
+  await writeJsonAtomic(hooksPath, config, 2);
 }
 
 /**

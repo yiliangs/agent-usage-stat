@@ -2,14 +2,8 @@ import { createHash } from "crypto";
 import { existsSync, mkdirSync } from "fs";
 import { homedir } from "os";
 import { join, resolve } from "path";
-import {
-  open,
-  readFile,
-  rename,
-  stat,
-  unlink,
-  writeFile,
-} from "fs/promises";
+import { open, readFile, stat, unlink } from "fs/promises";
+import { writeJsonAtomic } from "../../utils/atomic-file.js";
 import { expandHome } from "../../utils/paths.js";
 import {
   buildSessionUsage,
@@ -583,9 +577,7 @@ function firstDeclaredModel(content: string): string | null {
 
 async function saveState(path: string, state: StoredSnapshot): Promise<void> {
   mkdirSync(resolve(path, ".."), { recursive: true });
-  const temp = `${path}.${process.pid}-${Date.now()}.tmp`;
-  await writeFile(temp, JSON.stringify(state), "utf-8");
-  await rename(temp, path);
+  await writeJsonAtomic(path, state);
 }
 
 async function withCacheLock<T>(

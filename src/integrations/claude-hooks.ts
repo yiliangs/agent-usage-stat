@@ -1,7 +1,8 @@
 import { existsSync } from "fs";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile } from "fs/promises";
 import { join } from "path";
 import chalk from "chalk";
+import { backupOnce, writeJsonAtomic } from "../utils/atomic-file.js";
 import {
   captureHookCommands,
   isAgentUsageStatCommand,
@@ -59,8 +60,10 @@ export async function installClaudeHook(settingsPath: string): Promise<void> {
 
   let settings: ClaudeSettings = {};
   if (existsSync(settingsPath)) {
+    // Only the first install sees the settings as the user had them. A later
+    // one would copy our own hooks over that record and lose it (#114).
+    await backupOnce(settingsPath, `${settingsPath}.backup`);
     const content = await readFile(settingsPath, "utf-8");
-    await writeFile(`${settingsPath}.backup`, content, "utf-8");
     try {
       settings = JSON.parse(content);
     } catch {
@@ -86,7 +89,7 @@ export async function installClaudeHook(settingsPath: string): Promise<void> {
   if (updating) {
     console.log(chalk.yellow("\nClaude Code hooks already installed; updating them."));
   }
-  await writeFile(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+  await writeJsonAtomic(settingsPath, settings, 2);
 }
 
 export async function removeClaudeHook(settingsPath: string): Promise<void> {
@@ -109,7 +112,7 @@ export async function removeClaudeHook(settingsPath: string): Promise<void> {
   }
   if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
 
-  await writeFile(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+  await writeJsonAtomic(settingsPath, settings, 2);
 }
 
 /**

@@ -2,15 +2,8 @@ import { createHash } from "crypto";
 import { existsSync } from "fs";
 import { homedir } from "os";
 import { basename, join, resolve } from "path";
-import {
-  mkdir,
-  open,
-  readFile,
-  rename,
-  stat,
-  unlink,
-  writeFile,
-} from "fs/promises";
+import { mkdir, open, readFile, stat, unlink } from "fs/promises";
+import { writeJsonAtomic } from "../../utils/atomic-file.js";
 import { expandHome } from "../../utils/paths.js";
 import {
   buildSessionUsage,
@@ -435,9 +428,7 @@ async function readTail(path: string, size: number): Promise<Buffer> {
 
 async function saveState(path: string, state: StoredSnapshot): Promise<void> {
   await mkdir(resolve(path, ".."), { recursive: true });
-  const temp = `${path}.${process.pid}-${Date.now()}.tmp`;
-  await writeFile(temp, JSON.stringify(state), "utf-8");
-  await rename(temp, path);
+  await writeJsonAtomic(path, state);
 }
 
 async function withCacheLock<T>(path: string, action: () => Promise<T>): Promise<T> {

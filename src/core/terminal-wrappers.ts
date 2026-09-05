@@ -1,7 +1,7 @@
-import { constants } from "fs";
-import { copyFile, mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile } from "fs/promises";
 import { spawnSync } from "child_process";
 import { basename, dirname, join } from "path";
+import { backupOnce, writeFileAtomic } from "../utils/atomic-file.js";
 import { homeDir, homeDirFrom } from "../utils/paths.js";
 import { PROVIDER_NAMES } from "./provider-definition.js";
 
@@ -67,8 +67,8 @@ export async function installTerminalWrappers(
   if (next === existing) return { profile, changed: false };
 
   await mkdir(dirname(profile.path), { recursive: true });
-  if (existing) await createBackup(profile.path);
-  await writeFile(profile.path, next, "utf-8");
+  if (existing) await backupProfile(profile.path);
+  await writeFileAtomic(profile.path, next);
   return { profile, changed: true };
 }
 
@@ -79,8 +79,8 @@ export async function removeTerminalWrappers(
   if (!existing.includes(BLOCK_START)) return { profile, changed: false };
 
   const next = existing.replace(BLOCK_PATTERN, "");
-  await createBackup(profile.path);
-  await writeFile(profile.path, next, "utf-8");
+  await backupProfile(profile.path);
+  await writeFileAtomic(profile.path, next);
   return { profile, changed: true };
 }
 
@@ -204,17 +204,10 @@ async function readOptional(path: string): Promise<string> {
   }
 }
 
-async function createBackup(path: string): Promise<void> {
-  try {
-    await copyFile(path, `${path}.agent-usage-stat.backup`, constants.COPYFILE_EXCL);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-      // A missing profile has nothing to back up. Other backup failures should
-      // not block an idempotent marker update.
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
-  }
-}
+/** The profile as it was before we first touched it. A later idempotent
+ *  marker update must not replace that record with our own block. */
+const backupProfile = (path: string): Promise<void> =>
+  backupOnce(path, `${path}.agent-usage-stat.backup`);
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

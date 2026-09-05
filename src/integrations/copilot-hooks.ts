@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
-import { mkdir, readFile, rm, writeFile } from "fs/promises";
+import { mkdir, readFile, rm } from "fs/promises";
 import { join } from "path";
+import { writeJsonAtomic } from "../utils/atomic-file.js";
 import {
   captureHookCommands,
   isAgentUsageStatCommand,
@@ -45,7 +46,7 @@ export async function installCopilotHook(hooksPath: string): Promise<void> {
       ],
     },
   };
-  await writeFile(hooksPath, JSON.stringify(config, null, 2), "utf-8");
+  await writeJsonAtomic(hooksPath, config, 2);
 }
 
 export async function removeCopilotHook(hooksPath: string): Promise<void> {
