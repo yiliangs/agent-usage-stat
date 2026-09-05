@@ -108,6 +108,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - The detach shim reads at most the first 128 KB when checking Claude entrypoints.
 - Terminal feedback must fall back silently rather than weaken detached capture.
 - Production opens no localhost server. Renderer assets and data use the `aus://` protocol.
+- `aus://` is the only channel from a renderer back into the application. Every window is created with context isolation on, node integration off, and the sandbox on, and none carries a preload script or an `ipcMain` handler. A renderer need is answered by a request the protocol routes, never by a privileged bridge.
 - Every path the protocol serves is decided by `portal-request.ts`, which resolves it against one of two roots and refuses anything that leaves that root. Percent-encoded separators survive URL normalization, so the decoded path is what the guard checks.
 - Hooks must target the stable installed helper, never a versioned application directory.
 - The Start Menu entry is `Programs\<Product>.lnk`, listed as an application rather than filed in a folder. Squirrel writes it into a folder named after the nuspec authors and offers no location that skips one, and that same field is the uninstall entry's Publisher, so `src/desktop/start-menu-shortcut.ts` moves the shortcut instead of renaming the author.

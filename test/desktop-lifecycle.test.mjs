@@ -139,6 +139,50 @@ test("the first-run window asks its own questions instead of raising dialogs", a
   assert.match(firstRun, /failStartupScreen\(window, detail\)/);
 });
 
+test("the dashboard window opens nothing and navigates nowhere but the portal", async () => {
+  const main = await readFile(join(process.cwd(), "src", "desktop", "main.ts"), "utf8");
+  const createWindow = main.slice(
+    main.indexOf("async function createWindow"),
+    main.indexOf("function installApplicationMenu"),
+  );
+
+  // The renderer draws transcript-derived strings, so its two ways out of the
+  // page are what bound a renderer-side defect. Both are pinned here; the
+  // sandbox itself is pinned for every window in architecture-invariants.
+  const preferences = createWindow.match(/webPreferences: \{[\s\S]*?\}/);
+  assert.ok(preferences, "createWindow declares no webPreferences");
+  assert.match(preferences[0], /contextIsolation: true/);
+  assert.match(preferences[0], /nodeIntegration: false/);
+  assert.match(preferences[0], /sandbox: true/);
+
+  // Every window the page asks for is refused. http(s) leaves for the OS
+  // browser instead of opening in a window this handler never sees again, so
+  // a second return value is how "allow" gets back in.
+  const opening = createWindow.slice(
+    createWindow.indexOf("setWindowOpenHandler"),
+    createWindow.indexOf('on("will-navigate"'),
+  );
+  assert.deepEqual(
+    opening.match(/return \{ action: "[a-z]+" \}/g),
+    ['return { action: "deny" }'],
+  );
+
+  // will-navigate is the renderer's own navigation, and the portal origin is
+  // the whole allowance: a `data:` URL carries its own CSP in place of the
+  // portal's, on an origin the window-open handler never sees (#122).
+  const navigating = createWindow.slice(
+    createWindow.indexOf('on("will-navigate"'),
+    createWindow.indexOf("if (show)"),
+  );
+  assert.match(
+    navigating,
+    /if \(url\.startsWith\(`\$\{PORTAL_ORIGIN\}\/`\)\) return;/,
+  );
+  assert.match(navigating, /event\.preventDefault\(\);/);
+  assert.doesNotMatch(navigating, /\|\|/);
+  assert.doesNotMatch(navigating, /data:/);
+});
+
 test("the setup screen renders questions in the dashboard's visual system", () => {
   // The setup window is the first thing a user sees, so it carries the same
   // typography roles, tokens, and dark mode as the dashboard it opens into.
