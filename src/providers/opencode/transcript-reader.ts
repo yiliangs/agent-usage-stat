@@ -61,6 +61,41 @@ export async function listRootSessions(
 }
 
 /**
+ * The session at the top of the tree the given id belongs to, or null when no
+ * row carries that id.
+ *
+ * `SESSION_TREE` walks a root down to its descendants; this walks the same
+ * edges the other way. opencode names a subagent session in its own events,
+ * and usage is reconciled per root with descendants folded in, so an id from
+ * anywhere in the tree has to answer with the session that owns its tokens. A
+ * root answers with itself. `UNION` rather than `UNION ALL` so a `parent_id`
+ * cycle terminates instead of spinning.
+ */
+export async function rootSessionOf(
+  databasePath: string,
+  sessionId: string,
+): Promise<OpencodeSessionRow | null> {
+  const database = await openDatabase(databasePath);
+  try {
+    const [row] = database.all(
+      `WITH RECURSIVE ancestry(id, parent_id) AS (
+         SELECT id, parent_id FROM session WHERE id = ?
+         UNION
+         SELECT session.id, session.parent_id
+         FROM session JOIN ancestry ON session.id = ancestry.parent_id
+       )
+       SELECT ${SESSION_COLUMNS}
+       FROM session
+       WHERE id IN (SELECT id FROM ancestry WHERE parent_id IS NULL)`,
+      sessionId,
+    );
+    return row ? toSessionRow(row) : null;
+  } finally {
+    database.close();
+  }
+}
+
+/**
  * Cheap change detector for one session tree, for callers that want nothing
  * else. A read that also produces usage takes these inputs from
  * `readSessionRecords` instead, so both describe the same snapshot.
