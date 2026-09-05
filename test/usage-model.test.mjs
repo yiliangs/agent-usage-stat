@@ -6,6 +6,7 @@ import {
   createCalendarProjection,
   makeIntervalBuckets,
   normalizeSession,
+  shiftDateKey,
   summarizeProjects,
   summarizeUsage,
 } from "../portal/usage-model.js";
@@ -104,6 +105,45 @@ test("calendar projection assigns the local-midnight boundary exactly", () => {
     cacheCreate: 30,
     cacheRead: 120,
   });
+});
+
+/**
+ * Guard for issue #91.
+ *
+ * A window that names its end as a date key must not be routed back through a
+ * time zone to find that key again. Kiritimati is UTC+14, so the noon-UTC
+ * instant a key is stamped at falls on the following local date, and the round
+ * trip lands the whole window a day late. The prior window is the same defect
+ * one step further on: subtracting a day from that instant and reading it back
+ * in +14 returns the day the current window opens on, so the two windows
+ * overlap and the day between them is counted twice.
+ */
+test("calendar windows keyed by date survive a zone past UTC+12", () => {
+  const calendar = createCalendarProjection("Pacific/Kiritimati");
+  const end = Date.parse("2026-07-03T00:00:00.000Z");
+  const endKey = calendar.dateKey(new Date(end));
+
+  assert.equal(endKey, "2026-07-03", "the fixture instant is not the local date the guard assumes");
+  assert.equal(shiftDateKey(endKey, -1), "2026-07-02");
+  assert.equal(shiftDateKey("2026-03-01", -1), "2026-02-28", "key arithmetic must cross a month end");
+
+  assert.deepEqual(
+    calendar.buckets([], end, 3).map((bucket) => bucket.key),
+    ["2026-07-01", "2026-07-02", "2026-07-03"],
+  );
+  assert.deepEqual(
+    calendar.buckets([], endKey, 3).map((bucket) => bucket.key),
+    ["2026-07-01", "2026-07-02", "2026-07-03"],
+    "a window ending on a date key must hold that key",
+  );
+
+  const prior = calendar.buckets([], shiftDateKey(endKey, -3), 3).map((bucket) => bucket.key);
+  assert.deepEqual(prior, ["2026-06-28", "2026-06-29", "2026-06-30"]);
+  assert.equal(
+    prior.filter((key) => key >= "2026-07-01").length,
+    0,
+    "the prior window overlaps the current one",
+  );
 });
 
 test("interval projection preserves whole-session primary-model attribution", () => {

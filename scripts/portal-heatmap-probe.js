@@ -9,7 +9,8 @@
  * guard to decide which days owed the reader one.
  *
  * Days are identified by the leading date in the cell's accessible name, which
- * is what a reader is told the cell stands for.
+ * is what a reader is told the cell stands for. `key` is the day the cell
+ * actually holds, so a guard can ask whether the name and the data agree.
  */
 (async () => {
   // index.html ships the heatmap hidden and portal.js reveals it on the first
@@ -51,7 +52,13 @@
   const cells = [...document.querySelectorAll(".calendar-cell")].map((cell) => {
     const label = cell.getAttribute("aria-label") || "";
     const match = /^(.*?):.*?, (\d+) sessions?,/.exec(label);
-    return { cell, label, day: match ? match[1] : "", sessions: match ? Number(match[2]) : 0 };
+    return {
+      cell,
+      label,
+      day: match ? match[1] : "",
+      key: cell.getAttribute("data-day") || "",
+      sessions: match ? Number(match[2]) : 0,
+    };
   });
 
   // Every day that recorded work, plus the quiet days sitting right beside
@@ -65,13 +72,14 @@
   for (const entry of clicked) {
     close();
     entry.cell.click();
-    days.push({ day: entry.day, sessions: entry.sessions, drawer: openedDrawer() });
+    days.push({ day: entry.day, key: entry.key, sessions: entry.sessions, drawer: openedDrawer() });
     close();
   }
 
   return {
     cellCount: cells.length,
     heatmapVisible: !document.querySelector(".spend-heatmap-view").hidden,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     days,
   };
 })()
