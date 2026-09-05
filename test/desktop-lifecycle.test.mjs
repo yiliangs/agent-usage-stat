@@ -123,6 +123,25 @@ test("first-run capture choice treats hooks as best effort and explains recovery
   });
 });
 
+test("two rapid activate events open one window", async () => {
+  const main = await readFile(join(process.cwd(), "src", "desktop", "main.ts"), "utf8");
+
+  // Opening awaits a snapshot probe, and on a first run the whole setup
+  // sequence, before any window exists. A second activate landing inside that
+  // gap still observes no window, so the opener is reachable only through the
+  // guard that hands every caller the run already in flight.
+  assert.match(main, /const openWindowOnce = singleFlight\(openApplicationWindow\);/);
+  assert.doesNotMatch(main, /openApplicationWindow\(\)\s*[;.]/);
+  assert.match(
+    main.slice(main.indexOf("function openDashboard"), main.indexOf("async function start")),
+    /void openWindowOnce\(\)\.catch\(failStartup\)/,
+  );
+  assert.match(
+    main.slice(main.indexOf("async function start"), main.indexOf("async function openApplicationWindow")),
+    /await openWindowOnce\(\);/,
+  );
+});
+
 test("the first-run window asks its own questions instead of raising dialogs", async () => {
   const main = await readFile(join(process.cwd(), "src", "desktop", "main.ts"), "utf8");
   const firstRun = main.slice(

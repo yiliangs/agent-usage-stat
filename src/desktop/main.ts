@@ -33,6 +33,7 @@ import {
   closesToStatusArea,
   hasStatusArea,
 } from "./status-area-policy.js";
+import { singleFlight } from "./single-flight.js";
 import { squirrelLifecycleEvent } from "./squirrel-events.js";
 import {
   promoteStartMenuShortcut,
@@ -91,6 +92,16 @@ traceStartup("scheme-registered");
 if (process.platform === "win32") app.setAppUserModelId(WINDOWS_APP_ID);
 
 let mainWindow: BrowserWindow | null = null;
+/**
+ * The one way into `openApplicationWindow`.
+ *
+ * Opening awaits a snapshot probe, and on a first run the whole setup
+ * sequence, before `mainWindow` is assigned. A dock click, a second launch, or
+ * the status-area icon landing inside that gap still sees no window, and
+ * without this guard would open a second one and re-run first-run setup
+ * alongside the first.
+ */
+const openWindowOnce = singleFlight(openApplicationWindow);
 const helperRuntime = new HelperRuntime();
 const statusArea = new StatusArea({
   panelUrl: PANEL_URL,
@@ -145,7 +156,7 @@ function openDashboard(): void {
     mainWindow.focus();
     return;
   }
-  void openApplicationWindow().catch(failStartup);
+  void openWindowOnce().catch(failStartup);
 }
 
 async function start(): Promise<void> {
@@ -191,7 +202,7 @@ async function start(): Promise<void> {
     return;
   }
 
-  await openApplicationWindow();
+  await openWindowOnce();
 }
 
 async function openApplicationWindow(): Promise<void> {
