@@ -1,13 +1,7 @@
 import { existsSync } from "node:fs";
-import {
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { writeJsonAtomic } from "../utils/atomic-file.js";
 import {
   LOGBOOK_SHARD_DIR,
   type LogbookRecord,
@@ -52,7 +46,7 @@ export async function mergeUsageLedger(
       retained++;
       continue;
     }
-    await writeRecordAtomic(destinationPath, record);
+    await writeJsonAtomic(destinationPath, record, 2);
     copied++;
   }
 
@@ -110,20 +104,6 @@ async function readRecord(path: string): Promise<LogbookRecord> {
 async function readOptionalRecord(path: string): Promise<LogbookRecord | null> {
   if (!existsSync(path)) return null;
   return readRecord(path);
-}
-
-async function writeRecordAtomic(
-  path: string,
-  record: LogbookRecord,
-): Promise<void> {
-  const staged = `${path}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
-  try {
-    await writeFile(staged, JSON.stringify(record, null, 2), "utf8");
-    await rename(staged, path);
-  } catch (error) {
-    await rm(staged, { force: true }).catch(() => undefined);
-    throw error;
-  }
 }
 
 function assertIndependentRoots(left: string, right: string): void {

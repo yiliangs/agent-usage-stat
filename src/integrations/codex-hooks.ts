@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { join } from "path";
+import { writeJsonAtomic } from "../utils/atomic-file.js";
 import {
   captureHookCommands,
   isAgentUsageStatCommand,
@@ -90,7 +91,7 @@ export async function installCodexHooks(hooksPath: string): Promise<boolean> {
     config.hooks[event].push({ hooks: [handler] });
   }
 
-  await writeFile(hooksPath, JSON.stringify(config, null, 2), "utf-8");
+  await writeJsonAtomic(hooksPath, config, 2);
   return !alreadyInstalled;
 }
 
@@ -113,7 +114,7 @@ export async function removeCodexHooks(hooksPath: string): Promise<void> {
   }
   if (Object.keys(config.hooks).length === 0) delete config.hooks;
 
-  await writeFile(hooksPath, JSON.stringify(config, null, 2), "utf-8");
+  await writeJsonAtomic(hooksPath, config, 2);
 }
 
 function withoutAgentUsageStatHooks(groups: HookGroup[]): HookGroup[] {

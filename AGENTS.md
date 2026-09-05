@@ -56,6 +56,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `src/core/project-name.ts`: the single owner of project attribution, including the worktree layouts each agent CLI creates
 - `src/core/pricing-feed.ts`: cached remote pricing snapshot for models the baked tables miss
 - `src/utils/capture-run.ts`: machine-local run and capture-result protocol
+- `src/utils/atomic-file.ts`: the one owner of replacing a file whole, and of the once-only pre-install backup
 - `src/utils/usage-root.ts`: the only data-root resolver
 - `portal/scripts/build-data.mjs`: browser artifact builder
 - `portal/index.html`: integrated analytics layout and visual system
@@ -110,6 +111,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - Hooks must target the stable installed helper, never a versioned application directory.
 - The Start Menu entry is `Programs\<Product>.lnk`, listed as an application rather than filed in a folder. Squirrel writes it into a folder named after the nuspec authors and offers no location that skips one, and that same field is the uninstall entry's Publisher, so `src/desktop/start-menu-shortcut.ts` moves the shortcut instead of renaming the author.
 - Resolve machine-specific paths through `usage-root.ts`; do not hardcode them.
+- Replacing a file goes through `atomic-file.ts`: stage a sibling and rename over the target, never truncate in place. A ledger root is routinely Google Drive File Stream, so the window a partial write leaves open is real. A host config's `.backup` is the pristine pre-install copy, taken once and never overwritten by a later install.
 - Before changing hook behavior, read `docs/SESSIONEND-HOOK-LOG.md`.
 
 ## Documents

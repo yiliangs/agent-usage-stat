@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -274,5 +274,34 @@ test("a rejected recompute invents no split for a multi-model legacy shard", asy
       "two models and one set of totals admit no honest split, so none is written");
     assert.deepEqual(record.models, ["claude-sonnet-4-5", "gpt-5.6-codex"],
       "the recorded model list is left alone for the reader's legacy fallback");
+  });
+});
+
+test("a shard write leaves the directory holding the shard and nothing else", async () => {
+  await withRoot(async (root) => {
+    const writer = new LogbookWriter();
+    const snapshot = {
+      sessionData: sessionData({
+        inputTokens: 10,
+        outputTokens: 20,
+        totalTokens: 30,
+        totalCost: 0.5,
+        modelBreakdowns: wholeSessionOn("claude-sonnet-5", {
+          input: 10,
+          output: 20,
+          cost: 0.5,
+        }),
+      }),
+      transcriptData: transcriptData(),
+    };
+
+    await writer.append(root, snapshot);
+    await writer.append(root, snapshot);
+
+    assert.deepEqual(
+      (await readdir(join(root, LOGBOOK_SHARD_DIR))).sort(),
+      [`${SESSION}.json`],
+      "no staged temporary and no lock outlive the write",
+    );
   });
 });

@@ -1,15 +1,8 @@
 import { existsSync } from "fs";
-import {
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from "fs/promises";
-import { randomBytes, randomUUID } from "crypto";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "fs/promises";
+import { randomUUID } from "crypto";
 import { basename, join, relative, resolve } from "path";
+import { writeJsonAtomic } from "./atomic-file.js";
 import { homeDir, homeDirFrom } from "./paths.js";
 import type { ProviderName } from "../types/provider.js";
 
@@ -196,13 +189,7 @@ export async function publishCaptureOutcome(
     session_id: details.sessionId,
     ...outcome,
   } as CaptureResult;
-  const tempPath = `${capture.resultPath}.${process.pid}-${randomBytes(4).toString("hex")}.tmp`;
-
-  await writeFile(tempPath, JSON.stringify(result, null, 2), {
-    encoding: "utf-8",
-    mode: 0o600,
-  });
-  await rename(tempPath, capture.resultPath);
+  await writeJsonAtomic(capture.resultPath, result, 2, { mode: 0o600 });
   return true;
 }
 

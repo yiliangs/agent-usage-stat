@@ -1,6 +1,7 @@
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { readFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
+import { writeJsonAtomic } from "../utils/atomic-file.js";
 import { configFilePath } from "../utils/paths.js";
 import type { AppConfig } from "../types/config.js";
 import { DEFAULT_CONFIG } from "../types/config.js";
@@ -60,7 +61,7 @@ export class ConfigManager {
       await mkdir(configDir, { recursive: true });
     }
 
-    await writeFile(this.configPath, JSON.stringify(config, null, 2), "utf-8");
+    await writeJsonAtomic(this.configPath, config, 2);
   }
 
   /**

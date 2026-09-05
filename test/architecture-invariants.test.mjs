@@ -77,6 +77,7 @@ test("the hook entry path stays import-light", () => {
   // command modules are reached through `await import()` and must stay there.
   assert.deepEqual(staticClosure(join(sourceRoot, "helper.ts")), [
     join("src", "commands", "detach-shim.ts"),
+    join("src", "utils", "atomic-file.ts"),
     join("src", "utils", "capture-run.ts"),
     join("src", "utils", "hook-log.ts"),
     join("src", "utils", "paths.ts"),

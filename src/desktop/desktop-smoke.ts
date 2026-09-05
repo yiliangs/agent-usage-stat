@@ -1,7 +1,7 @@
 import type { BrowserWindow } from "electron";
 import { existsSync } from "node:fs";
-import { rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { writeJsonAtomic } from "../utils/atomic-file.js";
 import type { HelperRuntime } from "./helper-runtime.js";
 import type { PortalRuntime } from "./portal-runtime.js";
 import type { StatusArea } from "./status-area.js";
@@ -77,7 +77,7 @@ export async function runDesktopSmokeIfRequested(
   const statusAreaResult = await inspectStatusArea(statusArea, window);
   trace("smoke-status-area-complete");
 
-  const smokeJson = JSON.stringify({
+  const smoke = {
     application: application.getName(),
     version: application.getVersion(),
     packaged: application.isPackaged,
@@ -90,10 +90,8 @@ export async function runDesktopSmokeIfRequested(
     settings,
     home,
     statusArea: statusAreaResult,
-  }, null, 2);
-  const stagedOutput = `${output}.${process.pid}.tmp`;
-  await writeFile(stagedOutput, smokeJson, "utf8");
-  await rename(stagedOutput, output);
+  };
+  await writeJsonAtomic(output, smoke, 2);
   trace("smoke-output-complete");
   if (!window.isDestroyed()) window.destroy();
   return true;

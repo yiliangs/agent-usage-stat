@@ -1,5 +1,6 @@
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "fs/promises";
+import { mkdir, open, readFile, stat, unlink } from "fs/promises";
 import { join } from "path";
+import { writeJsonAtomic } from "./atomic-file.js";
 import type { ProviderName } from "../types/provider.js";
 import { homeDir, homeDirFrom } from "./paths.js";
 
@@ -52,9 +53,7 @@ export async function recordCaptureHealth(
       next.lastFailureMessage = event.message || "Unknown hook capture failure";
     }
     await mkdir(join(path, ".."), { recursive: true });
-    const temporary = `${path}.${process.pid}-${Date.now()}.tmp`;
-    await writeFile(temporary, JSON.stringify(next, null, 2), "utf-8");
-    await rename(temporary, path);
+    await writeJsonAtomic(path, next, 2);
   });
 }
 

@@ -2,6 +2,7 @@ import { existsSync } from "fs";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import chalk from "chalk";
+import { writeJsonAtomic } from "../utils/atomic-file.js";
 import {
   captureHookCommands,
   isAgentUsageStatCommand,
@@ -86,7 +87,7 @@ export async function installClaudeHook(settingsPath: string): Promise<void> {
   if (updating) {
     console.log(chalk.yellow("\nClaude Code hooks already installed; updating them."));
   }
-  await writeFile(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+  await writeJsonAtomic(settingsPath, settings, 2);
 }
 
 export async function removeClaudeHook(settingsPath: string): Promise<void> {
@@ -109,7 +110,7 @@ export async function removeClaudeHook(settingsPath: string): Promise<void> {
   }
   if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
 
-  await writeFile(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
+  await writeJsonAtomic(settingsPath, settings, 2);
 }
 
 function withoutAgentUsageStatHooks(groups: ClaudeHookGroup[]): ClaudeHookGroup[] {
