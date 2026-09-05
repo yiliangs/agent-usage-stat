@@ -7,11 +7,12 @@ import { readFile, readdir, stat } from "fs/promises";
 import { join, basename, extname } from "path";
 import { existsSync } from "fs";
 import { resolveUsageRootFromDisk } from "../dist/utils/usage-root.js";
+import { LOGBOOK_SHARD_DIR } from "../dist/core/usage-ledger.js";
 import { homeDir } from "../dist/utils/paths.js";
 
 const HOME = homeDir();
 const PROJECTS = join(HOME, ".claude", "projects");
-const SHARD_DIR = join(resolveUsageRootFromDisk().root, "logbook.d");
+const SHARD_DIR = join(resolveUsageRootFromDisk().root, LOGBOOK_SHARD_DIR);
 const REGEN = join(process.cwd(), "scripts", "regen-session.mjs");
 const CURRENT_SESSION = process.argv[2] || ""; // optional skip
 const MIN_AGE_SEC = 120; // skip transcripts modified in the last 2 min

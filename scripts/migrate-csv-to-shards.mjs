@@ -21,15 +21,18 @@
  *   node scripts/migrate-csv-to-shards.mjs --apply   # write shards + retire CSV
  */
 import { readFileSync, writeFileSync, existsSync, readdirSync, renameSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { homeDir } from "../dist/utils/paths.js";
+import { basename, join } from "node:path";
+import { LOGBOOK_SHARD_DIR, shardPathFor } from "../dist/core/usage-ledger.js";
+import { resolveUsageRootFromDisk } from "../dist/utils/usage-root.js";
 
 const APPLY = process.argv.includes("--apply");
-const home = homeDir();
-const CSV = existsSync("H:/My Drive")
-  ? "H:/My Drive/agent-usage-stat/logbook.csv"
-  : join(home, ".agent-usage-stat", "projects", "logbook.csv");
-const SHARD_DIR = resolve(dirname(CSV), "logbook.d");
+// The legacy CSV sat beside the shard directory in the usage root, so both are
+// resolved from that one root rather than from a drive letter this machine
+// happens to mount. health-check.mjs looks for a resurrected CSV in the same
+// place.
+const ROOT = resolveUsageRootFromDisk().root;
+const CSV = join(ROOT, "logbook.csv");
+const SHARD_DIR = join(ROOT, LOGBOOK_SHARD_DIR);
 
 if (!existsSync(CSV)) {
   console.log(`nothing to migrate: ${CSV} not found (already retired?)`);
@@ -106,8 +109,12 @@ for (let li = 1; li < lines.length; li++) {
   };
 
   if (!shard.session_id) noId++;
+  // The shard's path is the writer's derivation, not this script's: a key
+  // carrying a character no filename can hold has to map to the one file every
+  // reader looks for.
   const base = shard.session_id || `${shard.session_slug || "session"}-${shard.end_time}`;
-  const name = `${base.replace(/[^A-Za-z0-9._-]/g, "_")}.json`;
+  const path = shardPathFor(ROOT, base);
+  const name = basename(path);
 
   if (existing.has(name)) {
     skippedShardWins++;
@@ -115,7 +122,7 @@ for (let li = 1; li < lines.length; li++) {
     continue;
   }
 
-  if (APPLY) writeFileSync(join(SHARD_DIR, name), JSON.stringify(shard, null, 2), "utf-8");
+  if (APPLY) writeFileSync(path, JSON.stringify(shard, null, 2), "utf-8");
   existing.add(name); // csv-internal duplicate sids: first row wins, later ones reported
   migrated++;
 }
