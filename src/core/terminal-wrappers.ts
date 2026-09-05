@@ -11,6 +11,11 @@ const BLOCK_PATTERN = new RegExp(
   `(?:\\r?\\n)?${escapeRegExp(BLOCK_START)}[\\s\\S]*?${escapeRegExp(BLOCK_END)}(?:\\r?\\n)?`,
   "g",
 );
+// Windows PowerShell 5.1 decodes a mark-less profile as the system ANSI code
+// page, so a helper path outside ASCII becomes mojibake and the wrapper
+// function shadows the real CLI. pwsh reads the mark fine and the profile kind
+// cannot tell the two hosts apart, so every PowerShell profile carries it.
+const BOM = "\uFEFF";
 const COMMANDS = [...PROVIDER_NAMES, "claudex"] as const;
 export type WrappedCommand = (typeof COMMANDS)[number];
 
@@ -56,18 +61,24 @@ export async function installTerminalWrappers(
   usesNode = true,
   commands: readonly WrappedCommand[] = COMMANDS,
 ): Promise<ProfileUpdate> {
-  const existing = await readOptional(profile.path);
+  const stored = await readOptional(profile.path);
+  const marked = stored.startsWith(BOM);
+  const existing = marked ? stored.slice(BOM.length) : stored;
   const eol = existing.includes("\r\n") ? "\r\n" : "\n";
   const withoutBlock = existing.replace(BLOCK_PATTERN, "");
   const separator = withoutBlock && !withoutBlock.endsWith(eol) ? eol : "";
   const blankLine = withoutBlock.trim() ? eol : "";
   const block = renderBlock(profile.kind, cliPath, usesNode, eol, commands);
-  const next = `${withoutBlock}${separator}${blankLine}${block}${eol}`;
+  const body = `${withoutBlock}${separator}${blankLine}${block}${eol}`;
+  // A PowerShell profile always gains the mark; every other kind keeps only the
+  // one it already carried. Splicing the block on the unmarked text and adding
+  // the mark back once is what keeps a second install a byte-for-byte no-op.
+  const next = profile.kind === "powershell" || marked ? `${BOM}${body}` : body;
 
-  if (next === existing) return { profile, changed: false };
+  if (next === stored) return { profile, changed: false };
 
   await mkdir(dirname(profile.path), { recursive: true });
-  if (existing) await createBackup(profile.path);
+  if (stored) await createBackup(profile.path);
   await writeFile(profile.path, next, "utf-8");
   return { profile, changed: true };
 }
@@ -75,10 +86,17 @@ export async function installTerminalWrappers(
 export async function removeTerminalWrappers(
   profile: ShellProfile,
 ): Promise<ProfileUpdate> {
-  const existing = await readOptional(profile.path);
-  if (!existing.includes(BLOCK_START)) return { profile, changed: false };
+  const stored = await readOptional(profile.path);
+  if (!stored.includes(BLOCK_START)) return { profile, changed: false };
 
-  const next = existing.replace(BLOCK_PATTERN, "");
+  const marked = stored.startsWith(BOM);
+  const existing = marked ? stored.slice(BOM.length) : stored;
+  // Removal withdraws the block, not the file's encoding. What is left belongs
+  // to the user, so keep the mark the file carries: adding one to a profile
+  // without it would outlive the block, and stripping one this install may not
+  // have written would break the user's own non-ASCII content.
+  const body = existing.replace(BLOCK_PATTERN, "");
+  const next = marked ? `${BOM}${body}` : body;
   await createBackup(profile.path);
   await writeFile(profile.path, next, "utf-8");
   return { profile, changed: true };

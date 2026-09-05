@@ -27,6 +27,8 @@ import {
 } from "../dist/core/terminal-wrappers.js";
 
 const root = process.cwd();
+const BOM = "\uFEFF";
+const BOM_BYTES = [0xef, 0xbb, 0xbf];
 
 test("capture runs correlate pending input with an atomic terminal result", async () => {
   const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-run-"));
@@ -191,13 +193,66 @@ test("shell wrapper blocks are idempotent and reversible", async () => {
 
     await removeTerminalWrappers(profile);
     content = await readFile(profile.path, "utf8");
-    assert.equal(content, original);
+    // Removal withdraws the block, not the encoding mark the install added.
+    assert.equal(content, `${BOM}${original}`);
 
     const helperPath = join(home, "bin", "agent-usage-stat-helper.exe");
     await installTerminalWrappers(profile, helperPath, false);
     content = await readFile(profile.path, "utf8");
     assert.match(content, /agent-usage-stat-helper\.exe' run claude/);
     assert.doesNotMatch(content, /& node .*agent-usage-stat-helper/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("PowerShell profiles carry one UTF-8 byte order mark", async () => {
+  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-bom-profile-"));
+  // A CJK account name, the case Windows PowerShell 5.1 turns into mojibake
+  // when it decodes a mark-less profile as the ANSI code page.
+  const helperPath = join(
+    home,
+    "张伟",
+    "bin",
+    "agent-usage-stat-helper.exe",
+  );
+
+  try {
+    const fresh = {
+      kind: "powershell",
+      path: join(home, "fresh", "profile.ps1"),
+    };
+    await installTerminalWrappers(fresh, helperPath, false);
+    const freshBytes = await readFile(fresh.path);
+    assert.deepEqual([...freshBytes.subarray(0, 3)], BOM_BYTES);
+    const freshText = freshBytes.toString("utf8");
+    assert.ok(
+      freshText.startsWith(`${BOM}# >>> Agent Usage Stat terminal message >>>`),
+    );
+    assert.ok(freshText.includes(helperPath));
+
+    const marked = {
+      kind: "powershell",
+      path: join(home, "marked", "profile.ps1"),
+    };
+    const original = `${BOM}# user profile\n$env:EXISTING = 'kept'\n`;
+    await mkdir(join(home, "marked"), { recursive: true });
+    await writeFile(marked.path, original, "utf8");
+
+    await installTerminalWrappers(marked, helperPath, false);
+    const installed = await readFile(marked.path);
+    const installedText = installed.toString("utf8");
+    assert.deepEqual([...installed.subarray(0, 3)], BOM_BYTES);
+    assert.equal(installedText.indexOf(BOM), 0);
+    assert.equal(installedText.indexOf(BOM, 1), -1);
+    assert.ok(installedText.startsWith(original));
+    assert.ok(installedText.includes("function global:claude"));
+
+    await installTerminalWrappers(marked, helperPath, false);
+    assert.deepEqual(await readFile(marked.path), installed);
+
+    await removeTerminalWrappers(marked);
+    assert.equal(await readFile(marked.path, "utf8"), original);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -217,6 +272,7 @@ test("zsh and bash wrapper blocks preserve unrelated profile content", async () 
       assert.match(content, /claude\(\)/);
       assert.match(content, /codex\(\)/);
       assert.match(content, /typeset -f claudex/);
+      assert.ok(!content.startsWith(BOM));
       await removeTerminalWrappers(profile);
       assert.equal(await readFile(profile.path, "utf8"), original);
     }
