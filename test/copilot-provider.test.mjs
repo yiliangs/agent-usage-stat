@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CopilotProvider } from "../dist/providers/copilot/provider.js";
+import { normalizeModelId, priceFor } from "../dist/providers/copilot/pricing.js";
 import { detectProvider } from "../dist/providers/registry.js";
 
 test("Copilot shutdown usage becomes one normalized provider session", async () => {
@@ -151,6 +152,24 @@ test("Copilot uses native per-model billed AI units when Fast mode keeps the sam
     assert.deepEqual(unknownModels, []);
   } finally {
     await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("Copilot prices both dotted Claude id orderings", () => {
+  // The version-first shape is the one the normalizer used to pass through
+  // untouched (#123): the family-first rule needs a letter after `claude-`,
+  // so `claude-3.5-sonnet` never reached the table keyed `claude-3-5-sonnet`
+  // and the session recorded its tokens at zero cost.
+  const canonical = {
+    "claude-3.5-sonnet": "claude-3-5-sonnet",
+    "claude-3.7-sonnet": "claude-3-7-sonnet",
+    "claude-3.5-haiku": "claude-3-5-haiku",
+    "claude-sonnet-4.5": "claude-sonnet-4-5",
+  };
+
+  for (const [raw, expected] of Object.entries(canonical)) {
+    assert.equal(normalizeModelId(raw), expected);
+    assert.ok(priceFor(raw), `${raw} misses the pricing table`);
   }
 });
 
