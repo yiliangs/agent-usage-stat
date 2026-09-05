@@ -50,7 +50,10 @@ export function configFilePath(): string {
 /**
  * Expand a leading "~" to the home directory. Leaves any other path untouched.
  * Matches the prior inline behavior (`replace(/^~/, home)`).
+ *
+ * A caller resolving against a stated home, such as usage-root's runtime,
+ * passes it rather than expanding against this process's own.
  */
-export function expandHome(path: string): string {
-  return path.replace(/^~/, homeDir());
+export function expandHome(path: string, home: string = homeDir()): string {
+  return path.replace(/^~/, home);
 }

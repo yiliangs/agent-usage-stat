@@ -25,10 +25,19 @@ export interface ResolvedUsageRoot {
   source: UsageRootSource;
 }
 
+/**
+ * The environment resolution reads. Every field is optional and falls back to
+ * this process, so production callers pass nothing and a test can state the
+ * platform, the home, the mounts to probe, and the config file to read.
+ */
 export interface UsageRootRuntime {
   platform?: NodeJS.Platform;
   home?: string;
   localAppData?: string;
+  /** Mount directories to probe instead of the platform's own candidates. */
+  driveMounts?: string[];
+  /** Config file to read instead of the one in the home directory. */
+  configPath?: string;
 }
 
 /** The application-owned ledger location offered to a new desktop user. */
@@ -54,34 +63,40 @@ export function defaultUsageRoot(runtime: UsageRootRuntime = {}): string {
   return join(home, ".agent-usage-stat", "data");
 }
 
-export function resolveUsageRoot(config: {
-  dataRoot?: string;
-}): ResolvedUsageRoot {
+export function resolveUsageRoot(
+  config: { dataRoot?: string },
+  runtime: UsageRootRuntime = {},
+): ResolvedUsageRoot {
   const configured = config.dataRoot?.trim();
   if (configured) {
-    return { root: expandHome(configured), source: "config" };
+    return { root: expandHome(configured, runtime.home), source: "config" };
   }
 
-  const detected = detectSharedUsageRoot();
+  const detected = detectSharedUsageRoot(runtime);
   if (detected) {
     return { root: detected, source: "detected" };
   }
 
-  return { root: defaultUsageRoot(), source: "default" };
+  return { root: defaultUsageRoot(runtime), source: "default" };
 }
 
-export function resolveUsageRootFromDisk(): ResolvedUsageRoot {
+export function resolveUsageRootFromDisk(
+  runtime: UsageRootRuntime = {},
+): ResolvedUsageRoot {
   let config: { dataRoot?: string } = {};
   try {
-    config = JSON.parse(readFileSync(configFilePath(), "utf-8"));
+    const path = runtime.configPath ?? configFilePath();
+    config = JSON.parse(readFileSync(path, "utf-8"));
   } catch {
     // Missing or invalid config falls through to detection and local default.
   }
-  return resolveUsageRoot(config);
+  return resolveUsageRoot(config, runtime);
 }
 
-export function detectSharedUsageRoot(): string | null {
-  for (const mount of driveMountCandidates()) {
+export function detectSharedUsageRoot(
+  runtime: UsageRootRuntime = {},
+): string | null {
+  for (const mount of driveMountCandidates(runtime)) {
     const root = join(mount, SHARED_DIR_NAME);
     if (existsSync(join(root, LOGBOOK_SHARD_DIR))) {
       return root;
@@ -90,16 +105,21 @@ export function detectSharedUsageRoot(): string | null {
   return null;
 }
 
-function driveMountCandidates(): string[] {
-  const home = homeDir();
+function driveMountCandidates(runtime: UsageRootRuntime): string[] {
+  if (runtime.driveMounts) {
+    return runtime.driveMounts;
+  }
+
+  const platform = runtime.platform ?? process.platform;
+  const home = runtime.home ?? homeDir();
   const candidates: string[] = [];
 
-  if (process.platform === "win32") {
+  if (platform === "win32") {
     for (let c = "D".charCodeAt(0); c <= "Z".charCodeAt(0); c++) {
       candidates.push(`${String.fromCharCode(c)}:/My Drive`);
     }
     candidates.push(join(home, "Google Drive"), join(home, "My Drive"));
-  } else if (process.platform === "darwin") {
+  } else if (platform === "darwin") {
     const cloudStorage = join(home, "Library", "CloudStorage");
     try {
       for (const entry of readdirSync(cloudStorage)) {
