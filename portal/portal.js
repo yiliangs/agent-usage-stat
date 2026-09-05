@@ -24,6 +24,11 @@ import {
 createIcons({ icons: { Settings } })
 
 const RANGE_DAYS = { '07D': 7, '14D': 14, '30D': 30, '90D': 90 }
+/** How far back ALL reaches when the ledger records nothing to reach back to.
+ *  ALL still has to name a window, since the header prints both of its ends
+ *  and every chart buckets between them. Thirty days is the length the portal
+ *  opens on, so an empty ledger reads the same on whichever chip is chosen. */
+const EMPTY_LEDGER_DAYS = 30
 const state = {
   sessions: [],
   meta: null,
@@ -143,13 +148,30 @@ function shortModel(model) {
   return `${name.toUpperCase()}${version ? ` ${version}` : ''}`
 }
 
+/**
+ * The oldest instant the ledger records, or null when it records none.
+ *
+ * ALL is the one range whose window is read off the data rather than counted
+ * back from now, so a ledger with nothing in it leaves it with no instant to
+ * start at: `Math.min` of nothing is `Infinity`, and every date derived from
+ * it is invalid. Saying that once, here, is what keeps the renderers from each
+ * having to ask whether the window they were handed is a real interval.
+ */
+function oldestRecorded() {
+  const oldest = Math.min(...state.sessions.map((session) => session.t))
+  return Number.isFinite(oldest) ? oldest : null
+}
+
 function currentWindow() {
   const generated = Date.parse(state.meta?.generatedAt || '')
   const latest = Math.max(...state.sessions.map((session) => session.t), Date.now())
   const end = Number.isFinite(generated) ? Math.max(generated, latest) : latest
   const days = RANGE_DAYS[state.range]
-  const start = days ? end - days * DAY : Math.min(...state.sessions.map((session) => session.t))
-  return { start, end }
+  if (days) return { start: end - days * DAY, end }
+  // ALL is the whole ledger, which starts on its oldest session. With nothing
+  // recorded there is no such session, so the window falls back to a length.
+  const oldest = oldestRecorded()
+  return { start: oldest === null ? end - EMPTY_LEDGER_DAYS * DAY : oldest, end }
 }
 
 function sessionsIn(start, end) {
