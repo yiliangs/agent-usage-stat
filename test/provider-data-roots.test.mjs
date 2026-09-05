@@ -68,13 +68,43 @@ test("provider data roots distinguish default, environment, and custom paths", (
     },
   );
   // opencode is the one host that splits sessions from hooks, and each half
-  // follows its own XDG base.
+  // follows its own XDG base. A set base moved the root, so it reads as an
+  // environment source even though no variable names the directory outright.
   assert.deepEqual(
     resolveProviderDataRoot("opencode", config, opencodeEnvironment, home),
     {
       provider: "opencode",
       label: "opencode",
       root: join(home, "xdg-data", "opencode"),
+      hookRoot: join(home, "xdg-config", "opencode", "plugin"),
+      source: "environment",
+      environmentVariable: "XDG_DATA_HOME",
+    },
+  );
+  assert.deepEqual(
+    resolveProviderDataRoot("opencode", config, {}, home),
+    {
+      provider: "opencode",
+      label: "opencode",
+      root: join(home, ".local", "share", "opencode"),
+      hookRoot: join(home, ".config", "opencode", "plugin"),
+      source: "default",
+      environmentVariable: "XDG_DATA_HOME",
+    },
+  );
+  // The source describes the data root alone, so moving the hook half leaves it
+  // reading as the default.
+  assert.deepEqual(
+    resolveProviderDataRoot(
+      "opencode",
+      config,
+      { XDG_CONFIG_HOME: join(home, "xdg-config") },
+      home,
+    ),
+    {
+      provider: "opencode",
+      label: "opencode",
+      root: join(home, ".local", "share", "opencode"),
       hookRoot: join(home, "xdg-config", "opencode", "plugin"),
       source: "default",
       environmentVariable: "XDG_DATA_HOME",

@@ -102,11 +102,11 @@ export function resolveProviderDataRoot(
   const definition = DEFINITIONS[provider];
 
   const custom = config.providerDataRoots?.[provider]?.trim();
-  const fromEnvironment = directoryFromEnvironment(definition.data, environment);
-  const value = custom || fromEnvironment || directoryPath(definition.data, environment, home);
+  const moved = movingEnvironmentVariable(definition.data, environment);
+  const value = custom || directoryPath(definition.data, environment, home);
   const source: ProviderDataRootSource = custom
     ? "custom"
-    : fromEnvironment
+    : moved
       ? "environment"
       : "default";
   const root = resolve(expandHome(value));
@@ -119,7 +119,7 @@ export function resolveProviderDataRoot(
       ? resolve(expandHome(directoryPath(definition.hook, environment, home)))
       : root,
     source,
-    environmentVariable: environmentVariableName(definition.data),
+    environmentVariable: moved || environmentVariableName(definition.data),
   };
 }
 
@@ -138,13 +138,29 @@ function environmentVariableName(directory: ProviderDirectory): string {
   return directory.rootVariable || directory.baseVariable || "";
 }
 
-/** The value of the host's own root variable, when it declares one and it is set. */
-function directoryFromEnvironment(
+/**
+ * The name of the variable that moved this directory, or undefined when the
+ * environment left it at its default. Either convention moves it: a set
+ * `rootVariable` names the directory, and a set `baseVariable` relocates the
+ * base the fixed directory name hangs off, so a host without a root variable is
+ * still environment-directed rather than default.
+ */
+function movingEnvironmentVariable(
   directory: ProviderDirectory,
   environment: NodeJS.ProcessEnv,
 ): string | undefined {
-  if (!directory.rootVariable) return undefined;
-  return environment[directory.rootVariable]?.trim() || undefined;
+  for (const name of [directory.rootVariable, directory.baseVariable]) {
+    if (name && environmentValue(name, environment)) return name;
+  }
+  return undefined;
+}
+
+function environmentValue(
+  name: string | undefined,
+  environment: NodeJS.ProcessEnv,
+): string | undefined {
+  if (!name) return undefined;
+  return environment[name]?.trim() || undefined;
 }
 
 function directoryPath(
@@ -152,11 +168,9 @@ function directoryPath(
   environment: NodeJS.ProcessEnv,
   home: string,
 ): string {
-  const named = directoryFromEnvironment(directory, environment);
+  const named = environmentValue(directory.rootVariable, environment);
   if (named) return named;
-  const base = directory.baseVariable
-    ? environment[directory.baseVariable]?.trim()
-    : undefined;
+  const base = environmentValue(directory.baseVariable, environment);
   return join(
     base || join(home, directory.baseDirectory || ""),
     directory.directory,

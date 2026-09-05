@@ -56,7 +56,11 @@ type CommandExists = (command: string) => boolean;
 interface IntegrationRoots {
   /** Where the host keeps sessions. Follows a custom data-root override. */
   data: string;
-  /** Where the host loads hooks from. Never follows an override. */
+  /**
+   * Where the host loads hooks from. Follows the data root, override included,
+   * unless the host declares a separate hook directory: only opencode does, and
+   * its hook half answers to its own XDG base rather than to the data root.
+   */
   hook: string;
 }
 
