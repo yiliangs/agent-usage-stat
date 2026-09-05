@@ -109,7 +109,7 @@ test("configuration outranks a detected shared root, which outranks the default"
   });
 });
 
-test("a config file on disk resolves, and a malformed one falls through", () => {
+test("a config file on disk resolves, and a malformed one falls through reporting the fault", () => {
   withWorkspace((workspace) => {
     const populated = mountWithLedger(workspace, "drive-with-ledger");
     const shared = join(populated, SHARED_DIR_NAME);
@@ -126,17 +126,38 @@ test("a config file on disk resolves, and a malformed one falls through", () => 
     );
 
     // A half-written config must not strand captures: detection still runs.
+    // It must not pass silently either. Falling through without a word is what
+    // abandons the configured ledger while everything still looks healthy, so
+    // the resolution carries the fault for the caller that reports it (#126).
     const malformed = join(workspace, "malformed.config.json");
-    writeFileSync(malformed, '{ "dataRoot": ');
-    assert.deepEqual(
+    writeFileSync(malformed, '{"dataRoot": "/x/y"');
+    const fromMalformed = resolveUsageRootFromDisk({
+      ...MAC_RUNTIME,
+      driveMounts: [populated],
+      configPath: malformed,
+    });
+    assert.equal(fromMalformed.root, shared);
+    assert.equal(fromMalformed.source, "detected");
+    assert.equal(fromMalformed.configFault?.path, malformed);
+    assert.ok(
+      fromMalformed.configFault?.reason,
+      "an unreadable config states why it could not be read",
+    );
+
+    // A config holding valid JSON that is not an object names no root either.
+    const notAnObject = join(workspace, "not-an-object.config.json");
+    writeFileSync(notAnObject, "null");
+    assert.equal(
       resolveUsageRootFromDisk({
         ...MAC_RUNTIME,
         driveMounts: [populated],
-        configPath: malformed,
-      }),
-      { root: shared, source: "detected" },
+        configPath: notAnObject,
+      }).configFault?.path,
+      notAnObject,
     );
 
+    // No config at all is the ordinary state before the first run. It resolves
+    // exactly as before, with nothing to report.
     const absent = join(workspace, "absent.config.json");
     assert.deepEqual(
       resolveUsageRootFromDisk({
