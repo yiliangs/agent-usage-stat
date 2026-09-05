@@ -11,6 +11,7 @@ import {
   type PortalRequestDecision,
   routePortalRequest,
 } from "./portal-request.js";
+import { trailingFlight } from "./single-flight.js";
 
 const MIME_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -48,7 +49,13 @@ export function registerPortalScheme(): void {
 
 /** Owns the renderer's private protocol and generated analytics snapshot. */
 export class PortalRuntime {
-  private refreshPromise: Promise<PortalRefreshResult> | null = null;
+  /**
+   * A refresh resolves the usage root on its first line and then spends
+   * seconds in the helper, so a caller that just changed the data root must
+   * not be handed the run already reading the old one. Overlapping requests
+   * collapse onto a single trailing run instead of joining the one in flight.
+   */
+  private readonly refreshOnce = trailingFlight(() => this.performRefresh());
 
   constructor(
     private readonly helperRuntime: HelperRuntime,
@@ -60,12 +67,7 @@ export class PortalRuntime {
   }
 
   refresh(): Promise<PortalRefreshResult> {
-    if (!this.refreshPromise) {
-      this.refreshPromise = this.performRefresh().finally(() => {
-        this.refreshPromise = null;
-      });
-    }
-    return this.refreshPromise;
+    return this.refreshOnce();
   }
 
   async hasSnapshot(): Promise<boolean> {
