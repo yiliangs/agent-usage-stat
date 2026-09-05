@@ -35,6 +35,14 @@ export interface SetupOptions {
   migrateTerminal?: boolean;
 }
 
+/** One host whose hook file could not be written, and why. */
+interface HookFailure {
+  provider: ProviderName;
+  label: string;
+  hookConfigPath: string;
+  message: string;
+}
+
 export class SetupCommand {
   private configManager = new ConfigManager();
   private integrations?: AgentIntegration[];
@@ -127,20 +135,19 @@ export class SetupCommand {
       const continuousAgents = agents.filter((agent) =>
         resolvedCaptureStrategy(config, agent.provider) === "continuous"
       );
-      for (const integration of integrations) {
+      const hookFailures = await applyPerHost(integrations, async (integration) => {
         if (
           integration.isInstalled() &&
           resolvedCaptureStrategy(config, integration.provider) === "continuous"
         ) {
-          const agent = integration;
-          const result = await agent.install();
-          if (agent.provider === "codex") {
+          const result = await integration.install();
+          if (integration.provider === "codex") {
             codexNeedsTrust = result.needsTrust;
           }
         } else {
           await integration.remove();
         }
-      }
+      });
       spinner.text = continuousAgents.length > 0
         ? "Best-effort agent hooks configured..."
         : "Agent hooks removed...";
@@ -159,6 +166,9 @@ export class SetupCommand {
       spinner.succeed("Initialization complete");
 
       for (const agent of agents) {
+        if (hookFailures.some((failure) => failure.provider === agent.provider)) {
+          continue;
+        }
         const continuous = resolvedCaptureStrategy(config, agent.provider) === "continuous";
         const status = continuous
           ? "continuous hook configured (best effort)"
@@ -176,6 +186,7 @@ export class SetupCommand {
           );
         }
       }
+      reportHookFailures(hookFailures, "configuration");
       if (terminalProfile) {
         const terminalEnabled = continuousProviders.length > 0 && terminalMessage;
         const action = terminalEnabled ? "enabled" : "disabled";
@@ -202,11 +213,13 @@ export class SetupCommand {
 
     try {
       const config = await this.configManager.loadConfig();
-      for (const integration of this.integrationsFor(config)) {
-        await integration.remove();
-      }
+      const hookFailures = await applyPerHost(
+        this.integrationsFor(config),
+        (integration) => integration.remove(),
+      );
       const terminal = await this.configureTerminalMessage(false);
       spinner.succeed("Agent hooks removed");
+      reportHookFailures(hookFailures, "removal");
 
       if (terminal.profile) {
         console.log(
@@ -279,6 +292,40 @@ export class SetupCommand {
       process.env,
       config,
     );
+  }
+}
+
+/**
+ * Hook configuration is best effort, so a host whose file cannot be read or
+ * written is one skipped host rather than a failed setup. Every host is
+ * attempted; the failures come back for reporting.
+ */
+async function applyPerHost(
+  integrations: AgentIntegration[],
+  apply: (integration: AgentIntegration) => Promise<void>,
+): Promise<HookFailure[]> {
+  const failures: HookFailure[] = [];
+  for (const integration of integrations) {
+    try {
+      await apply(integration);
+    } catch (error) {
+      failures.push({
+        provider: integration.provider,
+        label: integration.label,
+        hookConfigPath: integration.hookConfigPath,
+        message: error instanceof Error ? error.message : "unknown error",
+      });
+    }
+  }
+  return failures;
+}
+
+function reportHookFailures(failures: HookFailure[], action: string): void {
+  for (const failure of failures) {
+    console.log(
+      chalk.yellow(`\n${failure.label} hook ${action} skipped: ${failure.message}`),
+    );
+    console.log(chalk.gray(`  ${failure.hookConfigPath}`));
   }
 }
 

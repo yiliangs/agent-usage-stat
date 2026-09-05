@@ -76,7 +76,7 @@ export async function installClaudeHook(settingsPath: string): Promise<void> {
   for (const event of CAPTURE_EVENTS) {
     const groups = (settings.hooks[event] ?? []) as ClaudeHookGroup[];
     if (groups.some((group) =>
-      group.hooks.some((hook) => isAgentUsageStatCommand(hook.command))
+      group.hooks?.some((hook) => isAgentUsageStatCommand(hook.command))
     )) updating = true;
     settings.hooks[event] = withoutAgentUsageStatHooks(groups);
     settings.hooks[event]!.push({
@@ -112,11 +112,15 @@ export async function removeClaudeHook(settingsPath: string): Promise<void> {
   await writeFile(settingsPath, JSON.stringify(settings, null, 2), "utf-8");
 }
 
+/**
+ * Drops this application's hooks and the groups left empty by that. A group
+ * whose `hooks` is missing or not an array holds nothing of ours, so it is
+ * carried through untouched rather than read or discarded.
+ */
 function withoutAgentUsageStatHooks(groups: ClaudeHookGroup[]): ClaudeHookGroup[] {
-  return groups
-    .map((group) => ({
-      ...group,
-      hooks: group.hooks.filter((hook) => !isAgentUsageStatCommand(hook.command)),
-    }))
-    .filter((group) => group.hooks.length > 0);
+  return groups.flatMap((group) => {
+    if (!Array.isArray(group.hooks)) return [group];
+    const hooks = group.hooks.filter((hook) => !isAgentUsageStatCommand(hook.command));
+    return hooks.length > 0 ? [{ ...group, hooks }] : [];
+  });
 }

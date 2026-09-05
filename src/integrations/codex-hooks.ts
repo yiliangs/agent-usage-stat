@@ -74,7 +74,7 @@ export async function installCodexHooks(hooksPath: string): Promise<boolean> {
   const events = ["Stop", "SubagentStop"];
   const alreadyInstalled = events.every((event) => {
     const ours = (config.hooks?.[event] || []).flatMap((group) =>
-      group.hooks.filter((hook) =>
+      (group.hooks ?? []).filter((hook) =>
         isAgentUsageStatCommand(`${hook.command} ${hook.commandWindows || ""}`),
       ),
     );
@@ -116,14 +116,18 @@ export async function removeCodexHooks(hooksPath: string): Promise<void> {
   await writeFile(hooksPath, JSON.stringify(config, null, 2), "utf-8");
 }
 
+/**
+ * Drops this application's hooks and the groups left empty by that. A group
+ * whose `hooks` is missing or not an array holds nothing of ours, so it is
+ * carried through untouched rather than read or discarded.
+ */
 function withoutAgentUsageStatHooks(groups: HookGroup[]): HookGroup[] {
-  return groups
-    .map((group) => ({
-      ...group,
-      hooks: group.hooks.filter((hook) => {
-        const commands = `${hook.command} ${hook.commandWindows || ""}`;
-        return !isAgentUsageStatCommand(commands);
-      }),
-    }))
-    .filter((group) => group.hooks.length > 0);
+  return groups.flatMap((group) => {
+    if (!Array.isArray(group.hooks)) return [group];
+    const hooks = group.hooks.filter((hook) => {
+      const commands = `${hook.command} ${hook.commandWindows || ""}`;
+      return !isAgentUsageStatCommand(commands);
+    });
+    return hooks.length > 0 ? [{ ...group, hooks }] : [];
+  });
 }

@@ -388,6 +388,87 @@ test(
   },
 );
 
+test(
+  "one host's unreadable hook file leaves the other hosts configured",
+  { skip: !["win32", "darwin"].includes(process.platform) },
+  async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-host-failure-"));
+    const dataRoot = join(home, "usage");
+    const claudeSettings = join(home, ".claude", "settings.json");
+    await mkdir(join(home, ".claude"));
+    await mkdir(join(home, ".codex"));
+    await mkdir(join(home, ".copilot"));
+    // A hand-edited settings file with a trailing comma. Claude Code is first
+    // in the provider order, so before the per-host boundary this aborted the
+    // whole run and nothing behind it was ever configured.
+    await writeFile(claudeSettings, '{\n  "hooks": {},\n}\n', "utf8");
+
+    try {
+      const setup = await runCli(["setup", "--data-root", dataRoot], home);
+      assert.equal(setup.code, 0, setup.output);
+      assert.match(
+        await readFile(join(home, ".codex", "hooks.json"), "utf8"),
+        /agent-usage-stat/,
+      );
+      assert.equal(
+        existsSync(join(home, ".copilot", "hooks", "agent-usage-stat.json")),
+        true,
+      );
+      assert.ok(
+        setup.output.includes("Claude Code"),
+        `the failing host is not named: ${setup.output}`,
+      );
+      assert.ok(
+        setup.output.includes(claudeSettings),
+        `the failing file is not named: ${setup.output}`,
+      );
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "uninstall clears the other hosts when one hook file cannot be read",
+  { skip: !["win32", "darwin"].includes(process.platform) },
+  async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-host-removal-"));
+    const dataRoot = join(home, "usage");
+    const claudeSettings = join(home, ".claude", "settings.json");
+    const codexHooks = join(home, ".codex", "hooks.json");
+    const copilotHook = join(home, ".copilot", "hooks", "agent-usage-stat.json");
+    await mkdir(join(home, ".claude"));
+    await mkdir(join(home, ".codex"));
+    await mkdir(join(home, ".copilot"));
+
+    try {
+      const setup = await runCli(["setup", "--data-root", dataRoot], home);
+      assert.equal(setup.code, 0, setup.output);
+      assert.equal(existsSync(copilotHook), true);
+
+      await writeFile(claudeSettings, '{\n  "hooks": {},\n}\n', "utf8");
+      const removal = await runCli(["setup", "--uninstall"], home);
+      assert.equal(removal.code, 0, removal.output);
+      assert.doesNotMatch(await readFile(codexHooks, "utf8"), /agent-usage-stat/);
+      assert.equal(existsSync(copilotHook), false);
+      assert.doesNotMatch(
+        await readFile(join(home, SHELL_PROFILE_NAME), "utf8"),
+        /Agent Usage Stat/,
+      );
+      assert.ok(
+        removal.output.includes("Claude Code"),
+        `the failing host is not named: ${removal.output}`,
+      );
+      assert.ok(
+        removal.output.includes(claudeSettings),
+        `the failing file is not named: ${removal.output}`,
+      );
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  },
+);
+
 test("a new empty data folder produces a usable portal snapshot", async () => {
   const root = await mkdtemp(join(tmpdir(), "agent-usage-stat-empty-"));
   const outDir = join(root, "portal");
