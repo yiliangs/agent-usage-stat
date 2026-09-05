@@ -39,7 +39,7 @@ Manual checks validate startup and wiring. Only a real Claude Code `/exit` valid
 9. Codex transcript parsing and usage pricing share one incremental snapshot. Do not reintroduce independent full-file scans.
 10. Persistent Codex caches are derived acceleration only. The rollout and immutable logbook shard remain the sources of truth.
 11. Claude billing and metadata share one incremental session-tree snapshot. A `Stop` checkpoint must not rescan the main transcript or accumulated subagent files.
-12. Hook configuration is best effort. Application launch and Sync now must always run provider reconciliation in both capture policies.
+12. Hook configuration is best effort. Application launch and Sync now must always run provider reconciliation in both capture policies. Setup and uninstall apply every host behind its own error boundary, so one unreadable hook file is a reported per-host skip rather than a failed run.
 
 The `AGENT_USAGE_STAT_ALL_SESSIONS=1` environment variable disables the Claude automation gate when SDK session capture is intentional.
 
