@@ -11,7 +11,7 @@ import {
 import { selectPortalView } from './portal-navigation.js'
 import { providerMark } from './provider-marks.js'
 import { escapeAttribute, escapeText } from './markup-escape.js'
-import { compact, pct, periodDelta, usd, usdHeadline } from './usage-format.js'
+import { compact, folioIndex, pct, periodDelta, tally, usd, usdHeadline } from './usage-format.js'
 import {
   DAY,
   createCalendarProjection,
@@ -88,6 +88,8 @@ const fmt = {
   usd,
   usdHeadline,
   compact,
+  tally,
+  folioIndex,
   pct,
   date: (value) => new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short' }).format(value).toUpperCase(),
   dateYear: (value) => new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short', year: 'numeric' }).format(value).toUpperCase(),
@@ -264,7 +266,7 @@ function renderHeader(window, current) {
   if (metaValues[2]) metaValues[2].textContent = `LIVE / ${fmt.time(generated)}`
 
   $('.period-range span').innerHTML = `${fmt.dateYear(new Date(window.start))}<br>${fmt.dateYear(new Date(window.end))}`
-  $('.folio .index').textContent = `${String(current.length).padStart(2, '0')} / ${String(state.sessions.length).padStart(2, '0')}`
+  $('.folio .index').textContent = fmt.folioIndex(current.length, state.sessions.length)
 }
 
 function renderSummary(current, previous) {
@@ -276,7 +278,7 @@ function renderSummary(current, previous) {
 
   const metrics = $$('.metric')
   const values = [
-    [current.sessions.toLocaleString('en-US'), periodDelta(current.sessions, previous.sessions)],
+    [fmt.tally(current.sessions), periodDelta(current.sessions, previous.sessions)],
     [fmt.compact(current.tokens), periodDelta(current.tokens, previous.tokens)],
     [fmt.usdHeadline(current.avgCost), periodDelta(current.avgCost, previous.avgCost)],
     [fmt.pct(current.cacheRatio), `${fmt.compact(current.cacheRead)} tokens`],

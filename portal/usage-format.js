@@ -22,12 +22,21 @@
  * - `metricValue` `.metric b`, 29px serif in half of the metric stack
  * - `metricNote`  `.metric small`, the comparison line beneath it
  * - `heroDelta`   `.hero-number .delta`, the comparison under the hero figure
+ * - `folioIndex`  `.folio .index`, the plate's session index
  * - `concValue`   `.conc-row .value`, 15px mono in the fixed 88px last column
  * - `glanceHero`  `.glance-hero b`, 27px serif in half the status-area panel
  * - `glanceNote`  `.glance-note`, the line under a hero figure or a band label
  * - `glanceMeta`  `.glance-meta`, a band's own figures, right of its label
  * - `glanceShare` `.glance-share`, one model's percent
  * - `glanceDetail` `.glance-detail`, the latest session's figures, full width
+ *
+ * `folioIndex` is the only budget that belongs to a row rather than to an
+ * element. The index shares a flex row with its "Report plate" label, and both
+ * shrink together, so the label breaks onto a second line at the same length
+ * the index does: 26 characters at 1280 and 1920, where the hero column is
+ * narrowest. The budget is the 25 that holds at every width. No fixture a
+ * browser can render carries the ledger that would reach it, so the number is
+ * checked by writing it into the slot: `test/portal-count-slot-layout.test.mjs`.
  *
  * `concValue` is 9 rather than the 10 that fits on Windows: the column is a
  * fixed 88px at every window width, and the same ten characters that fit there
@@ -46,6 +55,7 @@ export const SLOT_BUDGET = {
   metricValue: 7,
   metricNote: 17,
   heroDelta: 17,
+  folioIndex: 25,
   concValue: 9,
   glanceHero: 7,
   glanceNote: 17,
@@ -120,6 +130,39 @@ function scaleToUnit(value, units) {
   }
   return value.toExponential(0);
 }
+
+/**
+ * A count of things, printed in full while the slot has room for every digit.
+ *
+ * A count is the one figure a reader expects to see exactly, so unlike a token
+ * volume it does not compact on principle: it prints with grouping for as long
+ * as the panel holds it, and compacts only once it does not. The bound is
+ * `SLOT_BUDGET.metricValue`, the narrower of the two slots a count feeds, so
+ * one format serves both and neither has to know where the other's ceiling is.
+ *
+ * A million sessions is where the two branches meet, and it is the case the
+ * inline `toLocaleString` this replaced got wrong: nine characters in a slot
+ * measured to hold seven, cut off against the magnitude meter (#94).
+ */
+export function tally(value) {
+  const whole = Math.round(value);
+  const plain = whole.toLocaleString("en-US");
+  return plain.length <= SLOT_BUDGET.metricValue ? plain : compact(whole);
+}
+
+/**
+ * The report plate's `current / total` session index.
+ *
+ * Both sides are counts, so both are tallies. The two-digit zero padding is
+ * the plate's own typography rather than a width: it applies to a single digit
+ * and to nothing else, so a small ledger keeps reading `01 / 05` while a large
+ * one reads `1.00M / 1.00M`.
+ */
+export function folioIndex(current, total) {
+  return `${plate(current)} / ${plate(total)}`;
+}
+
+const plate = (value) => tally(value).padStart(2, "0");
 
 /** Whole percent, for shares of a total. */
 export function pct(value) {

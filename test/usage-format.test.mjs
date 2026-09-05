@@ -4,8 +4,10 @@ import test from "node:test";
 import {
   SLOT_BUDGET,
   compact,
+  folioIndex,
   pct,
   periodDelta,
+  tally,
   usd,
   usdHeadline,
 } from "../portal/usage-format.js";
@@ -73,6 +75,46 @@ test("compacted token counts stay inside the metric value budget", () => {
   assert.equal(compact(9.9e14), "990.00T");
   assert.equal(compact(999.999e9), "1.00T");
   assert.equal(compact(4.2e21), "4e+21");
+});
+
+test("counts print every digit while the slot holds them, and compact once it does not", () => {
+  const { longest } = widest("tally", MAGNITUDES, tally);
+  assert.ok(
+    longest.length <= SLOT_BUDGET.metricValue,
+    `widest count ${JSON.stringify(longest)} is ${longest.length} characters, budget ${SLOT_BUDGET.metricValue}`,
+  );
+  // A count is read exactly for as long as there is room to print it exactly.
+  assert.equal(tally(0), "0");
+  assert.equal(tally(96), "96");
+  assert.equal(tally(12_345), "12,345");
+  assert.equal(tally(999_999), "999,999");
+  // The reported case: the first count with no room for every digit. Nine
+  // characters in a slot measured to hold seven is what used to be cut off
+  // against the magnitude meter.
+  assert.equal((1e6).toLocaleString("en-US").length, 9);
+  assert.equal(tally(1e6), "1.00M");
+  assert.equal(tally(4.2e9), "4.20B");
+  assert.equal(tally(Number.MAX_SAFE_INTEGER), "9e+15");
+});
+
+test("the session index stays inside the report plate", () => {
+  let longest = "";
+  for (const current of MAGNITUDES) {
+    for (const total of MAGNITUDES) {
+      const text = folioIndex(current, total);
+      if (text.length > longest.length) longest = text;
+    }
+  }
+  assert.ok(
+    longest.length <= SLOT_BUDGET.folioIndex,
+    `widest session index ${JSON.stringify(longest)} is ${longest.length} characters, budget ${SLOT_BUDGET.folioIndex}`,
+  );
+  // The plate's own typography survives the bound: a small ledger still reads
+  // as two padded digits, and only a single digit is padded.
+  assert.equal(folioIndex(1, 5), "01 / 05");
+  assert.equal(folioIndex(96, 96), "96 / 96");
+  assert.equal(folioIndex(7, 128), "07 / 128");
+  assert.equal(folioIndex(30, 1e6), "30 / 1.00M");
 });
 
 test("percent shares stay inside the metric value budget", () => {
