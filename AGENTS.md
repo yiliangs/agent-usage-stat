@@ -54,6 +54,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `src/utils/provider-data-roots.ts`: the two path axes per host, session records and hook location
 - `src/providers/opencode/database.ts`: read-only access to opencode's single SQLite store
 - `src/core/logbook-writer.ts`: idempotent per-session shard writer
+- `src/core/shard-lock.ts`: the owner-identified lock serializing two writers on one shard
 - `src/core/project-name.ts`: the single owner of project attribution, including the worktree layouts each agent CLI creates
 - `src/core/pricing-feed.ts`: cached remote pricing snapshot for models the baked tables miss
 - `src/utils/capture-run.ts`: machine-local run and capture-result protocol

@@ -1,5 +1,5 @@
 import { mkdirSync } from "fs";
-import { readFile, open, stat, unlink } from "fs/promises";
+import { readFile } from "fs/promises";
 import { basename, dirname } from "path";
 import { hostname } from "os";
 import { writeJsonAtomic } from "../utils/atomic-file.js";
@@ -7,6 +7,7 @@ import type { SessionUsage } from "../types/session.js";
 import type { ParsedTranscript } from "../types/transcript.js";
 import { vendorForModel } from "./model-vendor.js";
 import { projectNameForCwd } from "./project-name.js";
+import { withShardLock } from "./shard-lock.js";
 import {
   shardPathFor,
   type LogbookModelRecord,
@@ -49,7 +50,7 @@ export class LogbookWriter {
     );
     mkdirSync(dirname(path), { recursive: true });
 
-    return this.withShardLock(path, async () => {
+    return withShardLock(path, async () => {
       record = await this.preserveRecordedUsage(path, record);
       await writeJsonAtomic(path, record, 2);
 
@@ -62,51 +63,6 @@ export class LogbookWriter {
       }
       return path;
     });
-  }
-
-  /** Serialize detached workers that update the same rollout shard. */
-  private async withShardLock<T>(
-    path: string,
-    action: () => Promise<T>,
-  ): Promise<T> {
-    const lockPath = `${path}.lock`;
-    let handle;
-
-    for (let attempt = 0; attempt < 100; attempt++) {
-      try {
-        handle = await open(lockPath, "wx");
-        break;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        await this.removeStaleLock(lockPath);
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-    }
-
-    if (!handle) {
-      throw new Error(`timed out waiting for shard lock: ${lockPath}`);
-    }
-
-    try {
-      return await action();
-    } finally {
-      await handle.close();
-      try {
-        await unlink(lockPath);
-      } catch {
-        // Another process may already have cleaned up a stale lock.
-      }
-    }
-  }
-
-  private async removeStaleLock(lockPath: string): Promise<void> {
-    try {
-      const info = await stat(lockPath);
-      if (Date.now() - info.mtimeMs <= 30_000) return;
-      await unlink(lockPath);
-    } catch {
-      // The owner released it between our failed open and this check.
-    }
   }
 
   /**
