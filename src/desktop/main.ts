@@ -19,6 +19,7 @@ import {
   desktopSetupStatePath,
   installedHelperPath,
 } from "../core/application-paths.js";
+import { changeDataRoot } from "./data-root-change.js";
 import { HelperRuntime } from "./helper-runtime.js";
 import { LogbookWatcher } from "./logbook-watcher.js";
 import {
@@ -118,12 +119,19 @@ const hasSingleInstanceLock = !squirrelEvent && (
   isSmokeTest || app.requestSingleInstanceLock()
 );
 traceStartup(`single-instance:${hasSingleInstanceLock}`);
-if (squirrelEvent || !hasSingleInstanceLock) {
-  app.quit();
-} else {
-  app.on("second-instance", openDashboard);
+// A Squirrel run is neither a launch nor a duplicate instance, and it is the
+// one case that must not be quit from here: `handleSquirrelEvent` spawns
+// Update.exe, moves the Start Menu entry, and on uninstall removes two trees,
+// and no window is open to hold the process while that runs. Its own `finally`
+// is the quit, once the work has settled.
+if (!squirrelEvent) {
+  if (hasSingleInstanceLock) {
+    app.on("second-instance", openDashboard);
 
-  app.whenReady().then(start).catch(failStartup);
+    app.whenReady().then(start).catch(failStartup);
+  } else {
+    app.quit();
+  }
 }
 
 app.on("activate", openDashboard);
@@ -524,12 +532,22 @@ async function chooseDataFolder(reload = true): Promise<boolean> {
       await mergeUsageLedger(current, selected);
     }
 
-    await helperRuntime.configureDataRoot(selected);
-    await helperRuntime.resetSetup();
-    if (!(await ensureDesktopSetup(notifyWithDialog))) return false;
-    await portalRuntime.refresh();
-    await logbookWatcher.start(resolveUsageRootFromDisk().root);
-    if (reload) await mainWindow?.webContents.reload();
+    // The ledger move is not conditional on the hooks: a folder the agent
+    // configs cannot be reconnected from is still a folder the ledger now
+    // lives in, and ensureDesktopSetup says so in its own dialog. Its result
+    // is not read here because the move itself succeeded either way.
+    await changeDataRoot(selected, {
+      configure: (root) => helperRuntime.configureDataRoot(root),
+      resetSetup: () => helperRuntime.resetSetup(),
+      refresh: async () => {
+        await portalRuntime.refresh();
+      },
+      watch: (root) => logbookWatcher.start(root),
+      reload: async () => {
+        if (reload) await mainWindow?.webContents.reload();
+      },
+      ensureSetup: () => ensureDesktopSetup(notifyWithDialog),
+    });
 
     if (hasExistingHistory && !keepOriginal) {
       await removeUsageLedger(current);

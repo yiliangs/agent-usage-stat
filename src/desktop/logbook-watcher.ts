@@ -24,6 +24,15 @@ export class LogbookWatcher {
   private timer: NodeJS.Timeout | null = null;
   private notifying = false;
   private rearmed = false;
+  /**
+   * Which call owns the watcher. `start` releases the event loop before it can
+   * install anything, so its own `stop()` has nothing to close and a call
+   * landing in that window would leave two watchers open, the older one on a
+   * root the application has left. Every `stop()` opens a new generation, and
+   * a `start` that resumes into a generation it no longer owns installs
+   * nothing: the newest call is the only one that arms the watcher.
+   */
+  private generation = 0;
 
   constructor(
     private readonly onSettled: () => Promise<void>,
@@ -33,9 +42,11 @@ export class LogbookWatcher {
   /** Watch the shard directory under `root`, replacing any previous target. */
   async start(root: string): Promise<void> {
     this.stop();
+    const generation = this.generation;
     const shardDir = join(root, LOGBOOK_SHARD_DIR);
     try {
       await mkdir(shardDir, { recursive: true });
+      if (generation !== this.generation) return;
       // Windows reports a change against the directory in its long form, so
       // a watcher opened on an 8.3 short path fails libuv's prefix assertion
       // and aborts the process. os.tmpdir() alone resolves to one on a default
@@ -43,11 +54,12 @@ export class LogbookWatcher {
       this.watcher = watch(realpathSync.native(shardDir), () => this.handleEvent());
       this.watcher.on("error", () => this.stop());
     } catch {
-      this.watcher = null;
+      if (generation === this.generation) this.watcher = null;
     }
   }
 
   stop(): void {
+    this.generation += 1;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.watcher?.close();

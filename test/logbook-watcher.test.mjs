@@ -91,6 +91,47 @@ test("restarting repoints the watcher to the new root", async () => {
   }
 });
 
+test("overlapping restarts leave exactly one live watcher", async () => {
+  const oldRoot = await freshRoot();
+  const newRoot = await freshRoot();
+  let calls = 0;
+  const watcher = new LogbookWatcher(async () => { calls++; }, QUIET_MS);
+  // start() releases the event loop between clearing the old watcher and
+  // installing the new one, and a second start can land in that window: the
+  // background sync arms the watcher on its last line, and changing the data
+  // folder arms it from a user action. The older call must open nothing.
+  const first = watcher.start(oldRoot);
+  const second = watcher.start(newRoot);
+  await Promise.all([first, second]);
+  try {
+    await settle();
+    calls = 0;
+
+    await writeFile(join(shardDir(oldRoot), "old-root.json"), "{}");
+    await settle();
+    assert.equal(calls, 0, "the overlapped root must not have kept a watcher");
+
+    await writeFile(join(shardDir(newRoot), "new-root.json"), "{}");
+    assert.ok(await waitFor(() => calls === 1), `expected the new root to refresh, saw ${calls}`);
+  } finally {
+    watcher.stop();
+  }
+});
+
+test("stop() during a pending start leaves nothing watching", async () => {
+  const root = await freshRoot();
+  let calls = 0;
+  const watcher = new LogbookWatcher(async () => { calls++; }, QUIET_MS);
+  const pending = watcher.start(root);
+  watcher.stop();
+  await pending;
+
+  await writeFile(join(shardDir(root), "after-stop.json"), "{}");
+  await settle();
+  assert.equal(calls, 0);
+  watcher.stop();
+});
+
 test("stop() silences further events", async () => {
   const root = await freshRoot();
   let calls = 0;
