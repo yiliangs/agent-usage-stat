@@ -1,13 +1,17 @@
 import { app, protocol } from "electron";
 import { mkdir, readFile, stat } from "node:fs/promises";
-import { extname, isAbsolute, join, relative, resolve } from "node:path";
+import { extname, join } from "node:path";
 import { LOGBOOK_SHARD_DIR } from "../core/usage-ledger.js";
 import { resolveUsageRootFromDisk } from "../utils/usage-root.js";
 import type { HelperRuntime } from "./helper-runtime.js";
 import { buildPortalData } from "./portal-data.js";
+import {
+  PORTAL_HOST,
+  PORTAL_SCHEME,
+  type PortalRequestDecision,
+  routePortalRequest,
+} from "./portal-request.js";
 
-const APP_SCHEME = "aus";
-const APP_HOST = "app";
 const MIME_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -16,11 +20,6 @@ const MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
   ".svg": "image/svg+xml",
 };
-
-export const PORTAL_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
-export const PORTAL_URL = `${PORTAL_ORIGIN}/index.html`;
-/** The status-area glance, the portal's second document. */
-export const PANEL_URL = `${PORTAL_ORIGIN}/panel.html`;
 
 export interface PortalRefreshResult {
   updated: number;
@@ -37,7 +36,7 @@ export type PortalRequestHandler = (
 export function registerPortalScheme(): void {
   protocol.registerSchemesAsPrivileged([
     {
-      scheme: APP_SCHEME,
+      scheme: PORTAL_SCHEME,
       privileges: {
         standard: true,
         secure: true,
@@ -57,7 +56,7 @@ export class PortalRuntime {
   ) {}
 
   async registerProtocol(): Promise<void> {
-    await protocol.handle(APP_SCHEME, (request) => this.handleRequest(request));
+    await protocol.handle(PORTAL_SCHEME, (request) => this.handleRequest(request));
   }
 
   refresh(): Promise<PortalRefreshResult> {
@@ -84,56 +83,35 @@ export class PortalRuntime {
 
   private async handleRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    if (url.host !== APP_HOST) return new Response("Not found", { status: 404 });
+    if (url.host === PORTAL_HOST) {
+      const handled = await this.requestHandler?.(request, url);
+      if (handled) return handled;
+    }
 
-    const handled = await this.requestHandler?.(request, url);
-    if (handled) return handled;
+    const decision = routePortalRequest(request.method, url, {
+      assets: this.assetsRoot(),
+      data: this.dataRoot(),
+    });
 
-    if (url.pathname === "/api/refresh") {
-      if (request.method !== "POST") {
+    switch (decision.kind) {
+      case "not-found":
+        return new Response("Not found", { status: 404 });
+      case "method-not-allowed":
         return new Response("Method not allowed", {
           status: 405,
-          headers: { Allow: "POST" },
+          headers: { Allow: decision.allow },
         });
-      }
-      try {
-        return jsonResponse(await this.refresh());
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return jsonResponse({ error: message }, 500);
-      }
-    }
-
-    const fromData = url.pathname.startsWith("/data/");
-    const root = fromData ? this.dataRoot() : this.assetsRoot();
-    const requestedPath = fromData
-      ? url.pathname.slice("/data/".length)
-      : url.pathname === "/" || url.pathname === "/index.html"
-        ? "index.html"
-        : url.pathname.slice(1);
-    let path = resolve(root, decodeURIComponent(requestedPath));
-
-    if (!isPathInside(root, path)) {
-      return new Response("Forbidden", { status: 403 });
-    }
-    if (!fromData && !(await isFile(path))) {
-      path = resolve(root, "index.html");
-    }
-
-    try {
-      const content = await readFile(path);
-      const extension = extname(path).toLowerCase();
-      return new Response(content, {
-        status: 200,
-        headers: {
-          "Content-Type": MIME_TYPES[extension] || "application/octet-stream",
-          "Cache-Control": fromData || extension === ".html"
-            ? "no-store"
-            : "public, max-age=3600",
-        },
-      });
-    } catch {
-      return new Response("Not found", { status: 404 });
+      case "forbidden":
+        return new Response("Forbidden", { status: 403 });
+      case "refresh":
+        try {
+          return jsonResponse(await this.refresh());
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return jsonResponse({ error: message }, 500);
+        }
+      case "file":
+        return serveFile(decision);
     }
   }
 
@@ -163,9 +141,32 @@ export class PortalRuntime {
   }
 }
 
-function isPathInside(root: string, path: string): boolean {
-  const fromRoot = relative(resolve(root), resolve(path));
-  return !fromRoot.startsWith("..") && !isAbsolute(fromRoot);
+/** The one place a routed path becomes bytes. Both roots are read the same way,
+ *  and only the cache policy separates a snapshot read from an asset read. */
+async function serveFile(
+  decision: Extract<PortalRequestDecision, { kind: "file" }>,
+): Promise<Response> {
+  let path = decision.path;
+  if (decision.source === "assets" && !(await isFile(path))) {
+    path = decision.fallback;
+  }
+  const fromData = decision.source === "data";
+
+  try {
+    const content = await readFile(path);
+    const extension = extname(path).toLowerCase();
+    return new Response(content, {
+      status: 200,
+      headers: {
+        "Content-Type": MIME_TYPES[extension] || "application/octet-stream",
+        "Cache-Control": fromData || extension === ".html"
+          ? "no-store"
+          : "public, max-age=3600",
+      },
+    });
+  } catch {
+    return new Response("Not found", { status: 404 });
+  }
 }
 
 async function isFile(path: string): Promise<boolean> {

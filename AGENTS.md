@@ -43,6 +43,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `src/desktop/main.ts`: Electron lifecycle, windows, menus, and user-facing setup flows
 - `src/core/helper-installation.ts`: the one owner of putting the capture helper on disk
 - `src/desktop/helper-runtime.ts`: helper execution and first-run state
+- `src/desktop/portal-request.ts`: the `aus://` URL grammar and the path guard every request is routed through
 - `src/desktop/portal-runtime.ts`: `aus://` protocol, refresh serialization, and analytics snapshots
 - `src/desktop/logbook-watcher.ts`: debounced shard-write observer behind the dashboard's auto-refresh
 - `src/desktop/status-area.ts`: the notification-area icon and the glance panel window behind it
@@ -107,6 +108,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - The detach shim reads at most the first 128 KB when checking Claude entrypoints.
 - Terminal feedback must fall back silently rather than weaken detached capture.
 - Production opens no localhost server. Renderer assets and data use the `aus://` protocol.
+- Every path the protocol serves is decided by `portal-request.ts`, which resolves it against one of two roots and refuses anything that leaves that root. Percent-encoded separators survive URL normalization, so the decoded path is what the guard checks.
 - Hooks must target the stable installed helper, never a versioned application directory.
 - The Start Menu entry is `Programs\<Product>.lnk`, listed as an application rather than filed in a folder. Squirrel writes it into a folder named after the nuspec authors and offers no location that skips one, and that same field is the uninstall entry's Publisher, so `src/desktop/start-menu-shortcut.ts` moves the shortcut instead of renaming the author.
 - Resolve machine-specific paths through `usage-root.ts`; do not hardcode them.

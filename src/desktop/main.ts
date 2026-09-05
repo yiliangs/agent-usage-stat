@@ -25,9 +25,8 @@ import {
   PANEL_URL,
   PORTAL_ORIGIN,
   PORTAL_URL,
-  PortalRuntime,
-  registerPortalScheme,
-} from "./portal-runtime.js";
+} from "./portal-request.js";
+import { PortalRuntime, registerPortalScheme } from "./portal-runtime.js";
 import { StatusArea } from "./status-area.js";
 import {
   closesToStatusArea,
