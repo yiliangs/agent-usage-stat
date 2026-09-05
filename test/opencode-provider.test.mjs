@@ -192,6 +192,37 @@ test("subagent sessions fold into the session that spawned them", async () => {
   );
 });
 
+test("an idle event on a subagent session resolves to the root that owns it", async () => {
+  await withDataRoot(
+    async (root) => {
+      const provider = new OpencodeProvider(root);
+      // opencode fires session.idle on subagent sessions too and the plugin
+      // forwards the id verbatim, so the finder has to name the session that
+      // usage is reconciled under rather than fail for the life of the tree.
+      const found = await provider.findSession("ses_grandchild");
+      assert.equal(found.sessionId, SESSION_ID);
+      assert.equal(found.transcriptPath, join(root, "opencode.db"));
+      assert.equal(found.projectPath, "C:/work/sample-project");
+
+      // An id no row carries is still a failure, not the newest root.
+      await assert.rejects(
+        () => provider.findSession("ses_absent"),
+        /No opencode session matching "ses_absent"/,
+      );
+    },
+    {
+      sessions: [
+        sessionRow({ id: "ses_child", parent_id: SESSION_ID, slug: "child-task" }),
+        sessionRow({
+          id: "ses_grandchild",
+          parent_id: "ses_child",
+          slug: "grandchild-task",
+        }),
+      ],
+    },
+  );
+});
+
 test("the fingerprint is stable across reads and moves when usage does", async () => {
   await withDataRoot(async (root) => {
     const provider = new OpencodeProvider(root);
