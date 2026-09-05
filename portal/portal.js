@@ -53,6 +53,17 @@ const $ = (selector, root = document) => root.querySelector(selector)
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)]
 const sum = (items, read) => items.reduce((total, item) => total + read(item), 0)
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+/**
+ * One part's share of a whole, as a fraction.
+ *
+ * The only thing a share has to be guarded against is a total of zero, and an
+ * empty period has no share to print anyway. Flooring the denominator instead
+ * silently rescales every share whenever the total is below the floor, which
+ * for a dollar total is any quiet week: sixty cents split three ways read 30,
+ * 20, and 10 percent (#132). Every share on the page goes through here so the
+ * page cannot hold two answers to the same question.
+ */
+const share = (value, total) => (total ? value / total : 0)
 
 // Numeric formats live in usage-format.js, where each one is bounded to the
 // width of the slot it feeds. Dates stay here; they have a fixed width.
@@ -225,7 +236,7 @@ function renderSummary(current, previous) {
   $('.hero-number .value').textContent = fmt.usdHeadline(current.cost)
   const delta = $('.hero-number .delta')
   delta.innerHTML = `<i class="delta-mark"></i>${periodDelta(current.cost, previous.cost)}`
-  $('.hero-number').style.setProperty('--meter', `${100 * current.cost / Math.max(1, current.cost + previous.cost)}%`)
+  $('.hero-number').style.setProperty('--meter', `${100 * share(current.cost, current.cost + previous.cost)}%`)
 
   const metrics = $$('.metric')
   const values = [
@@ -235,9 +246,9 @@ function renderSummary(current, previous) {
     [fmt.pct(current.cacheRatio), `${fmt.compact(current.cacheRead)} tokens`],
   ]
   const meterValues = [
-    100 * current.sessions / Math.max(1, current.sessions + previous.sessions),
-    100 * current.tokens / Math.max(1, current.tokens + previous.tokens),
-    100 * current.avgCost / Math.max(.01, current.avgCost + previous.avgCost),
+    100 * share(current.sessions, current.sessions + previous.sessions),
+    100 * share(current.tokens, current.tokens + previous.tokens),
+    100 * share(current.avgCost, current.avgCost + previous.avgCost),
     100 * current.cacheRatio,
   ]
   metrics.forEach((metric, index) => {
@@ -436,17 +447,16 @@ function renderModels(sessions) {
   let cursor = 0
   const stops = visible.map((row) => {
     const start = cursor
-    cursor += 100 * row.value / Math.max(1, total)
+    cursor += 100 * share(row.value, total)
     return `${styleForFamily(row.key).color} ${start}% ${cursor}%`
   })
   $('.model-ring').style.background = `conic-gradient(${stops.join(', ')})`
   const largest = visible[0]
-  $('.model-pie-caption b').textContent = largest ? fmt.pct(largest.value / Math.max(1, total)) : '0%'
+  $('.model-pie-caption b').textContent = largest ? fmt.pct(share(largest.value, total)) : '0%'
   $('.model-pie-caption span').textContent = largest ? `${largest.key} / largest share` : 'No activity'
   $('.model-pie-key').innerHTML = visible.map((row) => {
-    const share = row.value / Math.max(1, total)
     const style = styleForFamily(row.key)
-    return `<div class="model-pie-row model-filter" data-family="${escapeAttribute(row.key)}" style="--series:${style.color}"><i></i><span>${escapeText(row.key.toUpperCase())}</span><b>${fmt.pct(share)}</b></div>`
+    return `<div class="model-pie-row model-filter" data-family="${escapeAttribute(row.key)}" style="--series:${style.color}"><i></i><span>${escapeText(row.key.toUpperCase())}</span><b>${fmt.pct(share(row.value, total))}</b></div>`
   }).join('')
 }
 
@@ -698,8 +708,8 @@ function renderAnalysisBars(selector, rows, options = {}) {
 function renderComposition(selector, rows, total, formatValue = fmt.usd) {
   $(selector).innerHTML = rows.length ? rows.map((row) => `
     <div class="composition-row" style="--series:${row.color || styleForFamily(row.key).base}">
-      <i></i><span>${escapeText(row.key)}</span><b>${fmt.pct(row.value / Math.max(1, total))} / ${escapeText(formatValue(row.value))}</b>
-      <span class="composition-meter"><i style="width:${100 * row.value / Math.max(1, total)}%"></i></span>
+      <i></i><span>${escapeText(row.key)}</span><b>${fmt.pct(share(row.value, total))} / ${escapeText(formatValue(row.value))}</b>
+      <span class="composition-meter"><i style="width:${100 * share(row.value, total)}%"></i></span>
     </div>`).join('') : '<p class="note">No recorded activity in this period.</p>'
 }
 
@@ -728,7 +738,7 @@ function renderTokenAnalysis(current, previous, period, projects) {
   const tokensPerDollar = value.cost ? value.tokens / value.cost : 0
   renderKpis('#tokenKpis', [
     { label: 'Total tokens', value: fmt.compact(value.tokens), note: periodDelta(value.tokens, prior.tokens) },
-    { label: 'Output', value: fmt.compact(value.output), note: fmt.pct(value.output / Math.max(1, value.tokens)) + ' of volume' },
+    { label: 'Output', value: fmt.compact(value.output), note: fmt.pct(share(value.output, value.tokens)) + ' of volume' },
     { label: 'Cache read', value: fmt.compact(value.cacheRead), note: fmt.pct(value.cacheRatio) + ' cache hit' },
     { label: 'Tokens / dollar', value: fmt.compact(tokensPerDollar), note: 'Recorded volume per API-equivalent dollar' },
   ])
@@ -1624,11 +1634,11 @@ function renderProjects(projects) {
 
 function renderTokens(current) {
   $('.token-figure .big').textContent = fmt.pct(current.cacheRatio)
-  const total = Math.max(1, current.tokens)
+  const total = current.tokens
   const counts = {
-    cacheRead: Math.round(144 * current.cacheRead / total),
-    cacheWrite: Math.round(144 * current.cacheCreate / total),
-    input: Math.round(144 * current.input / total),
+    cacheRead: Math.round(144 * share(current.cacheRead, total)),
+    cacheWrite: Math.round(144 * share(current.cacheCreate, total)),
+    input: Math.round(144 * share(current.input, total)),
   }
   const dots = []
   for (let index = 0; index < 144; index += 1) {
@@ -1667,8 +1677,8 @@ function renderConcentration(projects) {
   const total = projects.totalCost
   const top = rows.slice(0, 3)
   const styles = top.map((row) => styleForFamily(row.family))
-  const shares = top.map((project) => total ? project.cost / total : 0)
-  const concentration = shares.reduce((value, share) => value + share, 0)
+  const shares = top.map((project) => share(project.cost, total))
+  const concentration = sum(shares, (value) => value)
   $('.ring-label b').textContent = fmt.pct(concentration)
   $('.ring-label span:first-child').textContent = `Top ${top.length}`
   $('.ring-label span:last-child').textContent = 'of spend'
@@ -2074,7 +2084,7 @@ function renderTopology(sessions, projectSummary) {
     const value = family === 'Other'
       ? sum(familyRows.filter((row) => !visible.has(row.key)), (row) => row.value)
       : familyRows.find((row) => row.key === family)?.value || 0
-    return `<td>${fmt.pct(value / Math.max(1, grandTotal))}</td>`
+    return `<td>${fmt.pct(share(value, grandTotal))}</td>`
   }).join('')
   $('#projectTopology').innerHTML = `<table class="topology-table"><thead><tr><th>Project × model</th>${head}<th>Value</th></tr></thead><tbody>${body}</tbody><tfoot><tr><th>Model share</th>${foot}<td>${fmt.usd(grandTotal)}</td></tr></tfoot></table>`
 }
