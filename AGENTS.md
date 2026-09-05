@@ -108,7 +108,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - Baked pricing tables are authoritative. The remote pricing feed only prices models they miss, its refresh is best-effort and never blocks or fails capture, and the active snapshot is pinned into transcript fingerprints so repricing stays deterministic.
 - A pricing miss, not the clock, is what says the feed snapshot is incomplete. Capture asks for a refresh on that evidence, bounded by the feed's attempt backoff, and reads the transcript again when the snapshot changed, because a record's cost and the fingerprint pinning it must come from one read.
 - Claude subagent usage includes recursively nested workflow transcripts.
-- Copilot usage comes from the persisted `session.shutdown.modelMetrics` aggregate; incomplete sessions without shutdown are not capture candidates.
+- Copilot usage comes from the persisted `session.shutdown.modelMetrics` aggregate; incomplete sessions without shutdown are not capture candidates. Discovery decides that from a bounded tail rather than a full parse, since the aggregate is the last record written: a shutdown outside the tail is not a completed session.
 - opencode records input excluding cache reads and output excluding reasoning; fold reasoning into output before pricing. Its own per-message `cost` prices only what the baked tables and the feed both miss.
 - `helper.ts`, `detach-shim.ts`, and `hook-log.ts` must remain import-light.
 - The detach shim reads at most the first 128 KB when checking Claude entrypoints.

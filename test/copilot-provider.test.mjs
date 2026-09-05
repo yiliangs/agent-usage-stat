@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CopilotProvider } from "../dist/providers/copilot/provider.js";
+import { normalizeModelId, priceFor } from "../dist/providers/copilot/pricing.js";
 import { detectProvider } from "../dist/providers/registry.js";
 
 test("Copilot shutdown usage becomes one normalized provider session", async () => {
@@ -154,6 +156,24 @@ test("Copilot uses native per-model billed AI units when Fast mode keeps the sam
   }
 });
 
+test("Copilot prices both dotted Claude id orderings", () => {
+  // The version-first shape is the one the normalizer used to pass through
+  // untouched (#123): the family-first rule needs a letter after `claude-`,
+  // so `claude-3.5-sonnet` never reached the table keyed `claude-3-5-sonnet`
+  // and the session recorded its tokens at zero cost.
+  const canonical = {
+    "claude-3.5-sonnet": "claude-3-5-sonnet",
+    "claude-3.7-sonnet": "claude-3-7-sonnet",
+    "claude-3.5-haiku": "claude-3-5-haiku",
+    "claude-sonnet-4.5": "claude-sonnet-4-5",
+  };
+
+  for (const [raw, expected] of Object.entries(canonical)) {
+    assert.equal(normalizeModelId(raw), expected);
+    assert.ok(priceFor(raw), `${raw} misses the pricing table`);
+  }
+});
+
 test("Copilot returns unknown pricing models in the same immutable snapshot", async () => {
   const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-copilot-unknown-"));
   const sessionId = "99999999-9999-4999-8999-999999999999";
@@ -187,4 +207,58 @@ test("Copilot returns unknown pricing models in the same immutable snapshot", as
   } finally {
     await rm(home, { recursive: true, force: true });
   }
+});
+
+test("Copilot discovery decides completion from the transcript tail", async () => {
+  // Discovery used to parse every historical transcript in full just to test
+  // for a shutdown record (#104), and sync runs on every launch. Copilot
+  // writes the shutdown aggregate as the last record, so the last 64 KB is
+  // where a completed session declares itself: a shutdown buried further back
+  // than that, behind later events, is not one.
+  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-copilot-tail-"));
+  const event = (type, data) => JSON.stringify({ type, data });
+  const start = (sessionId) => event("session.start", { sessionId });
+  const shutdown = event("session.shutdown", {
+    modelMetrics: {},
+    currentModel: "gpt-5.4-mini",
+  });
+  // Comfortably more than the 64 KB tail, so the head of each file is out of
+  // reach of a bounded read.
+  const filler = Array.from({ length: 80 }, (_, index) =>
+    event("assistant.message", { messageId: `filler-${index}`, body: "x".repeat(1024) }),
+  );
+
+  const write = async (sessionId, lines) => {
+    const sessionDir = join(home, "session-state", sessionId);
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "events.jsonl"), lines.join("\n") + "\n");
+  };
+
+  try {
+    await write("shutdown-in-tail", [start("shutdown-in-tail"), ...filler, shutdown]);
+    await write("no-shutdown", [start("no-shutdown"), ...filler]);
+    await write("shutdown-in-head", [start("shutdown-in-head"), shutdown, ...filler]);
+
+    const found = await new CopilotProvider(home).findAllSessions();
+
+    assert.deepEqual(
+      found.map((session) => session.sessionId).sort(),
+      ["shutdown-in-tail"],
+    );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("Copilot discovery never parses a whole transcript", () => {
+  // The perf claim behind #104 is structural, not measured by a test: the fix
+  // holds only while discovery reads the bounded tail instead of the full
+  // event list. Reintroducing the full read is how it regresses.
+  const source = readFileSync(
+    join(process.cwd(), "src", "providers", "copilot", "session-finder.ts"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(source, /readCopilotEvents/);
+  assert.match(source, /hasShutdownRecord/);
 });
