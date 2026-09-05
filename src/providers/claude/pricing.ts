@@ -9,9 +9,13 @@
  * Cache write here is the 5-minute TTL rate (1.25× input). The transcript
  * JSONL reports cache_creation_input_tokens as a single field with no TTL
  * distinction, so 1-hour cache writes (2× input) get priced as 5-minute.
- * The discrepancy is bounded — a session that exclusively uses 1h caching
- * would underbill by up to ~12% of the cache-write cost (typically <2% of
- * total session cost).
+ * Charging 1.25× where 2× is owed leaves 0.75× unbilled, so every 1-hour
+ * write is short by 37.5% of its true cost. Nothing in the transcript says
+ * which writes took the 1-hour TTL, so the session-level effect is a worst
+ * case rather than a typical one, and it scales with the cache-write share
+ * of the session. In the session above, cache writes are $0.831 of the
+ * $1.960 recorded, 42% of it; had every one of them been 1-hour the true
+ * cost would be $2.459, leaving the record 20% short.
  *
  * Claude Code can also route requests to GPT models. Those IDs reuse the
  * canonical OpenAI table under providers/codex so the same model never drifts
