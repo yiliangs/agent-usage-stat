@@ -1489,13 +1489,6 @@ function captureMonitorPresentation(monitor, provider = null) {
   }
 }
 
-function monitorTime(value) {
-  if (!value) return ' at an unknown time'
-  const parsed = Date.parse(value)
-  if (!Number.isFinite(parsed)) return ' at an unknown time'
-  return ` ${fmt.dateYear(new Date(parsed))} / ${clockTime(parsed)}`
-}
-
 /** A timestamp said the way someone reads it: recent by keyword, older by date. */
 function keywordTime(value) {
   const parsed = Date.parse(value || '')
