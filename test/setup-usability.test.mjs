@@ -110,6 +110,37 @@ test("standalone Codex hooks use the PowerShell command on Windows", async () =>
   }
 });
 
+test("the Codex hooks backup keeps the state from before the first install", async () => {
+  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-codex-backup-"));
+  const hooksPath = join(home, ".codex", "hooks.json");
+  await mkdir(join(home, ".codex"), { recursive: true });
+
+  const pristine = JSON.stringify(
+    { hooks: { Notification: [{ hooks: [{ type: "command", command: "own-hook" }] }] } },
+    null,
+    2,
+  );
+
+  try {
+    await writeFile(hooksPath, pristine, "utf8");
+    await installCodexHooks(hooksPath);
+    assert.equal(await readFile(`${hooksPath}.backup`, "utf8"), pristine);
+
+    const edited = JSON.parse(await readFile(hooksPath, "utf8"));
+    edited.hooks.Notification[0].hooks[0].command = "changed-hook";
+    await writeFile(hooksPath, JSON.stringify(edited, null, 2), "utf8");
+    await installCodexHooks(hooksPath);
+
+    assert.equal(
+      await readFile(`${hooksPath}.backup`, "utf8"),
+      pristine,
+      "the second install does not overwrite the pre-install copy",
+    );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test(
   "setup asks for no provider and reuses the chosen folder",
   { skip: !["win32", "darwin"].includes(process.platform) },

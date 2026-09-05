@@ -263,3 +263,37 @@ test("the opencode plugin round-trips and keeps its runtime contract", async () 
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test("the Claude settings backup keeps the state from before the first install", async () => {
+  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-claude-backup-"));
+  const settingsPath = join(home, "claude", "settings.json");
+  await mkdir(join(home, "claude"), { recursive: true });
+
+  // Settings we never wrote and cannot reconstruct: permissions, MCP servers,
+  // a statusline. The backup is the only copy if an install goes wrong (#114).
+  const pristine = JSON.stringify(
+    { statusLine: { type: "command", command: "own-statusline" } },
+    null,
+    2,
+  );
+
+  try {
+    await writeFile(settingsPath, pristine, "utf8");
+    await installClaudeHook(settingsPath);
+    assert.equal(await readFile(`${settingsPath}.backup`, "utf8"), pristine);
+
+    // The user edits their settings, then setup runs a second time.
+    const edited = JSON.parse(await readFile(settingsPath, "utf8"));
+    edited.statusLine.command = "changed-statusline";
+    await writeFile(settingsPath, JSON.stringify(edited, null, 2), "utf8");
+    await installClaudeHook(settingsPath);
+
+    assert.equal(
+      await readFile(`${settingsPath}.backup`, "utf8"),
+      pristine,
+      "the second install does not overwrite the pre-install copy",
+    );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
