@@ -1,13 +1,13 @@
 import { mkdirSync } from "fs";
 import { writeFile, readFile, open, stat, unlink } from "fs/promises";
-import { join } from "path";
+import { basename, dirname } from "path";
 import { hostname } from "os";
 import type { SessionUsage } from "../types/session.js";
 import type { ParsedTranscript } from "../types/transcript.js";
 import { vendorForModel } from "./model-vendor.js";
 import { projectNameForCwd } from "./project-name.js";
 import {
-  LOGBOOK_SHARD_DIR,
+  shardPathFor,
   type LogbookModelRecord,
   type LogbookRecord,
 } from "./usage-ledger.js";
@@ -37,15 +37,16 @@ export class LogbookWriter {
    * loss stayed invisible. The caller logs the outcome.
    */
   async append(root: string, data: UsageRecordData): Promise<string> {
-    const dir = join(root, LOGBOOK_SHARD_DIR);
-    mkdirSync(dir, { recursive: true });
-
     let record = this.buildRecord(data);
-    const base =
+    // A record always carries the session id its provider reported, so the key
+    // here is the one sync fingerprints against. The slug-and-time fallback
+    // covers only a record with no id at all, which no provider produces.
+    const path = shardPathFor(
+      root,
       record.session_id ||
-      `${record.session_slug || "session"}-${record.end_time}`;
-    const name = base.replace(/[^A-Za-z0-9._-]/g, "_");
-    const path = join(dir, `${name}.json`);
+        `${record.session_slug || "session"}-${record.end_time}`,
+    );
+    mkdirSync(dirname(path), { recursive: true });
 
     return this.withShardLock(path, async () => {
       record = await this.preserveRecordedUsage(path, record);
@@ -56,7 +57,7 @@ export class LogbookWriter {
       // is a real red flag worth surfacing rather than trusting the write blind.
       const back = JSON.parse(await readFile(path, "utf-8")) as LogbookRecord;
       if (back.session_id !== record.session_id) {
-        throw new Error(`shard verify mismatch for ${name}.json`);
+        throw new Error(`shard verify mismatch for ${basename(path)}`);
       }
       return path;
     });

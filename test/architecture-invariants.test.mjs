@@ -121,6 +121,21 @@ test("the logbook shard directory name has exactly one owner", () => {
   assert.deepEqual(owners, [join("src", "core", "usage-ledger.ts")]);
 });
 
+test("the logbook shard filename has exactly one owner", () => {
+  // Naming a file inside the shard directory is `shardPathFor`'s job alone,
+  // because the name is the session id with every character a filename cannot
+  // hold replaced. Sync spelled that path itself without the substitution, so
+  // an id carrying `:` or `/` made its existence check false forever and every
+  // run recomputed the session (#87). Appending a segment to the directory
+  // constant is how that second spelling comes back.
+  const namesAFile = /\b(?:join|resolve)\([^()]*LOGBOOK_SHARD_DIR\s*,/;
+  const owners = sourceFiles()
+    .filter((path) => namesAFile.test(readCode(path)))
+    .map((path) => relative(root, path));
+
+  assert.deepEqual(owners, [join("src", "core", "usage-ledger.ts")]);
+});
+
 test("project attribution has exactly one owner", () => {
   // The project a session belongs to used to be the last segment of its
   // working directory, derived once per provider. Four copies of that rule
