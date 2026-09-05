@@ -201,7 +201,41 @@ async function start(): Promise<void> {
     return;
   }
 
+  await warnAboutUnreadableConfig();
   await openWindowOnce();
+}
+
+/**
+ * Say out loud that the settings file could not be read.
+ *
+ * `resolveUsageRootFromDisk` deliberately falls through to detection and the
+ * platform default rather than failing, which keeps captures landing
+ * somewhere. Doing that silently is the damage #126 reports: captures write to
+ * the fallback root and the dashboard reads the same one, so nothing looks
+ * broken while the ledger folder the user chose quietly stops filling. This
+ * runs before the window opens, ahead of the first-run prompt that would
+ * otherwise offer the fallback root as the one to keep.
+ */
+async function warnAboutUnreadableConfig(): Promise<void> {
+  const { configFault, root } = resolveUsageRootFromDisk();
+  if (!configFault) return;
+  traceStartup("config-unreadable");
+  // Loading is what puts the unreadable bytes aside, ahead of the next save
+  // that would replace the file with defaults, so the copy named below is
+  // already there by the time this dialog names it.
+  await configManager.loadConfig();
+  await notifyWithDialog({
+    tone: "warning",
+    title: "Agent Usage Stat Settings",
+    message: "Your settings file could not be read, so the usage ledger fell back to its default location.",
+    detail: [
+      `Settings file: ${configFault.path}`,
+      `Reason: ${configFault.reason}`,
+      `Now reading and writing: ${root}`,
+      `A copy of the unreadable file is kept at: ${configManager.getPreservedConfigPath()}`,
+      "Choose the usage data folder again in Settings to point at your own ledger.",
+    ].join("\n"),
+  });
 }
 
 async function openApplicationWindow(): Promise<void> {

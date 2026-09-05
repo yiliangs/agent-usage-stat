@@ -1,7 +1,7 @@
 import { readFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
-import { writeJsonAtomic } from "../utils/atomic-file.js";
+import { backupOnce, writeJsonAtomic } from "../utils/atomic-file.js";
 import { configFilePath } from "../utils/paths.js";
 import type { AppConfig } from "../types/config.js";
 import { DEFAULT_CONFIG } from "../types/config.js";
@@ -45,8 +45,37 @@ export class ConfigManager {
       // Merge with defaults to ensure all fields exist
       return { ...DEFAULT_CONFIG, ...parsed };
     } catch (error) {
-      console.warn("Failed to parse config file, using defaults");
+      await this.preserveUnreadableConfig();
+      console.warn(
+        `Failed to parse config file, using defaults. A copy of it is kept at ${this.getPreservedConfigPath()}`,
+      );
       return DEFAULT_CONFIG;
+    }
+  }
+
+  /**
+   * Keep the unreadable config before defaults take its place.
+   *
+   * A config that will not parse still holds the user's `dataRoot` and every
+   * provider root in whatever bytes survived. Returning defaults and letting
+   * the next `saveConfig` replace the file destroys them for good (#126), and
+   * the ledger the user chose is then unrecoverable rather than merely
+   * unreadable.
+   *
+   * `backupOnce` keeps the first copy and never overwrites it: a second run
+   * would only copy the defaults-shaped file that already replaced the
+   * original. Preserving is best effort, because whatever stopped the read can
+   * equally stop the copy, and defaults must still load either way.
+   */
+  private async preserveUnreadableConfig(): Promise<void> {
+    try {
+      await backupOnce(this.configPath, this.getPreservedConfigPath());
+    } catch (error) {
+      console.warn(
+        `Could not preserve the unreadable config file: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -85,5 +114,10 @@ export class ConfigManager {
    */
   getConfigPath(): string {
     return this.configPath;
+  }
+
+  /** Where an unreadable config is kept, named here and nowhere else. */
+  getPreservedConfigPath(): string {
+    return `${this.configPath}.corrupt`;
   }
 }

@@ -20,9 +20,22 @@ const SHARED_DIR_NAME = "agent-usage-stat";
 
 export type UsageRootSource = "config" | "detected" | "default";
 
+/** A config file that exists but could not be read or parsed. */
+export interface UsageRootConfigFault {
+  path: string;
+  reason: string;
+}
+
 export interface ResolvedUsageRoot {
   root: string;
   source: UsageRootSource;
+  /**
+   * Present only when a config file is there and unreadable. Resolution still
+   * falls through to detection and the default, so captures keep landing
+   * somewhere; this is what lets a caller say that the configured ledger was
+   * abandoned rather than chosen.
+   */
+  configFault?: UsageRootConfigFault;
 }
 
 /**
@@ -83,14 +96,35 @@ export function resolveUsageRoot(
 export function resolveUsageRootFromDisk(
   runtime: UsageRootRuntime = {},
 ): ResolvedUsageRoot {
+  const path = runtime.configPath ?? configFilePath();
   let config: { dataRoot?: string } = {};
+  let configFault: UsageRootConfigFault | undefined;
+
   try {
-    const path = runtime.configPath ?? configFilePath();
-    config = JSON.parse(readFileSync(path, "utf-8"));
-  } catch {
-    // Missing or invalid config falls through to detection and local default.
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf-8"));
+    if (parsed === null || typeof parsed !== "object") {
+      throw new Error("the config file does not hold a JSON object");
+    }
+    config = parsed as { dataRoot?: string };
+  } catch (error) {
+    // No config at all is the ordinary state before the first run, and it
+    // resolves silently. Anything else means a config is there and the root it
+    // names could not be read: a truncated write, a permission change, a
+    // half-synced file. Resolution still falls through to detection and the
+    // local default so captures keep landing somewhere, but silence there is
+    // what #126 reports — the configured ledger is abandoned, nothing looks
+    // broken, and the folder the user chose simply stops filling. The fault
+    // rides along so the one caller that can say so does.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      configFault = {
+        path,
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
-  return resolveUsageRoot(config, runtime);
+
+  const resolved = resolveUsageRoot(config, runtime);
+  return configFault ? { ...resolved, configFault } : resolved;
 }
 
 export function detectSharedUsageRoot(
