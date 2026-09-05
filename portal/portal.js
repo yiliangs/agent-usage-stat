@@ -1218,9 +1218,21 @@ function renderPatternTerritories(pattern) {
   const [work, evening] = series
   // A segment with no room for its name is only a stripe until the caption
   // says whose it is, so the caption names exactly the ones the bar could not.
+  //
+  // How many that is depends on where the reader is standing, since the fold
+  // is cut on local hours, so the note is bounded for the case where the bar
+  // names none of them. The sentence ahead of it is 128 characters with every
+  // percentage at its widest form, `100%`. The note opens with 18 and closes
+  // with 1; the four short names with a widest percentage each come to 56, and
+  // the three commas between them to 6. That is 209 against the caption's
+  // 210-character budget. A real bar never reaches it: four segments each
+  // under 92px cannot fill a bar 368px or wider, and the narrowest window the
+  // shell opens draws this one at 453. Three unnamed is the true worst case,
+  // at 195, and the ranges are dropped to reach it: each is in its segment's
+  // tooltip, and the work-hours range is in the first sentence above.
   const unnamed = series.filter((territory) => territory.share * width < 92)
   const unnamedNote = unnamed.length
-    ? ` Too narrow to name in the bar: ${unnamed.map((territory) => `${territory.label.toLowerCase()} (${territory.range}) at ${fmt.pct(territory.share)}`).join(', ')}.`
+    ? ` Unnamed stripes: ${unnamed.map((territory) => `${territory.short} ${fmt.pct(territory.share)}`).join(', ')}.`
     : ''
   $('#patternSplitCaption').textContent = `${fmt.pct(1 - work.share)} of recorded volume ran outside MON–FRI 09–18H, which is ${fmt.pct(1 - work.timeShare)} of the week's hours. Weekday evenings: ${fmt.pct(evening.share)}; work hours: ${fmt.pct(work.share)}.${unnamedNote}`
 }

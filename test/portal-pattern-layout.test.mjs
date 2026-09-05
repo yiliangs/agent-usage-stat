@@ -42,15 +42,31 @@ const CAPTION_BUDGETS = {
   "#patternProjectCaption": 210,
 };
 
+/**
+ * The zones the budget guard reads the captions in.
+ *
+ * A caption states shares of the folded week, and the fold is cut on local
+ * hours, so where the reader stands decides how the volume lands across the
+ * territories, which segments of the split bar are too narrow to carry their
+ * own label, and therefore how much the caption has to say. The machine's own
+ * zone is one sample of that, never the worst: the split caption fitted in
+ * Chicago at 198 characters while rendering 237 in UTC, which is the zone
+ * every release runner reports, and 239 in Tokyo. `null` is the machine's own
+ * zone, and the two named ones keep the release gate and the local run reading
+ * the same page.
+ */
+const CAPTION_ZONES = [null, "UTC", "Asia/Tokyo"];
+
 const chrome = findChrome();
 const skip = chrome ? false : "no Chrome binary found; set AGENT_USAGE_STAT_CHROME to run this guard";
 
-async function probePattern(width) {
+async function probePattern(width, timeZone = null) {
   const [result] = await runPortalProbe({
     portalDir: join(process.cwd(), "dist", "portal"),
     data: buildLayoutFixture(),
     probe: new URL("../scripts/portal-pattern-probe.js", import.meta.url),
     widths: [width],
+    timeZone,
   });
   assert.equal(result.error, undefined, result.error);
   return result;
@@ -72,19 +88,22 @@ test("a caption filled to its budget does not grow the card it sits in", { skip 
 });
 
 test("every caption the renderer emits stays inside its budget", { skip }, async () => {
-  const result = await probePattern(1440);
+  for (const timeZone of CAPTION_ZONES) {
+    const zone = timeZone ?? "the machine's own zone";
+    const result = await probePattern(1440, timeZone);
 
-  for (const reservation of result.reservations) {
+    for (const reservation of result.reservations) {
+      assert.ok(
+        reservation.rendered <= reservation.budget,
+        `in ${zone}, ${reservation.selector} rendered ${reservation.rendered} characters against a budget of ${reservation.budget}`,
+      );
+    }
+    const paged = Math.max(...result.pages.map((page) => page.captionText));
     assert.ok(
-      reservation.rendered <= reservation.budget,
-      `${reservation.selector} rendered ${reservation.rendered} characters against a budget of ${reservation.budget}`,
+      paged <= CAPTION_BUDGETS["#patternHeatCaption"],
+      `in ${zone}, paging produced a ${paged}-character caption against a budget of ${CAPTION_BUDGETS["#patternHeatCaption"]}`,
     );
   }
-  const paged = Math.max(...result.pages.map((page) => page.captionText));
-  assert.ok(
-    paged <= CAPTION_BUDGETS["#patternHeatCaption"],
-    `paging produced a ${paged}-character caption against a budget of ${CAPTION_BUDGETS["#patternHeatCaption"]}`,
-  );
 });
 
 test("paging the heatmap through the weeks moves nothing below it", { skip }, async () => {
