@@ -1,12 +1,11 @@
 import { existsSync } from "fs";
 import { readFile } from "fs/promises";
-import { join } from "path";
 import ora from "ora";
 import { ConfigManager } from "../core/config-manager.js";
 import { LogbookWriter } from "../core/logbook-writer.js";
 import { initializePricingFeed } from "../core/pricing-feed.js";
 import {
-  LOGBOOK_SHARD_DIR,
+  shardPathFor,
   type LogbookRecord,
 } from "../core/usage-ledger.js";
 import { allProviders } from "../providers/registry.js";
@@ -67,11 +66,7 @@ export class SyncCommand {
         PREFLIGHT_CONCURRENCY,
         async (found): Promise<SyncCandidate | SyncPreflightFailure | null> => {
           try {
-            const shardPath = join(
-              root,
-              LOGBOOK_SHARD_DIR,
-              `${found.sessionId}.json`,
-            );
+            const shardPath = shardPathFor(root, found.sessionId);
             const sourceFingerprint = await provider.fingerprintSession(found);
             if (
               !(await this.needsSync(
