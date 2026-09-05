@@ -120,6 +120,49 @@ test("local provider inspectors recognize their installed hook files", async () 
   }
 });
 
+test("a foreign hook group without a hooks array survives install and remove", async () => {
+  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-hookless-group-"));
+  const roots = {
+    claude: join(home, "claude"),
+    codex: join(home, "codex"),
+  };
+  const [claude, codex] = createAgentIntegrations(
+    home,
+    () => false,
+    process.env,
+    { providerDataRoots: roots },
+  ).filter((integration) => integration.provider in roots);
+  // A group with no hooks array is nothing of ours. Reading one used to throw
+  // out of install and remove and take the hosts behind it down with the throw.
+  const foreign = { matcher: "*" };
+  const fixtures = [
+    [claude, join(roots.claude, "settings.json"), { hooks: { Stop: [foreign] } }],
+    [codex, join(roots.codex, "hooks.json"), { hooks: { Stop: [foreign] } }],
+  ];
+
+  try {
+    for (const [integration, path, contents] of fixtures) {
+      await mkdir(join(path, ".."), { recursive: true });
+      await writeFile(path, JSON.stringify(contents, null, 2), "utf8");
+
+      await integration.install();
+      assert.equal(await integration.inspect(), "configured");
+      assert.deepEqual(
+        JSON.parse(await readFile(path, "utf8")).hooks.Stop[0],
+        foreign,
+      );
+
+      await integration.remove();
+      assert.deepEqual(
+        JSON.parse(await readFile(path, "utf8")).hooks.Stop,
+        [foreign],
+      );
+    }
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("settings joins provider collaborators by identity instead of array position", async () => {
   const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-settings-order-"));
   const providerNames = ["claude", "codex", "copilot", "opencode"];
