@@ -19,6 +19,7 @@ import {
   desktopSetupStatePath,
   installedHelperPath,
 } from "../core/application-paths.js";
+import { changeDataRoot } from "./data-root-change.js";
 import { HelperRuntime } from "./helper-runtime.js";
 import { LogbookWatcher } from "./logbook-watcher.js";
 import {
@@ -490,12 +491,22 @@ async function chooseDataFolder(reload = true): Promise<boolean> {
       await mergeUsageLedger(current, selected);
     }
 
-    await helperRuntime.configureDataRoot(selected);
-    await helperRuntime.resetSetup();
-    if (!(await ensureDesktopSetup(notifyWithDialog))) return false;
-    await portalRuntime.refresh();
-    await logbookWatcher.start(resolveUsageRootFromDisk().root);
-    if (reload) await mainWindow?.webContents.reload();
+    // The ledger move is not conditional on the hooks: a folder the agent
+    // configs cannot be reconnected from is still a folder the ledger now
+    // lives in, and ensureDesktopSetup says so in its own dialog. Its result
+    // is not read here because the move itself succeeded either way.
+    await changeDataRoot(selected, {
+      configure: (root) => helperRuntime.configureDataRoot(root),
+      resetSetup: () => helperRuntime.resetSetup(),
+      refresh: async () => {
+        await portalRuntime.refresh();
+      },
+      watch: (root) => logbookWatcher.start(root),
+      reload: async () => {
+        if (reload) await mainWindow?.webContents.reload();
+      },
+      ensureSetup: () => ensureDesktopSetup(notifyWithDialog),
+    });
 
     if (hasExistingHistory && !keepOriginal) {
       await removeUsageLedger(current);
