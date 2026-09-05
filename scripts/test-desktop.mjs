@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import {
   mkdir,
   mkdtemp,
@@ -71,6 +71,17 @@ const copilotHome = join(home, ".copilot");
 const opencodeData = join(home, "xdg-data");
 const opencodeConfig = join(home, "xdg-config");
 const opencodeHome = join(opencodeData, "opencode");
+// The stable installed helper: the one executable every host hook has to
+// spawn, and the only one that survives the update which deletes the versioned
+// application directory the packaged app itself runs from.
+const installedHelper = join(
+  home,
+  ".agent-usage-stat",
+  "bin",
+  process.platform === "win32"
+    ? "agent-usage-stat-helper.exe"
+    : "agent-usage-stat-helper",
+);
 const smokeOutput = join(home, "desktop-smoke.json");
 const startupTrace = join(home, "desktop-startup.log");
 const cachedStartupTrace = join(home, "desktop-cached-startup.log");
@@ -196,9 +207,6 @@ try {
     assert.equal(smoke.statusArea.installed, false);
   }
 
-  const installedHelper = process.platform === "win32"
-    ? join(home, ".agent-usage-stat", "bin", "agent-usage-stat-helper.exe")
-    : join(home, ".agent-usage-stat", "bin", "agent-usage-stat-helper");
   assert.equal(existsSync(installedHelper), true);
   const setupState = JSON.parse(await readFile(
     join(home, ".agent-usage-stat", "desktop-setup.json"),
@@ -221,21 +229,21 @@ try {
     join(copilotHome, "hooks", "agent-usage-stat.json"),
     "utf8",
   );
-  assert.match(claudeSettings, /agent-usage-stat-helper/);
-  const claudeHookConfig = JSON.parse(claudeSettings);
-  assert.equal(claudeHookConfig.hooks.Stop.length, 1);
-  assert.equal(claudeHookConfig.hooks.SessionEnd.length, 1);
-  assert.match(codexHooks, /agent-usage-stat-helper/);
-  assert.doesNotMatch(codexHooks, /node .*agent-usage-stat-helper/);
-  assert.match(copilotHooks, /agent-usage-stat-helper/);
-  assert.doesNotMatch(copilotHooks, /node .*agent-usage-stat-helper/);
   // The opencode plugin lands in the configuration directory, not the data
   // directory the other three use for both purposes.
   const opencodePlugin = await readFile(
     join(opencodeConfig, "opencode", "plugin", "agent-usage-stat.js"),
     "utf8",
   );
-  assert.match(opencodePlugin, /agent-usage-stat-helper/);
+  assertHookTargetsInstalledHelper("Claude settings.json", claudeSettings);
+  assertHookTargetsInstalledHelper("Codex hooks.json", codexHooks);
+  assertHookTargetsInstalledHelper("Copilot agent-usage-stat.json", copilotHooks);
+  assertHookTargetsInstalledHelper("opencode agent-usage-stat.js", opencodePlugin);
+  const claudeHookConfig = JSON.parse(claudeSettings);
+  assert.equal(claudeHookConfig.hooks.Stop.length, 1);
+  assert.equal(claudeHookConfig.hooks.SessionEnd.length, 1);
+  assert.doesNotMatch(codexHooks, /node .*agent-usage-stat-helper/);
+  assert.doesNotMatch(copilotHooks, /node .*agent-usage-stat-helper/);
   assert.doesNotMatch(opencodePlugin, /"node"/);
 
   const cachedTrace = await launchUntilTrace(
@@ -327,6 +335,39 @@ function launchUntilTrace(
       }
     });
   });
+}
+
+/**
+ * A host hook has to spawn the installed helper by its stable path. Pointing
+ * it into the packaged application instead, which is what `process.resourcesPath`
+ * and any hook written from the Electron main process rather than the spawned
+ * helper resolve to, still reads as `agent-usage-stat-helper` and still works
+ * on the machine that wrote it. It breaks on the next update, when the old
+ * `app-<version>` directory is deleted and capture stops silently, so a
+ * substring match on the helper's name is not enough (#117).
+ */
+function assertHookTargetsInstalledHelper(label, content) {
+  // Every writer renders the path through JSON.stringify: the three JSON hook
+  // files serialize the command string, and the opencode plugin embeds
+  // `const COMMAND`. On Windows that doubles each backslash, so the escaped
+  // form is what lands on disk. macOS resolves the helper's own execPath
+  // through /private, which names the same file as the fixture's /var path.
+  const written = [...new Set([installedHelper, realpathSync(installedHelper)])]
+    .map((path) => JSON.stringify(path).slice(1, -1));
+  assert.ok(
+    written.some((path) => content.includes(path)),
+    `${label} does not spawn the installed helper ${installedHelper}:\n${content}`,
+  );
+  assert.doesNotMatch(
+    content,
+    /app-\d/,
+    `${label} spawns a versioned application directory`,
+  );
+  assert.doesNotMatch(
+    content,
+    /[\\/]resources[\\/]/i,
+    `${label} spawns a path inside a packaged resources directory`,
+  );
 }
 
 function traceTime(trace, event) {
