@@ -24,18 +24,29 @@ function snapshotVersion(): string {
 }
 
 /**
- * Fingerprint one session tree without reading a single message body.
+ * Fingerprint the session tree those inputs were read from.
  *
  * The other providers hash a file tail because their transcript is a file.
  * opencode's transcript is a set of rows, so the equivalent cheap summary is
  * the tree's recorded token columns plus its message count and timestamp
  * aggregate — every one of them indexed or already on the session row.
+ *
+ * Hashing is separate from reading because a read that also produces usage
+ * already holds the inputs: `readSessionRecords` carries them out of the same
+ * snapshot, and hashing them there is what keeps a shard's fingerprint
+ * describing the tree its cost came from.
  */
+export function fingerprintFromInputs(inputs: string): string {
+  const hash = createHash("sha256").update(inputs).digest("hex");
+  return `${USAGE_ALGORITHM_VERSION}:${snapshotVersion()}:${hash}`;
+}
+
+/** Fingerprint one session tree without reading a single message body. */
 export async function fingerprintSessionTree(
   databasePath: string,
   sessionId: string,
 ): Promise<string> {
-  const inputs = await readFingerprintInputs(databasePath, sessionId);
-  const hash = createHash("sha256").update(inputs).digest("hex");
-  return `${USAGE_ALGORITHM_VERSION}:${snapshotVersion()}:${hash}`;
+  return fingerprintFromInputs(
+    await readFingerprintInputs(databasePath, sessionId),
+  );
 }

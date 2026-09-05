@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import { OpencodeProvider } from "../dist/providers/opencode/provider.js";
-import { resolveDatabasePath } from "../dist/providers/opencode/database.js";
+import { openDatabase, resolveDatabasePath } from "../dist/providers/opencode/database.js";
+import { readOpencodeSnapshot } from "../dist/providers/opencode/session-reader.js";
+import { fingerprintSessionTree } from "../dist/providers/opencode/transcript-fingerprint.js";
 import { detectProvider } from "../dist/providers/registry.js";
 import {
   assistantMessage,
@@ -215,6 +218,124 @@ test("the fingerprint is stable across reads and moves when usage does", async (
         ],
       },
     );
+  });
+});
+
+/**
+ * A second connection standing in for opencode still writing the session.
+ *
+ * opencode keeps a session writable indefinitely, so a message row landing
+ * during a reconciliation read is ordinary behavior rather than a race a test
+ * has to contrive.
+ */
+function liveWriter(databasePath) {
+  const database = new DatabaseSync(databasePath);
+  const insert = database.prepare(
+    "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)",
+  );
+  let written = 0;
+  return {
+    get written() {
+      return written;
+    },
+    write() {
+      const message = assistantMessage({
+        id: `msg_live_${++written}`,
+        modelId: "claude-sonnet-4-5",
+        timeCreated: 1787253600000 + written,
+        input: 1000,
+        output: 1000,
+      });
+      insert.run(
+        message.id,
+        message.session_id,
+        message.time_created,
+        message.time_updated,
+        message.data,
+      );
+    },
+    close() {
+      database.close();
+    },
+  };
+}
+
+/** An opener that drops `write` into the read, at the chosen moment. */
+function interleavingOpener(write, when) {
+  return async (path) => {
+    const database = await openDatabase(path);
+    return {
+      path: database.path,
+      all(sql, ...parameters) {
+        const rows = database.all(sql, ...parameters);
+        if (when === "between queries") write();
+        return rows;
+      },
+      oneRead(read) {
+        return database.oneRead(read);
+      },
+      close() {
+        database.close();
+        if (when === "after the read") write();
+      },
+    };
+  };
+}
+
+test("the fingerprint pins the tree the usage came from, not a later one", async () => {
+  await withDataRoot(async (root) => {
+    const databasePath = join(root, "opencode.db");
+    const atRead = await fingerprintSessionTree(databasePath, SESSION_ID);
+    const writer = liveWriter(databasePath);
+
+    try {
+      const { sessionData, transcriptData } = await readOpencodeSnapshot(
+        databasePath,
+        SESSION_ID,
+        interleavingOpener(() => writer.write(), "after the read"),
+      );
+      assert.equal(writer.written, 1);
+
+      // The usage is the tree as it stood when the read began, so the
+      // fingerprint stored beside it has to describe that same tree. A
+      // fingerprint from a later look at the database would match on the next
+      // sync and the write that landed here would never be reconciled.
+      assert.equal(sessionData.sourceFingerprint, atRead);
+      assert.equal(transcriptData.assistantMessageCount, 2);
+      assert.equal(sessionData.inputTokens, 800);
+      assert.notEqual(
+        await fingerprintSessionTree(databasePath, SESSION_ID),
+        atRead,
+      );
+    } finally {
+      writer.close();
+    }
+  });
+});
+
+test("a write landing mid-read moves neither the usage nor its fingerprint", async () => {
+  await withDataRoot(async (root) => {
+    const databasePath = join(root, "opencode.db");
+    const atRead = await fingerprintSessionTree(databasePath, SESSION_ID);
+    const writer = liveWriter(databasePath);
+
+    try {
+      const { sessionData, transcriptData } = await readOpencodeSnapshot(
+        databasePath,
+        SESSION_ID,
+        interleavingOpener(() => writer.write(), "between queries"),
+      );
+      assert.ok(writer.written >= 2, `only ${writer.written} writes landed`);
+
+      // One open is not one read: outside a transaction SQLite hands every
+      // statement its own snapshot, so the turns and the fingerprint would
+      // come from different trees again.
+      assert.equal(sessionData.sourceFingerprint, atRead);
+      assert.equal(transcriptData.assistantMessageCount, 2);
+      assert.equal(sessionData.inputTokens, 800);
+    } finally {
+      writer.close();
+    }
   });
 });
 

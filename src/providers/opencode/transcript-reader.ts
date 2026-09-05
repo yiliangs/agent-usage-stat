@@ -1,5 +1,5 @@
 import { numberValue, openDatabase, textValue } from "./database.js";
-import type { Row } from "./database.js";
+import type { OpencodeDatabase, OpenOpencodeDatabase, Row } from "./database.js";
 import type {
   OpencodeAssistantMessage,
   OpencodeMessageData,
@@ -61,11 +61,9 @@ export async function listRootSessions(
 }
 
 /**
- * Cheap change detector for one session tree.
- *
- * Every billing input is either a promoted token column or a message body, so
- * the tree's token columns plus the message count and timestamp aggregate move
- * whenever the recorded usage could have moved. No message body is parsed.
+ * Cheap change detector for one session tree, for callers that want nothing
+ * else. A read that also produces usage takes these inputs from
+ * `readSessionRecords` instead, so both describe the same snapshot.
  */
 export async function readFingerprintInputs(
   databasePath: string,
@@ -73,102 +71,132 @@ export async function readFingerprintInputs(
 ): Promise<string> {
   const database = await openDatabase(databasePath);
   try {
-    const [totals] = database.all(
-      `${SESSION_TREE}
-       SELECT
-         count(*) AS sessions,
-         coalesce(sum(session.cost), 0) AS cost,
-         coalesce(sum(session.tokens_input), 0) AS input,
-         coalesce(sum(session.tokens_output), 0) AS output,
-         coalesce(sum(session.tokens_reasoning), 0) AS reasoning,
-         coalesce(sum(session.tokens_cache_read), 0) AS cache_read,
-         coalesce(sum(session.tokens_cache_write), 0) AS cache_write,
-         coalesce(max(session.time_updated), 0) AS updated
-       FROM session WHERE session.id IN (SELECT id FROM tree)`,
-      sessionId,
-    );
-    const [messages] = database.all(
-      `${SESSION_TREE}
-       SELECT
-         count(*) AS messages,
-         coalesce(sum(message.time_updated), 0) AS updated_sum,
-         coalesce(max(message.time_updated), 0) AS updated_max
-       FROM message WHERE message.session_id IN (SELECT id FROM tree)`,
-      sessionId,
-    );
-    return JSON.stringify([
-      numbersOf(totals, [
-        "sessions",
-        "cost",
-        "input",
-        "output",
-        "reasoning",
-        "cache_read",
-        "cache_write",
-        "updated",
-      ]),
-      numbersOf(messages, ["messages", "updated_sum", "updated_max"]),
-    ]);
+    return database.oneRead(() => fingerprintInputsOf(database, sessionId));
   } finally {
     database.close();
   }
 }
 
-/** One consistent read of a session tree: the row, its turns, and its prompt. */
+/**
+ * Every billing input is either a promoted token column or a message body, so
+ * the tree's token columns plus the message count and timestamp aggregate move
+ * whenever the recorded usage could have moved. No message body is parsed.
+ */
+function fingerprintInputsOf(
+  database: OpencodeDatabase,
+  sessionId: string,
+): string {
+  const [totals] = database.all(
+    `${SESSION_TREE}
+     SELECT
+       count(*) AS sessions,
+       coalesce(sum(session.cost), 0) AS cost,
+       coalesce(sum(session.tokens_input), 0) AS input,
+       coalesce(sum(session.tokens_output), 0) AS output,
+       coalesce(sum(session.tokens_reasoning), 0) AS reasoning,
+       coalesce(sum(session.tokens_cache_read), 0) AS cache_read,
+       coalesce(sum(session.tokens_cache_write), 0) AS cache_write,
+       coalesce(max(session.time_updated), 0) AS updated
+     FROM session WHERE session.id IN (SELECT id FROM tree)`,
+    sessionId,
+  );
+  const [messages] = database.all(
+    `${SESSION_TREE}
+     SELECT
+       count(*) AS messages,
+       coalesce(sum(message.time_updated), 0) AS updated_sum,
+       coalesce(max(message.time_updated), 0) AS updated_max
+     FROM message WHERE message.session_id IN (SELECT id FROM tree)`,
+    sessionId,
+  );
+  return JSON.stringify([
+    numbersOf(totals, [
+      "sessions",
+      "cost",
+      "input",
+      "output",
+      "reasoning",
+      "cache_read",
+      "cache_write",
+      "updated",
+    ]),
+    numbersOf(messages, ["messages", "updated_sum", "updated_max"]),
+  ]);
+}
+
+/**
+ * One consistent read of a session tree: the row, its turns, its prompt, and
+ * the fingerprint inputs describing exactly that tree.
+ *
+ * The fingerprint travels with the records because a shard's usage and the
+ * fingerprint pinning it have to describe the same tree. Read separately, a
+ * message row landing in between would be fingerprinted but not billed, and
+ * the next sync would compare fingerprints, find them equal, and never come
+ * back for it. `open` exists so a test can interleave that write.
+ */
 export async function readSessionRecords(
   databasePath: string,
   sessionId: string,
+  open: OpenOpencodeDatabase = openDatabase,
 ): Promise<OpencodeSessionRecords> {
-  const database = await openDatabase(databasePath);
+  const database = await open(databasePath);
   try {
-    const [row] = database.all(
-      `SELECT ${SESSION_COLUMNS} FROM session WHERE id = ?`,
-      sessionId,
-    );
-    if (!row) {
-      throw new Error(`opencode session not found: ${sessionId}`);
-    }
-
-    const messages = database.all(
-      `${SESSION_TREE}
-       SELECT message.id, message.session_id, message.data
-       FROM message
-       WHERE message.session_id IN (SELECT id FROM tree)
-       ORDER BY message.time_created, message.id`,
-      sessionId,
-    );
-
-    const assistants: OpencodeAssistantMessage[] = [];
-    let userMessageCount = 0;
-    let firstUserMessageId = "";
-    for (const message of messages) {
-      const data = parseData<OpencodeMessageData>(message.data);
-      if (!data) continue;
-      if (data.role === "user") {
-        userMessageCount++;
-        if (!firstUserMessageId) firstUserMessageId = textValue(message.id);
-        continue;
-      }
-      if (data.role !== "assistant") continue;
-      assistants.push(
-        toAssistantMessage(textValue(message.id), textValue(message.session_id), data),
-      );
-    }
-
-    return {
-      session: toSessionRow(row),
-      assistants,
-      userMessageCount,
-      firstPrompt: firstUserMessageId
-        ? readFirstPromptText(database.all(
-          `SELECT data FROM part WHERE message_id = ? ORDER BY id`,
-          firstUserMessageId,
-        ))
-        : "",
-    };
+    return database.oneRead(() => sessionRecordsOf(database, sessionId));
   } finally {
     database.close();
   }
+}
+
+function sessionRecordsOf(
+  database: OpencodeDatabase,
+  sessionId: string,
+): OpencodeSessionRecords {
+  const [row] = database.all(
+    `SELECT ${SESSION_COLUMNS} FROM session WHERE id = ?`,
+    sessionId,
+  );
+  if (!row) {
+    throw new Error(`opencode session not found: ${sessionId}`);
+  }
+
+  const messages = database.all(
+    `${SESSION_TREE}
+     SELECT message.id, message.session_id, message.data
+     FROM message
+     WHERE message.session_id IN (SELECT id FROM tree)
+     ORDER BY message.time_created, message.id`,
+    sessionId,
+  );
+
+  const assistants: OpencodeAssistantMessage[] = [];
+  let userMessageCount = 0;
+  let firstUserMessageId = "";
+  for (const message of messages) {
+    const data = parseData<OpencodeMessageData>(message.data);
+    if (!data) continue;
+    if (data.role === "user") {
+      userMessageCount++;
+      if (!firstUserMessageId) firstUserMessageId = textValue(message.id);
+      continue;
+    }
+    if (data.role !== "assistant") continue;
+    assistants.push(
+      toAssistantMessage(textValue(message.id), textValue(message.session_id), data),
+    );
+  }
+
+  return {
+    session: toSessionRow(row),
+    assistants,
+    userMessageCount,
+    firstPrompt: firstUserMessageId
+      ? readFirstPromptText(database.all(
+        `SELECT data FROM part WHERE message_id = ? ORDER BY id`,
+        firstUserMessageId,
+      ))
+      : "",
+    fingerprintInputs: fingerprintInputsOf(database, sessionId),
+  };
 }
 
 function toSessionRow(row: Row): OpencodeSessionRow {

@@ -38,6 +38,10 @@ const SESSION_COLUMNS = [
  */
 export function buildOpencodeDatabase(path, { sessions = [], messages = [], parts = [] } = {}) {
   const database = new DatabaseSync(path);
+  // opencode runs its store in WAL, which is what lets a reconciliation read
+  // and a live session write at the same time. A test that interleaves the two
+  // is testing nothing unless the fixture is in the same mode.
+  database.exec("PRAGMA journal_mode = WAL");
   database.exec(SCHEMA);
 
   const insertSession = database.prepare(

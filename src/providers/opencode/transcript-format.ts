@@ -93,4 +93,9 @@ export interface OpencodeSessionRecords {
   assistants: OpencodeAssistantMessage[];
   userMessageCount: number;
   firstPrompt: string;
+  /**
+   * The change-detector summary of the same tree, read in the same snapshot as
+   * the turns above so the fingerprint on a shard describes the usage on it.
+   */
+  fingerprintInputs: string;
 }
