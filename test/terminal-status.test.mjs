@@ -323,6 +323,44 @@ process.exit(7);
   }
 });
 
+test("runner launches the agent uncorrelated when the run directory cannot be created", async () => {
+  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-runless-"));
+  const bin = join(home, "bin");
+  const helper = join(home, "fake-agent.mjs");
+  await writeFile(
+    helper,
+    `process.stdout.write(JSON.stringify({
+  args: process.argv.slice(2),
+  cwd: process.cwd(),
+  correlated: !!process.env.AGENT_USAGE_STAT_RUN_ID
+}));
+process.exit(7);
+`,
+    "utf8",
+  );
+  await createLaunchers(bin, helper, ["claude"]);
+  await mkdir(join(home, ".agent-usage-stat"), { recursive: true });
+  await writeFile(join(home, ".agent-usage-stat", "runs"), "stale", "utf8");
+
+  try {
+    const environment = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      PATH: `${bin}${delimiter}${process.env.PATH || ""}`,
+    };
+    delete environment.AGENT_USAGE_STAT_RUN_ID;
+    const result = await runCli(["run", "claude", "--", "hello"], environment);
+
+    assert.equal(result.code, 7, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout).args, ["hello"]);
+    assert.equal(JSON.parse(result.stdout).correlated, false);
+    assert.doesNotMatch(result.stderr, /\[Agent Usage Stat\]/);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 async function createLaunchers(bin, helper, commands) {
   await import("node:fs/promises").then(({ mkdir }) => mkdir(bin, { recursive: true }));
   for (const command of commands) {

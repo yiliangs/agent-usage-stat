@@ -8,6 +8,7 @@ import {
 } from "../utils/capture-run.js";
 import type {
   AgentCommandName,
+  AgentRun,
   RecordedCaptureResult,
   SettledRun,
 } from "../utils/capture-run.js";
@@ -23,16 +24,25 @@ export class RunCommand {
   async execute(agentValue: string, args: string[]): Promise<number> {
     const agent = this.parseAgent(agentValue);
     await pruneExpiredRuns().catch(() => undefined);
-    const run = await createAgentRun(agent);
+    // The run directory is the terminal feedback channel, not a precondition
+    // for launching. When it cannot be created the agent still runs, without
+    // correlation, and the detach shim falls back to its tmpdir path.
+    const run = await createAgentRun(agent).catch(() => undefined);
     let agentExit: AgentExit;
 
     try {
-      agentExit = await this.launchAgent(agent, args, run.manifest.run_id);
+      agentExit = await this.launchAgent(agent, args, run?.manifest.run_id);
     } catch (error) {
-      await removeAgentRun(run).catch(() => undefined);
+      if (run) await removeAgentRun(run).catch(() => undefined);
       throw error;
     }
 
+    if (run) await this.reportRun(run);
+
+    return this.exitCode(agentExit);
+  }
+
+  private async reportRun(run: AgentRun): Promise<void> {
     try {
       const settled = await waitForAgentRun(run);
       const message = formatRunMessage(settled);
@@ -45,8 +55,6 @@ export class RunCommand {
         "[Agent Usage Stat] Usage recording status could not be verified.\n",
       );
     }
-
-    return this.exitCode(agentExit);
   }
 
   private parseAgent(value: string): AgentCommandName {
@@ -61,15 +69,19 @@ export class RunCommand {
   private launchAgent(
     agent: AgentCommandName,
     args: string[],
-    runId: string,
+    runId: string | undefined,
   ): Promise<AgentExit> {
+    const env = { ...process.env };
+    // Without a run of our own the child must carry no correlation at all. An
+    // inherited id would publish this session's captures into someone else's
+    // run directory.
+    if (runId) env.AGENT_USAGE_STAT_RUN_ID = runId;
+    else delete env.AGENT_USAGE_STAT_RUN_ID;
+
     return new Promise((resolve, reject) => {
       const child = crossSpawn(agent, args, {
         cwd: process.cwd(),
-        env: {
-          ...process.env,
-          AGENT_USAGE_STAT_RUN_ID: runId,
-        },
+        env,
         stdio: "inherit",
         windowsHide: true,
       });
