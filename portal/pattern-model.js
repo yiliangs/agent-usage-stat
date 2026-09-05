@@ -40,12 +40,18 @@ export const PEAK_WINDOW_MAX_HOURS = 8
  * weekdays of nine, six and nine hours, then two whole weekend days. They are
  * what makes the comparison on the view a comparison, since a territory that
  * holds more of the week is expected to hold more of the volume.
+ *
+ * Each carries two names, the way the weekdays do. `label` names a territory
+ * where nothing else has, inside its own segment of the bar and in its
+ * tooltip. `short` names it mid-sentence in a caption that has already set the
+ * weekday frame, where the full name would repeat "weekday" once per clause
+ * and run the sentence past the height its card reserves for it.
  */
 export const TERRITORIES = [
-  { key: 'work', label: 'Weekday work hours', range: 'MON–FRI 09–18H', hours: 45 },
-  { key: 'evening', label: 'Weekday evenings', range: 'MON–FRI 18–24H', hours: 30 },
-  { key: 'early', label: 'Weekday early hours', range: 'MON–FRI 00–09H', hours: 45 },
-  { key: 'weekend', label: 'Weekend', range: 'SAT–SUN', hours: 48 },
+  { key: 'work', label: 'Weekday work hours', short: 'work hours', range: 'MON–FRI 09–18H', hours: 45 },
+  { key: 'evening', label: 'Weekday evenings', short: 'evenings', range: 'MON–FRI 18–24H', hours: 30 },
+  { key: 'early', label: 'Weekday early hours', short: 'early hours', range: 'MON–FRI 00–09H', hours: 45 },
+  { key: 'weekend', label: 'Weekend', short: 'weekend', range: 'SAT–SUN', hours: 48 },
 ]
 
 const OTHER_PROJECTS = 'Other projects'
