@@ -350,8 +350,10 @@ async function createWindow(
     }
     return { action: "deny" };
   });
+  // The startup screen's data: URL is loaded by the main process, which does
+  // not raise will-navigate, so the portal origin is the whole allowance.
   window.webContents.on("will-navigate", (event, url) => {
-    if (url.startsWith(`${PORTAL_ORIGIN}/`) || url.startsWith("data:text/html")) return;
+    if (url.startsWith(`${PORTAL_ORIGIN}/`)) return;
     event.preventDefault();
   });
   if (show) window.once("ready-to-show", () => window.show());
