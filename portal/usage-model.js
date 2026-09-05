@@ -227,6 +227,34 @@ export function createCalendarProjection(timeZone) {
     return Number(parts(value).hour)
   }
 
+  /** This zone's offset from UTC at `instant`, in milliseconds. Reading the
+   *  wall clock back as though it were UTC is what turns a formatted local
+   *  time into the shift that produced it. */
+  function zoneOffset(instant) {
+    const at = parts(instant)
+    const wall = Date.UTC(Number(at.year), Number(at.month) - 1, Number(at.day), Number(at.hour), Number(at.minute), Number(at.second))
+    return wall - Math.floor(instant / 1000) * 1000
+  }
+
+  /**
+   * The instant a date key opens on in this zone.
+   *
+   * A key names a calendar day, and a window built from keys has to say where
+   * that day begins before any session can be tested against it. The offset is
+   * read twice because the first read is taken at the wrong instant: midnight
+   * UTC on the key sits inside the previous or the following local day, and a
+   * zone whose offset changes between the two would place the boundary an hour
+   * off. Where the second read disagrees with the key -- a spring-forward that
+   * skips midnight itself, so no instant carries that wall time -- the day
+   * opens at the first instant that does exist.
+   */
+  function startOfDay(key) {
+    const naive = Date.parse(`${key}T00:00:00Z`)
+    const guess = naive - zoneOffset(naive)
+    const settled = naive - zoneOffset(guess)
+    return dateKey(settled) === key ? settled : guess
+  }
+
   function minute(value) {
     const valueParts = parts(value)
     return Number(valueParts.hour) * 60 + Number(valueParts.minute) + Number(valueParts.second) / 60
@@ -241,6 +269,27 @@ export function createCalendarProjection(timeZone) {
    */
   function endDateKey(end) {
     return typeof end === 'string' ? end : dateKey(new Date(end))
+  }
+
+  /**
+   * A fixed range as a window of instants, measured in whole calendar days.
+   *
+   * A range chip names a run of days, not a rolling span of milliseconds, and
+   * a day is the coarsest thing the calendar surfaces can draw: the heatmap
+   * has one cell per date and no way to hold half of one. So the window opens
+   * at local midnight on the first of its `days` date keys rather than at the
+   * closing instant's own clock time, and every panel that counts calendar
+   * days counts the same ones the window admits (#92).
+   *
+   * `end` is an instant; the window closes on it rather than at the end of the
+   * day holding it, because that instant is the last moment anything could
+   * have been recorded.
+   */
+  function calendarWindow(end, days) {
+    const count = Math.max(1, Math.round(days))
+    const lastKey = dateKey(end)
+    const firstKey = shiftDateKey(lastKey, -(count - 1))
+    return { start: startOfDay(firstKey), end, firstKey, lastKey }
   }
 
   /** The `count` calendar days ending on `end`, which is either an instant to
@@ -295,5 +344,5 @@ export function createCalendarProjection(timeZone) {
     return rows
   }
 
-  return { parts, dateKey, hour, minute, buckets, dailyUsage }
+  return { parts, dateKey, hour, minute, startOfDay, calendarWindow, buckets, dailyUsage }
 }

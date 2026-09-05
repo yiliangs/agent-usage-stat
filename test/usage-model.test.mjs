@@ -197,6 +197,82 @@ test("calendar windows keyed by date survive a zone past UTC+12", () => {
   );
 });
 
+/**
+ * Guard for issue #92.
+ *
+ * A range chip names calendar days, and the heatmap can only draw whole ones.
+ * The window a fixed range selects therefore has to open at local midnight on
+ * the first of those days: a window that opened at the closing instant's own
+ * clock time that many days earlier admitted the tail of a day the heatmap had
+ * no cell for, so the hero total and the heatmap's "Current 30D" panel counted
+ * different sets of sessions and disagreed by whatever fell in that tail.
+ */
+test("a fixed range opens at local midnight on the first of its calendar days", () => {
+  const calendar = createCalendarProjection("America/Chicago");
+  // 18:00 local, the reading in the issue: late enough in the day that six
+  // hours of the thirtieth day back sat inside the rolling window.
+  const end = Date.parse("2026-07-15T23:00:00.000Z");
+
+  const window = calendar.calendarWindow(end, 30);
+  assert.equal(window.lastKey, "2026-07-15");
+  assert.equal(window.firstKey, "2026-06-16", "thirty calendar days ending on the 15th open on the 16th");
+  assert.equal(window.end, end, "the window still closes on the instant it was given");
+  assert.equal(
+    window.start,
+    Date.parse("2026-06-16T05:00:00.000Z"),
+    "the window opens at 00:00 local on its first day, not at 18:00 local thirty days back",
+  );
+
+  const eveningBefore = Date.parse("2026-06-16T00:30:00.000Z");
+  assert.equal(calendar.dateKey(eveningBefore), "2026-06-15");
+  assert.ok(eveningBefore < window.start, "19:30 on the day before the window opens is outside it");
+
+  const firstMorning = Date.parse("2026-06-16T05:30:00.000Z");
+  assert.equal(calendar.dateKey(firstMorning), "2026-06-16");
+  assert.ok(firstMorning >= window.start, "00:30 on the window's first day is inside it");
+
+  assert.deepEqual(
+    calendar.buckets([], window.lastKey, 30).map((bucket) => bucket.key).at(0),
+    window.firstKey,
+    "the heatmap's current-window keys must open on the same day the window does",
+  );
+});
+
+/**
+ * A day boundary is a fact of the zone, not of a fixed offset.
+ *
+ * The contract holds whatever the rules are: the instant a key opens on reads
+ * back as that key, and the millisecond before it reads back as the day
+ * before. Both directions are asserted rather than a literal offset, so the
+ * guard survives a tzdata release that moves one of these transitions.
+ */
+test("a date key opens at the first instant that belongs to it, across every zone rule", () => {
+  const cases = [
+    // Ordinary days, an hour lost in spring and an hour repeated in autumn.
+    ["America/Chicago", ["2026-06-16", "2026-03-08", "2026-11-01"]],
+    // Half-hour and three-quarter-hour offsets, and one past UTC+12.
+    ["Asia/Kolkata", ["2026-06-16"]],
+    ["Pacific/Chatham", ["2026-04-05", "2026-09-27"]],
+    ["Pacific/Kiritimati", ["2026-07-03"]],
+    // Southern-hemisphere transitions, including zones that move at midnight.
+    ["America/Santiago", ["2026-04-04", "2026-09-05", "2026-09-06", "2026-09-07"]],
+    ["Australia/Lord_Howe", ["2026-04-05", "2026-10-04"]],
+  ];
+
+  for (const [zone, keys] of cases) {
+    const calendar = createCalendarProjection(zone);
+    for (const key of keys) {
+      const start = calendar.startOfDay(key);
+      assert.equal(calendar.dateKey(start), key, `${zone} ${key} does not open on its own day`);
+      assert.equal(
+        calendar.dateKey(start - 1),
+        shiftDateKey(key, -1),
+        `${zone} ${key} does not open where the previous day ends`,
+      );
+    }
+  }
+});
+
 test("interval projection preserves whole-session primary-model attribution", () => {
   const start = Date.parse("2026-07-02T04:00:00.000Z");
   const end = Date.parse("2026-07-02T08:00:00.000Z");

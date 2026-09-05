@@ -126,6 +126,8 @@ const {
   dateKey: localDateKey,
   hour: localHour,
   minute: localMinute,
+  startOfDay: startOfLocalDay,
+  calendarWindow: localCalendarWindow,
   buckets: makeCalendarBuckets,
   dailyUsage: dailyUsageRows,
 } = createCalendarProjection(LOCAL_TIME_ZONE)
@@ -214,7 +216,13 @@ function currentWindow() {
   const latest = Math.max(...state.sessions.map((session) => session.t), Date.now())
   const end = Number.isFinite(generated) ? Math.max(generated, latest) : latest
   const days = RANGE_DAYS[state.range]
-  if (days) return { start: end - days * DAY, end }
+  // A range chip names calendar days, so the window opens at local midnight on
+  // the first of them rather than at this moment's clock time that many days
+  // ago. The heatmap can only draw whole days, and its "Current 30D" panel
+  // counts exactly the thirty date keys this window now admits; the rolling
+  // start let a further evening of work into the hero figure with no cell on
+  // the heatmap to hold it, and the two disagreed by whatever fell in it (#92).
+  if (days) return localCalendarWindow(end, days)
   // ALL is the whole ledger, which starts on its oldest session. With nothing
   // recorded there is no such session, so the window falls back to a length.
   const oldest = oldestRecorded()
@@ -229,10 +237,12 @@ function sessionsIn(start, end) {
  * The sessions in the period before the selected one, which only a fixed range
  * has.
  *
- * A fixed range is a length, so the period before it is that same length
- * ending where it begins. The upper bound is exclusive: a session recorded
- * exactly on the boundary belongs to the selected period, and counting it in
- * both is counting it twice.
+ * A fixed range is a run of calendar days, so the period before it is that
+ * same run of days ending the day before it opens. Stepping in days rather
+ * than in milliseconds is what keeps the two windows the same length across a
+ * daylight-saving edge, where one calendar day is not 24 hours. The upper
+ * bound is exclusive: a session recorded exactly on the boundary belongs to
+ * the selected period, and counting it in both is counting it twice.
  *
  * ALL is not a length but the whole ledger, and its window starts on the
  * oldest session recorded, so nothing precedes it. It has no prior period at
@@ -242,7 +252,7 @@ function sessionsIn(start, end) {
 function priorSessions(period) {
   const days = RANGE_DAYS[state.range]
   if (!days) return []
-  const start = period.start - days * DAY
+  const start = startOfLocalDay(shiftDateKey(period.firstKey, -days))
   return state.sessions.filter((session) => session.t >= start && session.t < period.start)
 }
 
@@ -349,8 +359,11 @@ function renderSpendHeatmap(sessions, window) {
   const ledgerDays = Math.floor((Date.parse(`${endKey}T12:00:00Z`) - Date.parse(`${firstKey}T12:00:00Z`)) / DAY) + 1
   const buckets = makeCalendarBuckets(sessions, window.end, Math.max(365, ledgerDays))
   const selectedDays = RANGE_DAYS[state.range]
+  // The days the window itself admits, read off the window rather than
+  // projected a second time from its closing instant. Deriving them twice is
+  // what let the two definitions drift apart in the first place (#92).
   const currentKeys = new Set(selectedDays
-    ? makeCalendarBuckets([], window.end, selectedDays).map((bucket) => bucket.key)
+    ? makeCalendarBuckets([], window.lastKey, selectedDays).map((bucket) => bucket.key)
     : buckets.map((bucket) => bucket.key))
   const firstCurrent = [...currentKeys][0]
   // The prior window closes on the day before the current one opens, and that
