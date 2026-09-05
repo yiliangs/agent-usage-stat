@@ -541,6 +541,33 @@ test("the Start Menu entry is named for the installed executable", () => {
   );
 });
 
+test("a Squirrel run quits only once its lifecycle work has finished", async () => {
+  // main.ts exports nothing, so its launch decision is read as source text.
+  const main = await readFile(join(process.cwd(), "src", "desktop", "main.ts"), "utf8");
+  const launch = main.slice(
+    main.indexOf("const squirrelEvent = handleSquirrelEvent()"),
+    main.indexOf('app.on("activate"'),
+  );
+
+  // performSquirrelEvent spawns Update.exe and moves the Start Menu entry,
+  // and the uninstall branch spawns the helper and removes two trees. A quit
+  // requested here would race that work to the exit, with no window open to
+  // hold the process while it runs.
+  assert.doesNotMatch(launch, /if \([^)]*squirrelEvent[^)]*\)\s*\{\s*app\.quit\(\)/);
+  assert.match(launch, /if \(!squirrelEvent\)/);
+
+  const handler = main.slice(
+    main.indexOf("function handleSquirrelEvent"),
+    main.indexOf("async function performSquirrelEvent"),
+  );
+  assert.match(handler, /\.finally\(\(\) => app\.quit\(\)\)/);
+  assert.equal(
+    handler.match(/app\.quit\(\)/g).length,
+    1,
+    "the settled lifecycle work is the only thing that may quit a Squirrel run",
+  );
+});
+
 test("every Squirrel lifecycle event that touches shortcuts corrects their placement", async () => {
   const main = await readFile(join(process.cwd(), "src", "desktop", "main.ts"), "utf8");
   const install = main.slice(main.indexOf("async function performSquirrelEvent"));

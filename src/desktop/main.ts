@@ -119,12 +119,19 @@ const hasSingleInstanceLock = !squirrelEvent && (
   isSmokeTest || app.requestSingleInstanceLock()
 );
 traceStartup(`single-instance:${hasSingleInstanceLock}`);
-if (squirrelEvent || !hasSingleInstanceLock) {
-  app.quit();
-} else {
-  app.on("second-instance", openDashboard);
+// A Squirrel run is neither a launch nor a duplicate instance, and it is the
+// one case that must not be quit from here: `handleSquirrelEvent` spawns
+// Update.exe, moves the Start Menu entry, and on uninstall removes two trees,
+// and no window is open to hold the process while that runs. Its own `finally`
+// is the quit, once the work has settled.
+if (!squirrelEvent) {
+  if (hasSingleInstanceLock) {
+    app.on("second-instance", openDashboard);
 
-  app.whenReady().then(start).catch(failStartup);
+    app.whenReady().then(start).catch(failStartup);
+  } else {
+    app.quit();
+  }
 }
 
 app.on("activate", openDashboard);
