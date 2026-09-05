@@ -40,6 +40,11 @@ export const TOTAL_COST = 55;
 /** The hero figure as the portal prints it. */
 export const TOTAL_COST_TEXT = "$55.00";
 
+/** Every session's tokens summed: `TOTAL_COST` dollars at `TOKENS_PER_DOLLAR`
+ *  tokens each. This is the token volume the overview hero leads with, and it
+ *  is written out for the same reason the costs are. */
+export const TOTAL_TOKENS = 5_500_000;
+
 /** What every comparison against a period that does not exist reads. */
 export const NO_PRIOR_TEXT = "No prior baseline";
 

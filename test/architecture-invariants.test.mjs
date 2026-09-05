@@ -19,6 +19,25 @@ import test from "node:test";
 const root = process.cwd();
 const sourceRoot = join(root, "src");
 
+/**
+ * Every tree these invariants govern.
+ *
+ * `src/` is the application. `scripts/` and `portal/scripts/` are the tooling
+ * that reads and writes the same ledger from a checkout, and they were outside
+ * every guard here: the comments claimed "every consumer" while the walk saw
+ * only compiled TypeScript, which is how a second spelling of the shard
+ * directory and a hardcoded drive path both survived (#111).
+ *
+ * The extensions are the two this repository authors Node code in. The `.js`
+ * files beside the `.mjs` ones under `scripts/` are probe bodies evaluated
+ * inside a rendered page, where none of these invariants apply.
+ */
+const SOURCE_ROOTS = [
+  sourceRoot,
+  join(root, "scripts"),
+  join(root, "portal", "scripts"),
+];
+
 /** Strip comments so a guard matches code, not prose about the code. The
  *  line-comment pass deliberately spares `://` so URLs and `aus://` survive. */
 function stripComments(source) {
@@ -27,14 +46,21 @@ function stripComments(source) {
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
-function sourceFiles(directory = sourceRoot) {
+function filesUnder(directory) {
   const found = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) found.push(...sourceFiles(path));
-    else if (entry.name.endsWith(".ts")) found.push(path);
+    if (entry.isDirectory()) found.push(...filesUnder(path));
+    else if (/\.(ts|mjs)$/.test(entry.name)) found.push(path);
   }
-  return found.sort();
+  return found;
+}
+
+/** The files a guard reads: every governed tree, or only the ones it names.
+ *  A guard names a narrower root when its subject is narrower than the
+ *  repository, and says so where it does. */
+function sourceFiles(...roots) {
+  return (roots.length > 0 ? roots : SOURCE_ROOTS).flatMap(filesUnder).sort();
 }
 
 function readCode(path) {
@@ -127,16 +153,31 @@ test("the detach shim reads a bounded head of a Claude transcript", () => {
 });
 
 test("no code path reads or writes a CSV spend source", () => {
+  // logbook.d/ is the only spend source. Two files still name the retired CSV,
+  // and both exist to keep it retired rather than to read it: the one-shot
+  // that folded the legacy file into the shards, and the health check that
+  // reports one reappearing beside them. They are named here so a third file
+  // learning to read a CSV is a failure rather than a silent second source.
+  const RETIRING_THE_CSV = [
+    join("scripts", "health-check.mjs"),
+    join("scripts", "migrate-csv-to-shards.mjs"),
+  ];
+
   const offenders = sourceFiles()
     .filter((path) => /\.csv\b/i.test(readCode(path)))
     .map((path) => relative(root, path));
 
-  assert.deepEqual(offenders, []);
+  assert.deepEqual(offenders, RETIRING_THE_CSV);
 });
 
 test("production opens no localhost server", () => {
+  // Only the application ships, so only the application is bound by this: the
+  // renderer reaches main through `aus://` instead of a port. The repository's
+  // own tooling is not production and one piece of it must serve over
+  // loopback, since the layout guards render the built portal in headless
+  // Chrome, which loads a page over HTTP or not at all.
   const forbidden = /createServer|\.listen\(|localhost|127\.0\.0\.1/;
-  const offenders = sourceFiles()
+  const offenders = sourceFiles(sourceRoot)
     .filter((path) => forbidden.test(readCode(path)))
     .map((path) => relative(root, path));
 

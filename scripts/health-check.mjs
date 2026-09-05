@@ -27,12 +27,13 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { resolveUsageRootFromDisk } from "../dist/utils/usage-root.js";
+import { LOGBOOK_SHARD_DIR } from "../dist/core/usage-ledger.js";
 import { homeDir } from "../dist/utils/paths.js";
 
 const HOME = homeDir();
 const ROOT = resolveUsageRootFromDisk().root;
-const DIR = join(ROOT, "logbook.d");
-const LOCAL_DIR = join(HOME, ".agent-usage-stat", "projects", "logbook.d");
+const DIR = join(ROOT, LOGBOOK_SHARD_DIR);
+const LOCAL_DIR = join(HOME, ".agent-usage-stat", "projects", LOGBOOK_SHARD_DIR);
 const HOOK_LOG = join(HOME, ".agent-usage-stat", "hook.log");
 const pricing = {
   claude: (await import("../dist/providers/claude/pricing.js")).priceFor,

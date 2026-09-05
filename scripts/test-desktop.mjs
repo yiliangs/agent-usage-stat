@@ -15,6 +15,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { PANEL_SIZE } from "../dist/desktop/status-area-policy.js";
+import { LOGBOOK_SHARD_DIR } from "../dist/core/usage-ledger.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outRelative = `dist/desktop-smoke-${process.pid}`;
@@ -88,7 +89,7 @@ const cachedStartupTrace = join(home, "desktop-cached-startup.log");
 
 try {
   await Promise.all([
-    mkdir(join(usageRoot, "logbook.d"), { recursive: true }),
+    mkdir(join(usageRoot, LOGBOOK_SHARD_DIR), { recursive: true }),
     mkdir(claudeHome, { recursive: true }),
     mkdir(codexHome, { recursive: true }),
     mkdir(copilotHome, { recursive: true }),

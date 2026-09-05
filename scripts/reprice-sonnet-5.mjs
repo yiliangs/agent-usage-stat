@@ -36,10 +36,11 @@
 import { readFileSync, writeFileSync, renameSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { resolveUsageRootFromDisk } from "../dist/utils/usage-root.js";
+import { LOGBOOK_SHARD_DIR } from "../dist/core/usage-ledger.js";
 
 const APPLY = process.argv.includes("--apply");
 const FACTOR = 2 / 3;
-const SHARD_DIR = join(resolveUsageRootFromDisk().root, "logbook.d");
+const SHARD_DIR = join(resolveUsageRootFromDisk().root, LOGBOOK_SHARD_DIR);
 
 /** The model this pass corrects, under any id shape a shard may carry it in. */
 function isSonnet5(model) {

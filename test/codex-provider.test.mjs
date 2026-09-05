@@ -752,33 +752,43 @@ test("detached Codex hook performs a quiet usage update", async () => {
     assert.equal(result.stdout, "");
     assert.equal(result.stderr, "");
 
-    const shardPath = join(dataRoot, "logbook.d", `${sessionId}.json`);
-    let shard;
-    for (let attempt = 0; attempt < 50; attempt++) {
-      try {
-        shard = JSON.parse(await readFile(shardPath, "utf8"));
-        break;
-      } catch {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-    }
-    assert.ok(shard, "detached worker did not write its shard");
+    // The worker says when it is done: it publishes its capture result
+    // atomically as its last act, so waiting on that file is waiting on the
+    // worker rather than guessing how long it needs. Polling the shard path
+    // instead read a slow write as a missing one (#173).
+    //
+    // The ceiling is 30 seconds because `node --test` runs every test file in
+    // parallel: this worker starts against the other files' builds and their
+    // headless Chrome probes, and it has to load the whole provider graph
+    // under that load. Alone it settles in a few hundred milliseconds, so the
+    // ceiling costs nothing when the machine is idle and is only ever reached
+    // by a worker that genuinely never finished.
+    const settled = await waitForAgentRun(run, {
+      pollMs: 10,
+      quietMs: 20,
+      timeoutMs: 30_000,
+    });
+    assert.equal(
+      settled.timedOut,
+      false,
+      "detached worker never published its capture result",
+    );
+    assert.equal(settled.results.length, 1);
+    assert.equal(settled.results[0].status, "recorded");
+    assert.equal(
+      settled.results[0].shard_path,
+      join(dataRoot, "logbook.d", `${sessionId}.json`),
+    );
+
+    const shard = JSON.parse(
+      await readFile(settled.results[0].shard_path, "utf8"),
+    );
     assert.equal(shard.provider, "codex");
     assert.equal(shard.total_tokens, 1100);
     assert.equal(shard.total_cost_usd, 0.002875);
     assert.equal(shard.turns.length, 1);
     assert.equal(shard.turns[0].turn_id, "turn-1");
     assert.equal(shard.turns[0].total_tokens, 1100);
-
-    const settled = await waitForAgentRun(run, {
-      pollMs: 10,
-      quietMs: 20,
-      timeoutMs: 1000,
-    });
-    assert.equal(settled.timedOut, false);
-    assert.equal(settled.results.length, 1);
-    assert.equal(settled.results[0].status, "recorded");
-    assert.equal(settled.results[0].shard_path, shardPath);
   } finally {
     await removeAgentRun(run);
     await rm(home, { recursive: true, force: true });
