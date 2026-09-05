@@ -25,8 +25,20 @@ export type Row = Record<string, string | number | bigint | null | Uint8Array>;
 export interface OpencodeDatabase {
   path: string;
   all(sql: string, ...parameters: (string | number)[]): Row[];
+  /**
+   * Run several queries against one snapshot of the database.
+   *
+   * Outside an explicit transaction SQLite gives every statement its own read
+   * snapshot, so a live session writing between two statements shows up in the
+   * second and not the first. Everything a stored record and the fingerprint
+   * pinning it are derived from goes inside one of these.
+   */
+  oneRead<T>(read: () => T): T;
   close(): void;
 }
+
+/** How a read reaches the database, so a test can interleave a host write. */
+export type OpenOpencodeDatabase = (path: string) => Promise<OpencodeDatabase>;
 
 /**
  * Locate the database opencode is writing.
@@ -70,7 +82,8 @@ export function resolveDatabasePath(
  * because the provider registry names every provider.
  *
  * opencode runs the database in WAL mode, so a reader sees a consistent
- * snapshot while a session is still being written. Read-only is what keeps a
+ * snapshot while a session is still being written — for the span of one read
+ * transaction, which is what `oneRead` opens. Read-only is what keeps a
  * reconciliation pass from ever perturbing the host's own store.
  */
 export async function openDatabase(path: string): Promise<OpencodeDatabase> {
@@ -80,6 +93,19 @@ export async function openDatabase(path: string): Promise<OpencodeDatabase> {
     path,
     all(sql, ...parameters) {
       return database.prepare(sql).all(...parameters) as Row[];
+    },
+    oneRead(read) {
+      database.exec("BEGIN DEFERRED");
+      try {
+        return read();
+      } finally {
+        try {
+          database.exec("END");
+        } catch {
+          // A read transaction holds nothing to write back, so ending it can
+          // only fail once the connection has already ended it.
+        }
+      }
     },
     close() {
       database.close();

@@ -2,8 +2,9 @@ import type { ProviderSessionSnapshot } from "../../types/provider.js";
 import type { ModelBreakdown } from "../../types/session.js";
 import type { ParsedTranscript } from "../../types/transcript.js";
 import { buildSessionUsage } from "../../core/usage-summary.js";
+import type { OpenOpencodeDatabase } from "./database.js";
 import { displayModelName, normalizeModelId, priceFor } from "./pricing.js";
-import { fingerprintSessionTree } from "./transcript-fingerprint.js";
+import { fingerprintFromInputs } from "./transcript-fingerprint.js";
 import { readSessionRecords } from "./transcript-reader.js";
 import type {
   OpencodeAssistantMessage,
@@ -19,10 +20,17 @@ interface ModelTotals {
   hostCost: number;
 }
 
-/** Derive opencode billing and metadata from one read of a session tree. */
+/**
+ * Derive opencode billing and metadata from one read of a session tree.
+ *
+ * One read, literally: the fingerprint is hashed from inputs the same snapshot
+ * produced, never read back afterwards. `open` is the seam a test uses to land
+ * a host write inside that read.
+ */
 export async function readOpencodeSnapshot(
   databasePath: string,
   sessionId: string,
+  open?: OpenOpencodeDatabase,
 ): Promise<ProviderSessionSnapshot> {
   if (!sessionId) {
     // The database holds every session, so the id is the only selector.
@@ -31,7 +39,7 @@ export async function readOpencodeSnapshot(
     );
   }
 
-  const records = await readSessionRecords(databasePath, sessionId);
+  const records = await readSessionRecords(databasePath, sessionId, open);
   const unknownModels = new Set<string>();
   const breakdowns = toBreakdowns(records.assistants, unknownModels);
   breakdowns.sort((a, b) => b.cost - a.cost);
@@ -41,7 +49,7 @@ export async function readOpencodeSnapshot(
       provider: "opencode",
       sessionId: records.session.id,
       modelBreakdowns: breakdowns,
-      sourceFingerprint: await fingerprintSessionTree(databasePath, sessionId),
+      sourceFingerprint: fingerprintFromInputs(records.fingerprintInputs),
     }),
     transcriptData: toTranscript(records),
     unknownModels: [...unknownModels],
