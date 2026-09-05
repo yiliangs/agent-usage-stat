@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SyncCommand } from "../dist/commands/sync.js";
@@ -8,6 +8,56 @@ import { SyncCommand } from "../dist/commands/sync.js";
 const SESSION_COUNT = 12;
 
 test("sync overlaps read-only preflight but serializes provider calculation", async () => {
+  await withTempUsageHome(async () => {
+    const activity = newActivity();
+    const provider = fakeProvider(activity);
+
+    const command = new SyncCommand({ providers: [provider] });
+    const updated = await command.execute({ quiet: true });
+
+    assert.equal(updated, SESSION_COUNT);
+    assert.ok(
+      activity.maxFingerprints > 1,
+      `expected overlapping fingerprints, observed ${activity.maxFingerprints}`,
+    );
+    assert.ok(
+      activity.maxFingerprints < SESSION_COUNT,
+      `expected bounded fingerprints, observed ${activity.maxFingerprints}`,
+    );
+    assert.equal(activity.maxCalculations, 1);
+  });
+});
+
+test("sync finds the shard it wrote for a session id needing sanitization", async () => {
+  // The writer replaces every character outside [A-Za-z0-9._-] before naming
+  // the shard. Sync used to spell that path itself, unsanitized, so an id
+  // carrying `:` or `/` made its existence check false forever: every run
+  // recomputed the session and rewrote the same file (#87).
+  await withTempUsageHome(async ({ shardDir }) => {
+    const activity = newActivity();
+    const provider = fakeProvider(activity, [
+      {
+        sessionId: "ses:2026/08/01-alpha",
+        transcriptPath: "session-alpha.jsonl",
+        projectPath: "project/session-alpha",
+        mtimeMs: 1,
+      },
+    ]);
+    const command = new SyncCommand({ providers: [provider] });
+
+    assert.equal(await command.execute({ quiet: true }), 1);
+    assert.equal(await command.execute({ quiet: true }), 0);
+    assert.equal(activity.reads, 1);
+
+    const shards = (await readdir(shardDir)).filter((name) =>
+      name.endsWith(".json"),
+    );
+    assert.deepEqual(shards, ["ses_2026_08_01-alpha.json"]);
+  });
+});
+
+/** Run `body` against a throwaway home whose config points at a fresh root. */
+async function withTempUsageHome(body) {
   const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-sync-"));
   const dataRoot = join(home, "usage");
   const shardDir = join(dataRoot, "logbook.d");
@@ -26,28 +76,8 @@ test("sync overlaps read-only preflight but serializes provider calculation", as
     JSON.stringify({ dataRoot }),
   );
 
-  const activity = {
-    fingerprints: 0,
-    maxFingerprints: 0,
-    calculations: 0,
-    maxCalculations: 0,
-  };
-  const provider = fakeProvider(activity);
-
   try {
-    const command = new SyncCommand({ providers: [provider] });
-    const updated = await command.execute({ quiet: true });
-
-    assert.equal(updated, SESSION_COUNT);
-    assert.ok(
-      activity.maxFingerprints > 1,
-      `expected overlapping fingerprints, observed ${activity.maxFingerprints}`,
-    );
-    assert.ok(
-      activity.maxFingerprints < SESSION_COUNT,
-      `expected bounded fingerprints, observed ${activity.maxFingerprints}`,
-    );
-    assert.equal(activity.maxCalculations, 1);
+    await body({ home, dataRoot, shardDir });
   } finally {
     restoreEnv("HOME", priorHome);
     restoreEnv("USERPROFILE", priorUserProfile);
@@ -55,16 +85,28 @@ test("sync overlaps read-only preflight but serializes provider calculation", as
     restoreEnv("CODEX_HOME", priorCodexHome);
     await rm(home, { recursive: true, force: true });
   }
-});
+}
 
-function fakeProvider(activity) {
-  const sessions = Array.from({ length: SESSION_COUNT }, (_, index) => ({
+function newActivity() {
+  return {
+    fingerprints: 0,
+    maxFingerprints: 0,
+    calculations: 0,
+    maxCalculations: 0,
+    reads: 0,
+  };
+}
+
+function uuidSessions() {
+  return Array.from({ length: SESSION_COUNT }, (_, index) => ({
     sessionId: `00000000-0000-0000-0000-${String(index).padStart(12, "0")}`,
     transcriptPath: `session-${index}.jsonl`,
     projectPath: `project/session-${index}`,
     mtimeMs: index,
   }));
+}
 
+function fakeProvider(activity, sessions = uuidSessions()) {
   return {
     name: "claude",
     findSession: async () => sessions[0],
@@ -80,6 +122,7 @@ function fakeProvider(activity) {
       return `fingerprint:${session.sessionId}`;
     },
     readSession: async (_path, sessionId) => {
+      activity.reads++;
       activity.calculations++;
       activity.maxCalculations = Math.max(
         activity.maxCalculations,

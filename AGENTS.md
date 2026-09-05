@@ -79,6 +79,10 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 ## Invariants
 
 - `logbook.d/` is the only spend source. Never revive or merge a shared CSV.
+- A shard's path comes from `shardPathFor` in `src/core/usage-ledger.ts` and
+  nowhere else. The filename is the session id with every character a filename
+  cannot hold replaced, so a caller that spells the path itself stops finding
+  the file the writer wrote the moment a provider id carries one.
 - `provider` is the host tool; model vendor is a separate axis. Claude Code can route to GPT, so never pick a pricing table or a chart series by provider alone. Derive vendor per model via `src/core/model-vendor.ts`.
 - Persist `model_breakdowns` on every shard. Session totals alone cannot be split by vendor after the fact.
 - Never let a recomputation replace a recorded session with lower tokens. Cumulative tokens order two observations of one session; cost does not, because a pricing correction lowers the rate underneath reads already on disk. Keep the winning observation whole rather than merging the two: totals, breakdown, turns, and time window came from one transcript read and agree only with each other.
