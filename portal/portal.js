@@ -6,6 +6,7 @@ import {
   WEEKDAY_LABELS,
   WEEKDAY_NAMES,
   buildUsagePattern,
+  weekdayOfKey,
 } from './pattern-model.js'
 import { selectPortalView } from './portal-navigation.js'
 import { providerMark } from './provider-marks.js'
@@ -17,6 +18,7 @@ import {
   familyOf,
   makeIntervalBuckets,
   normalizeSession,
+  shiftDateKey,
   summarizeProjects,
   summarizeUsage,
 } from './usage-model.js'
@@ -72,6 +74,16 @@ const share = (value, total) => (total ? value / total : 0)
 
 // Numeric formats live in usage-format.js, where each one is bounded to the
 // width of the slot it feeds. Dates stay here; they have a fixed width.
+//
+// An instant and a calendar day are formatted by different pairs. `date` and
+// `dateYear` render a moment in the reader's zone, which is what a session
+// start or a period edge is. `day` and `dayYear` name the day a calendar
+// bucket holds: that day is already the reader's own, decided once by
+// `dateKey`, and the noon-UTC instant it is stamped at is a carrier rather
+// than a moment. Reading that carrier back in the reader's zone spends the
+// twelve hours of slack noon buys, so past UTC+12 every bucket label named the
+// day after the one it held (#91). These two read it back in UTC.
+const dayCarrier = (key) => new Date(`${key}T12:00:00Z`)
 const fmt = {
   usd,
   usdHeadline,
@@ -79,6 +91,8 @@ const fmt = {
   pct,
   date: (value) => new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short' }).format(value).toUpperCase(),
   dateYear: (value) => new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short', year: 'numeric' }).format(value).toUpperCase(),
+  day: (key) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', day: '2-digit', month: 'short' }).format(dayCarrier(key)).toUpperCase(),
+  dayYear: (key) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric' }).format(dayCarrier(key)).toUpperCase(),
   time: (value) => new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }).format(value),
 }
 
@@ -314,13 +328,17 @@ function renderSpendHeatmap(sessions, window) {
     ? makeCalendarBuckets([], window.end, selectedDays).map((bucket) => bucket.key)
     : buckets.map((bucket) => bucket.key))
   const firstCurrent = [...currentKeys][0]
-  const priorEnd = Date.parse(`${firstCurrent}T12:00:00Z`) - DAY
+  // The prior window closes on the day before the current one opens, and that
+  // is a step in days rather than in milliseconds. Turning the key back into
+  // an instant to subtract from returns the current window's own first day
+  // past UTC+12, overlapping the two windows and double-counting that day in
+  // both totals and the period change (#91).
   const priorKeys = new Set(selectedDays
-    ? makeCalendarBuckets([], priorEnd, selectedDays).map((bucket) => bucket.key)
+    ? makeCalendarBuckets([], shiftDateKey(firstCurrent, -1), selectedDays).map((bucket) => bucket.key)
     : [])
   const rawMaxCost = Math.max(0, ...buckets.map((bucket) => bucket.cost))
   const maxCost = Math.max(1, rawMaxCost)
-  const leading = (new Date(buckets[0].start).getUTCDay() + 6) % 7
+  const leading = weekdayOfKey(buckets[0].key)
   const peakIndex = buckets.reduce((best, bucket, index) => bucket.cost > buckets[best].cost ? index : best, 0)
   const level = (value) => {
     if (!value) return 0
@@ -339,8 +357,8 @@ function renderSpendHeatmap(sessions, window) {
     // draws the pointer cursor from the same attribute.
     const day = bucket.sessions ? ` data-day="${bucket.key}"` : ''
     return `<button class="calendar-cell level-${level(bucket.cost)}${windowClass}${rawMaxCost > 0 && index === peakIndex ? ' peak' : ''}"${day}
-      data-tip="${fmt.date(new Date(bucket.start))} | ${fmt.usd(bucket.cost)} | ${bucket.sessions} sessions | ${period}"
-      aria-label="${fmt.dateYear(new Date(bucket.start))}: ${fmt.usd(bucket.cost)}, ${bucket.sessions} sessions, ${period}${bucket.sessions ? '. Opens day detail' : ''}"></button>`
+      data-tip="${fmt.day(bucket.key)} | ${fmt.usd(bucket.cost)} | ${bucket.sessions} sessions | ${period}"
+      aria-label="${fmt.dayYear(bucket.key)}: ${fmt.usd(bucket.cost)}, ${bucket.sessions} sessions, ${period}${bucket.sessions ? '. Opens day detail' : ''}"></button>`
   }).join('')
   const currentCost = sum(buckets.filter((bucket) => currentKeys.has(bucket.key)), (bucket) => bucket.cost)
   const priorCost = sum(buckets.filter((bucket) => priorKeys.has(bucket.key)), (bucket) => bucket.cost)
@@ -350,8 +368,8 @@ function renderSpendHeatmap(sessions, window) {
     <div><span>${selectedDays ? `Prior ${selectedDays}D` : 'Prior window'}</span><b>${selectedDays ? fmt.usd(priorCost) : 'N/A'}</b></div>
     <div><span>Period change</span><b>${change === null ? 'N/A' : `${change >= 0 ? '+' : ''}${Math.round(change * 100)}%`}</b></div>`
   const monthLabels = $$('.calendar-months span')
-  monthLabels[0].textContent = fmt.dateYear(new Date(buckets[0].start))
-  monthLabels[1].textContent = fmt.dateYear(new Date(buckets[buckets.length - 1].start))
+  monthLabels[0].textContent = fmt.dayYear(buckets[0].key)
+  monthLabels[1].textContent = fmt.dayYear(buckets[buckets.length - 1].key)
   const calendarMain = $('.calendar-main')
   requestAnimationFrame(() => { calendarMain.scrollLeft = calendarMain.scrollWidth })
 }
@@ -406,7 +424,7 @@ function renderSpendChart(sessions, window) {
       const gap = segmentIndex === 0 ? 0 : 1
       const height = segment.rawHeight - gap
       const style = styleForFamily(segment.family)
-      return `<rect class="chart-mark stack-segment" data-family="${escapeAttribute(segment.family)}" data-tip="${fmt.date(new Date(bucket.start))} | ${escapeAttribute(segment.family)} | ${fmt.usd(segment.value)}" x="${x.toFixed(1)}" y="${cursor}" width="${barWidth.toFixed(1)}" height="${height}" rx=".8" fill="${style.color}"/>`
+      return `<rect class="chart-mark stack-segment" data-family="${escapeAttribute(segment.family)}" data-tip="${fmt.day(bucket.key)} | ${escapeAttribute(segment.family)} | ${fmt.usd(segment.value)}" x="${x.toFixed(1)}" y="${cursor}" width="${barWidth.toFixed(1)}" height="${height}" rx=".8" fill="${style.color}"/>`
     }).join('')
   }).join('')
 
@@ -414,7 +432,7 @@ function renderSpendChart(sessions, window) {
   const labels = labelIndexes.map((index) => {
     const x = left + slot * index + slot / 2
     const anchor = index === 0 ? 'start' : index === buckets.length - 1 ? 'end' : 'middle'
-    return `<text x="${x}" y="500" text-anchor="${anchor}">${fmt.date(new Date(buckets[index].start))}</text>`
+    return `<text x="${x}" y="500" text-anchor="${anchor}">${fmt.day(buckets[index].key)}</text>`
   }).join('')
 
   $('.legend').innerHTML = families.map((family) => {
@@ -451,14 +469,14 @@ function renderCumulativeSpend(sessions, window) {
     return `<line class="${ratio ? 'cumulative-gridline' : 'cumulative-axis'}" x1="${left}" y1="${y}" x2="${right}" y2="${y}"/><text x="4" y="${y + 4}">${fmt.usd(total * ratio).replace('.00', '')}</text>`
   }).join('')
   const points = values.map((value, index) => {
-    const date = new Date(buckets[index].start)
-    const weeklyCheckpoint = date.getUTCDay() === 1
+    const key = buckets[index].key
+    const weeklyCheckpoint = weekdayOfKey(key) === 0
     if (index !== 0 && !weeklyCheckpoint && index !== values.length - 1) return ''
     const isEnd = index === values.length - 1
     const role = isEnd ? 'period total' : index === 0 ? 'period start' : 'weekly checkpoint'
-    return `<circle class="${isEnd ? 'cumulative-end' : 'cumulative-point'}" cx="${xFor(index)}" cy="${yFor(value)}" r="${isEnd ? 5 : 3.5}" data-tip="${fmt.date(date)} | ${role} | cumulative ${fmt.usd(value)} | day ${fmt.usd(buckets[index].cost)}"/>`
+    return `<circle class="${isEnd ? 'cumulative-end' : 'cumulative-point'}" cx="${xFor(index)}" cy="${yFor(value)}" r="${isEnd ? 5 : 3.5}" data-tip="${fmt.day(key)} | ${role} | cumulative ${fmt.usd(value)} | day ${fmt.usd(buckets[index].cost)}"/>`
   }).join('')
-  const labels = [0, Math.round((buckets.length - 1) / 2), buckets.length - 1].map((index) => `<text x="${xFor(index)}" y="406" text-anchor="${index === 0 ? 'start' : index === buckets.length - 1 ? 'end' : 'middle'}">${fmt.date(new Date(buckets[index].start))}</text>`).join('')
+  const labels = [0, Math.round((buckets.length - 1) / 2), buckets.length - 1].map((index) => `<text x="${xFor(index)}" y="406" text-anchor="${index === 0 ? 'start' : index === buckets.length - 1 ? 'end' : 'middle'}">${fmt.day(buckets[index].key)}</text>`).join('')
   $('.cumulative-plot').innerHTML = `<defs><linearGradient id="cumulativeFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--token-mid)" stop-opacity=".28"/><stop offset="1" stop-color="var(--token-mid)" stop-opacity=".03"/></linearGradient></defs>${grid}<path class="cumulative-area" d="${area}"/><path class="cumulative-line" d="${line}"/>${points}${labels}<text x="${right}" y="25" text-anchor="end" class="annotation">PERIOD TOTAL / ${fmt.usd(values[values.length - 1] || 0)}</text>`
 }
 
@@ -519,7 +537,7 @@ function renderLineChart(selector, rows, read, formatValue) {
     return `<line class="gridline" x1="${left}" y1="${y}" x2="${right}" y2="${y}"/><text x="${left - 8}" y="${y + 3}" text-anchor="end">${escapeText(formatValue(value))}</text>`
   }).join('')
   const labelIndexes = [...new Set([0, Math.floor((rows.length - 1) / 2), rows.length - 1])]
-  const labels = labelIndexes.map((index) => `<text x="${xFor(index)}" y="232" text-anchor="${index === 0 ? 'start' : index === rows.length - 1 ? 'end' : 'middle'}">${fmt.date(new Date(`${rows[index].key}T12:00:00Z`))}</text>`).join('')
+  const labels = labelIndexes.map((index) => `<text x="${xFor(index)}" y="232" text-anchor="${index === 0 ? 'start' : index === rows.length - 1 ? 'end' : 'middle'}">${fmt.day(rows[index].key)}</text>`).join('')
   svg.innerHTML = `${grid}<line class="axis" x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}"/><path class="area" d="${area}"/><path class="line" d="${line}"/>${values.map((value, index) => `<circle cx="${xFor(index)}" cy="${yFor(value)}" r="3" fill="${styleForFamily(Object.entries(rows[index].families || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other').base}" data-tip="${escapeAttribute(rows[index].key)} | ${escapeAttribute(formatValue(value))}"></circle>`).join('')}${labels}`
 }
 
@@ -639,7 +657,7 @@ function renderDailyTokenBars(rows) {
   const breakMarkers = outliers.map(({ index }) => brokenBarMarker(index * slot + slot / 2, breakY, Math.max(6, barWidth))).join('')
   const labelEvery = Math.max(1, Math.ceil(104 / slot))
   const labels = rows.map((row, index) => index % labelEvery === 0 || index === rows.length - 1
-    ? `<text class="traffic-axis-label" x="${index * slot + slot / 2}" y="226">${escapeText(fmt.date(new Date(`${row.key}T12:00:00Z`)))}</text>`
+    ? `<text class="traffic-axis-label" x="${index * slot + slot / 2}" y="226">${escapeText(fmt.day(row.key))}</text>`
     : '').join('')
   const yLabels = Array.from({ length: 5 }, (_, index) => {
     const value = scale.max * (4 - index) / 4
@@ -650,7 +668,7 @@ function renderDailyTokenBars(rows) {
     ? `<text class="traffic-break-label" x="48" y="10" text-anchor="end">BREAK</text><path class="traffic-y-break" d="M42 ${breakY - 4}l3 3l3 -3l3 3 M42 ${breakY + 1}l3 3l3 -3l3 3"/>`
     : ''
   const hitBuckets = rows.map((row, index) => {
-    const date = fmt.date(new Date(`${row.key}T12:00:00Z`))
+    const date = fmt.day(row.key)
     const tip = `${date}\nTOTAL ${fmt.compact(row.tokens)}\nINPUT ${fmt.compact(row.input)} · OUTPUT ${fmt.compact(row.output)}\nCACHE WRITE ${fmt.compact(row.cacheCreate)} · CACHE READ ${fmt.compact(row.cacheRead)}`
     return `<rect class="traffic-hit-bucket multiline-tip" x="${index * slot}" y="${top}" width="${slot}" height="${plotHeight}" data-tip="${escapeAttribute(tip)}"/>`
   }).join('')
@@ -814,7 +832,6 @@ const PATTERN_SCATTER_DAYS = 60
 const clockHour = (hour) => String(((Math.round(hour) % 24) + 24) % 24).padStart(2, '0')
 const clockLabel = (hour) => `${clockHour(hour)}:00`
 const clockRange = (from, to) => `${clockHour(from)}–${clockHour(to)}H`
-const patternDayDate = (key) => new Date(`${key}T12:00:00Z`)
 
 /** Older days fade rather than vanish. The exponent holds the last week or two
  *  at full strength without erasing the month behind them. */
@@ -1006,12 +1023,12 @@ function renderPatternHeat(pattern) {
   // on some weeks and not others, which is the shift this card cannot afford.
   const clampSentence = clamped ? ` ${clampNote(clamped, 'slot')}.` : ''
   $('#patternHeatCaption').textContent = active
-    ? `Week of ${fmt.dateYear(patternDayDate(active.key))}: ${fmt.compact(tokens)} tokens, ${fmt.pct(tokens / pattern.tokens)} of the period.${heaviest}${clampSentence}`
+    ? `Week of ${fmt.dayYear(active.key)}: ${fmt.compact(tokens)} tokens, ${fmt.pct(tokens / pattern.tokens)} of the period.${heaviest}${clampSentence}`
     : `${fmt.compact(tokens)} tokens across ${SLOTS_IN_WEEK} hour-slots. Half of that volume sits in ${pattern.halfVolumeSlots} of them.${heaviest}${clampSentence}`
 
   const index = active ? weeks.findIndex((week) => week.key === active.key) : weeks.length
   $('#patternWeekLabel').textContent = active
-    ? `${fmt.date(patternDayDate(active.key))} – ${fmt.date(patternDayDate(active.endKey))}`
+    ? `${fmt.day(active.key)} – ${fmt.day(active.endKey)}`
     : `ALL ${weeks.length} WEEK${weeks.length === 1 ? '' : 'S'}`
   $('[data-pattern-week="older"]').disabled = index <= 0
   $('[data-pattern-week="newer"]').disabled = index >= weeks.length
@@ -1072,12 +1089,12 @@ function renderPatternDay(pattern) {
   const lines = scatter.map((day) => {
     const path = day.hours.map((tokens, hour) => `${hour ? 'L' : 'M'}${axis.dot(hour).toFixed(1)} ${y(tokens).toFixed(1)}`).join(' ')
     const opacity = day.recency === 1 ? '0.45' : recencyFade(day, .03, .12)
-    return `<path class="pattern-day-line" d="${path}" stroke-opacity="${opacity}" data-tip="${escapeAttribute(fmt.dateYear(patternDayDate(day.key)))} | ${escapeAttribute(fmt.compact(day.tokens))} tokens"/>`
+    return `<path class="pattern-day-line" d="${path}" stroke-opacity="${opacity}" data-tip="${escapeAttribute(fmt.dayYear(day.key))} | ${escapeAttribute(fmt.compact(day.tokens))} tokens"/>`
   }).join('')
   const mean = pattern.hourMeans.map((tokens, hour) => `${hour ? 'L' : 'M'}${axis.dot(hour).toFixed(1)} ${y(tokens).toFixed(1)}`).join(' ')
   const dots = scatter.flatMap((day) => day.hours.map((tokens, hour) => {
     const over = tokens > ceiling
-    return `<circle class="pattern-dot${over ? ' clamped' : ''}" cx="${axis.dot(hour).toFixed(1)}" cy="${y(tokens).toFixed(1)}" r="2.2" fill-opacity="${recencyFade(day, .1, .75)}" data-tip="${escapeAttribute(fmt.date(patternDayDate(day.key)))} ${clockLabel(hour)} | ${escapeAttribute(fmt.compact(tokens))} tokens${over ? ' | above the scale' : ''}"/>`
+    return `<circle class="pattern-dot${over ? ' clamped' : ''}" cx="${axis.dot(hour).toFixed(1)}" cy="${y(tokens).toFixed(1)}" r="2.2" fill-opacity="${recencyFade(day, .1, .75)}" data-tip="${escapeAttribute(fmt.day(day.key))} ${clockLabel(hour)} | ${escapeAttribute(fmt.compact(tokens))} tokens${over ? ' | above the scale' : ''}"/>`
   })).join('')
 
   chart.setAttribute('viewBox', `0 0 ${axis.width} ${height}`)
@@ -1123,7 +1140,7 @@ function renderPatternWeek(pattern) {
   const lines = weeks.map((week) => {
     const days = week.days.slice().sort((one, other) => one.weekday - other.weekday)
     const path = days.map((day, index) => `${index ? 'L' : 'M'}${axis.at(day.weekday).toFixed(1)} ${y(day.tokens).toFixed(1)}`).join(' ')
-    const label = `${fmt.date(patternDayDate(days[0].key))} – ${fmt.date(patternDayDate(days[days.length - 1].key))}`
+    const label = `${fmt.day(days[0].key)} – ${fmt.day(days[days.length - 1].key)}`
     return `<path class="pattern-week-line" d="${path}" stroke-opacity="${week.key === latestWeek ? '0.65' : '0.18'}" data-tip="${escapeAttribute(`${label}${week.key === latestWeek ? ' | most recent week' : ''}`)}"/>`
   }).join('')
   const means = pattern.weekdayMeans.map((tokens, weekday) => tokens
@@ -1131,7 +1148,7 @@ function renderPatternWeek(pattern) {
     : '').join('')
   const dots = scatter.map((day) => {
     const over = day.tokens > ceiling
-    return `<circle class="pattern-dot${over ? ' clamped' : ''}" cx="${axis.at(day.weekday).toFixed(1)}" cy="${y(day.tokens).toFixed(1)}" r="4" fill-opacity="${recencyFade(day, .14, .8)}" data-tip="${escapeAttribute(`${fmt.dateYear(patternDayDate(day.key))} (${WEEKDAY_NAMES[day.weekday]})`)} | ${escapeAttribute(fmt.compact(day.tokens))} tokens${over ? ' | above the scale' : ''}"/>`
+    return `<circle class="pattern-dot${over ? ' clamped' : ''}" cx="${axis.at(day.weekday).toFixed(1)}" cy="${y(day.tokens).toFixed(1)}" r="4" fill-opacity="${recencyFade(day, .14, .8)}" data-tip="${escapeAttribute(`${fmt.dayYear(day.key)} (${WEEKDAY_NAMES[day.weekday]})`)} | ${escapeAttribute(fmt.compact(day.tokens))} tokens${over ? ' | above the scale' : ''}"/>`
   }).join('')
   const ticks = WEEKDAY_LABELS.map((label, weekday) => `<text class="${weekday >= 5 ? 'pattern-weekend-tick' : ''}" x="${axis.at(weekday).toFixed(1)}" y="${tickY}" text-anchor="middle">${label}</text>`).join('')
 
@@ -2162,7 +2179,7 @@ function openDayDetail(dateKey) {
   const ordered = sessions.slice().sort((a, b) => a.t - b.t)
   openDetail({
     eyebrow: 'Day detail',
-    title: fmt.dateYear(new Date(Date.parse(`${dateKey}T12:00:00Z`))),
+    title: fmt.dayYear(dateKey),
     stats: [
       { label: 'Day value', value: fmt.usd(value.cost) },
       { label: 'Sessions', value: String(value.sessions) },

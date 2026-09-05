@@ -137,6 +137,27 @@ export function makeIntervalBuckets(sessions, start, end, preferredCount = 30) {
   return buckets
 }
 
+/**
+ * A date key moved by whole days, answered as a date key.
+ *
+ * Key arithmetic stays in key space. A key is a calendar day, not an instant,
+ * and the only reason it is stamped at noon UTC is that noon has twelve hours
+ * of slack on either side. Shifting the instant and reading the result back
+ * through a time zone spends that slack: at UTC+13 noon UTC on the day before
+ * a key is one in the morning on the key itself, so the shift returns the day
+ * it started from and the heatmap's prior window overlaps its current one by a
+ * day, counting that day's cost in both totals (#91).
+ *
+ * The offset is applied in UTC, where every day is the same length, so the
+ * result is a whole-day step across month ends and daylight-saving edges
+ * alike.
+ */
+export function shiftDateKey(key, days) {
+  const date = new Date(`${key}T12:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
 export function createCalendarProjection(timeZone) {
   const timeZoneOptions = timeZone ? { timeZone } : {}
   const partsFormatter = new Intl.DateTimeFormat('en-US', {
@@ -168,16 +189,29 @@ export function createCalendarProjection(timeZone) {
     return Number(valueParts.hour) * 60 + Number(valueParts.minute) + Number(valueParts.second) / 60
   }
 
+  /**
+   * The date key an end marker names.
+   *
+   * A caller that already holds a key has already consulted this zone, and
+   * passing that key back through an instant consults it a second time. The
+   * zone is read exactly once per window, here or in `dateKey`, never twice.
+   */
+  function endDateKey(end) {
+    return typeof end === 'string' ? end : dateKey(new Date(end))
+  }
+
+  /** The `count` calendar days ending on `end`, which is either an instant to
+   *  read in this zone or the date key the window closes on. */
   function buckets(sessions, end, preferredCount = 30) {
     const count = Math.max(1, Math.round(preferredCount))
-    const endDate = new Date(`${dateKey(new Date(end))}T12:00:00Z`)
-    const dateKeys = Array.from({ length: count }, (_, index) => {
-      const date = new Date(endDate)
-      date.setUTCDate(endDate.getUTCDate() - (count - index - 1))
-      return date.toISOString().slice(0, 10)
-    })
+    const last = endDateKey(end)
+    const dateKeys = Array.from({ length: count }, (_, index) => shiftDateKey(last, index - (count - 1)))
     const result = dateKeys.map((key) => ({
       key,
+      // A bucket is a calendar day, and `key` is what says which one. `start`
+      // orders and positions it; it is not the day itself and must not be
+      // formatted, because reading noon UTC back in the viewer's zone names
+      // the following day past UTC+12 (#91). Labels come from `key`.
       start: Date.parse(`${key}T12:00:00Z`),
       cost: 0,
       sessions: 0,
