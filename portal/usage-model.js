@@ -437,5 +437,30 @@ export function createCalendarProjection(timeZone) {
     return { unit, buckets: rows }
   }
 
-  return { parts, dateKey, hour, minute, startOfDay, calendarWindow, buckets, series }
+  /**
+   * Tokens landing on each local calendar date, keyed by date.
+   *
+   * A session records one window and its turns record where inside that window
+   * the volume actually landed, so the date a token belongs to is the date its
+   * own event completed on -- the rule `usageEvents` owns and every view
+   * plotting completion time reads. A view that instead reads whole-session
+   * totals off each date a session touched counts an overnight session's whole
+   * volume twice, and a table doing that visibly exceeded the ledger for any
+   * week holding one (#93).
+   */
+  function tokensByDate(sessions) {
+    const totals = new Map()
+    for (const session of sessions) {
+      for (const event of usageEvents(session)) {
+        const time = Date.parse(event.end || event.start || session.end || session.start)
+        const tokens = Number(event.totalTokens) || 0
+        if (!Number.isFinite(time) || tokens <= 0) continue
+        const key = dateKey(time)
+        totals.set(key, (totals.get(key) || 0) + tokens)
+      }
+    }
+    return totals
+  }
+
+  return { parts, dateKey, hour, minute, startOfDay, calendarWindow, buckets, series, tokensByDate }
 }

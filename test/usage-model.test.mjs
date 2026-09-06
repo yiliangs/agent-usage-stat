@@ -371,6 +371,66 @@ test("a series folds to months only once weeks no longer fit, and stays whole", 
   );
 });
 
+/**
+ * Guard for issue #93.
+ *
+ * A session that ran across midnight is active on both dates, and the timeline
+ * fans it out into one segment per date to draw it. Its tokens are not on both
+ * dates: they land where each token-bearing event completed, the rule
+ * `usageEvents` owns and every view plotting completion time reads. Reading
+ * whole-session totals off each segment counted the whole volume twice, so the
+ * table's token column exceeded the ledger for any week holding one overnight
+ * session.
+ */
+test("an overnight session leaves each date only the tokens that landed on it", () => {
+  const calendar = createCalendarProjection("America/Chicago");
+  // 23:00 on the 1st through 01:00 on the 2nd, local.
+  const overnight = normalizeSession(
+    {
+      start: "2026-07-02T04:00:00.000Z",
+      end: "2026-07-02T06:00:00.000Z",
+      project: "Alpha",
+      machine: "One",
+      provider: "claude",
+      models: ["claude-opus-4-1"],
+      cost: 4,
+      input: 600,
+      output: 400,
+      cacheCreate: 0,
+      cacheRead: 0,
+      totalTokens: 1_000,
+    },
+    0,
+  );
+
+  const whole = calendar.tokensByDate([overnight]);
+  assert.equal(whole.get("2026-07-01"), undefined, "the date the session started on carries none of its volume");
+  assert.equal(whole.get("2026-07-02"), 1_000, "a session with no turn detail lands on the date it finished");
+  assert.equal([...whole.values()].reduce((total, value) => total + value, 0), 1_000);
+
+  // The same session with a turn breakdown that accounts for it: each date now
+  // gets its own turns rather than the session twice.
+  const split = normalizeSession(
+    {
+      ...overnight,
+      turns: [
+        { end: "2026-07-02T04:30:00.000Z", input: 400, output: 200, cacheCreate: 0, cacheRead: 0, totalTokens: 600 },
+        { end: "2026-07-02T05:30:00.000Z", input: 200, output: 200, cacheCreate: 0, cacheRead: 0, totalTokens: 400 },
+      ],
+    },
+    0,
+  );
+
+  const perTurn = calendar.tokensByDate([split]);
+  assert.equal(perTurn.get("2026-07-01"), 600);
+  assert.equal(perTurn.get("2026-07-02"), 400);
+  assert.equal(
+    [...perTurn.values()].reduce((total, value) => total + value, 0),
+    1_000,
+    "the dates must partition the session, not repeat it",
+  );
+});
+
 test("interval projection preserves whole-session primary-model attribution", () => {
   const start = Date.parse("2026-07-02T04:00:00.000Z");
   const end = Date.parse("2026-07-02T08:00:00.000Z");

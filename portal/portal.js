@@ -162,6 +162,7 @@ const {
   calendarWindow: localCalendarWindow,
   buckets: makeCalendarBuckets,
   series: calendarSeries,
+  tokensByDate: localTokensByDate,
 } = createCalendarProjection(LOCAL_TIME_ZONE)
 const trafficTimeFormatter = new Intl.DateTimeFormat('en-US', {
   ...localTimeZoneOptions,
@@ -1983,7 +1984,9 @@ function renderWorkRhythm(sessions, window) {
     ? renderMonthRhythm(dateKeys, segmentsByDate, observedThrough, projectColors)
     : renderWeekRhythm(dateKeys, segmentsByDate, projectColors)
   renderRhythmKey(visibleSessions, projectColors)
-  renderRhythmTable(dateKeys, segmentsByDate, monthView ? observedThrough : null)
+  // Every event completing on a date in view belongs to a session running on
+  // one, so the visible sessions carry the whole of every date's volume.
+  renderRhythmTable(dateKeys, segmentsByDate, localTokensByDate(visibleSessions), monthView ? observedThrough : null)
 
   $('.rhythm-scroll').scrollLeft = 0
   $$('.rhythm-toggle button').forEach((button) => button.classList.toggle('active', button.dataset.rhythmView === state.rhythmView))
@@ -2176,18 +2179,32 @@ function renderMonthRhythmDays(dateKeys, segmentsByDate, bandsByDate, projectCol
   }).join('')
 }
 
-function renderRhythmTable(dateKeys, segmentsByDate, observedThrough = null) {
+/**
+ * The timeline's data table: one row per date in view.
+ *
+ * The two count columns answer different questions and are measured
+ * differently, which is why the caption states both. A session is active on
+ * every date it was running on, because the column beside it is the activity
+ * window and a session running at 00:30 was running on that date. Its tokens
+ * are not: they land on the date each token-bearing event completed, the rule
+ * `usageEvents` owns, so a session that ran across midnight leaves each date
+ * only what landed on it. Reading whole-session totals off each date a session
+ * touched counted an overnight session's volume on both, and the column
+ * exceeded the ledger for any week holding one (#93).
+ */
+function renderRhythmTable(dateKeys, segmentsByDate, tokensOnDate, observedThrough = null) {
   const rows = dateKeys.map((date) => {
     const segments = segmentsByDate.get(date)
     const sessions = daySessions(segments)
-    const tokens = sum(sessions, (session) => session.totalTokens || 0)
+    const tokens = tokensOnDate.get(date) || 0
     const activeStart = segments.length ? Math.min(...segments.map((segment) => segment.startMinute)) : null
     const activeEnd = segments.length ? Math.max(...segments.map((segment) => segment.endMinute)) : null
     const dateLabel = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`))
     const outsideWindow = observedThrough && date > observedThrough
-    return `<tr><th scope="row">${dateLabel}</th><td>${outsideWindow ? 'Outside window' : activeStart === null ? 'None' : `${minuteLabel(activeStart)}–${minuteLabel(activeEnd)}`}</td><td>${outsideWindow ? 'Not observed' : sessions.length}</td><td>${outsideWindow ? 'Not observed' : sessions.length ? fmt.compact(tokens) : '0'}</td></tr>`
+    return `<tr><th scope="row">${dateLabel}</th><td>${outsideWindow ? 'Outside window' : activeStart === null ? 'None' : `${minuteLabel(activeStart)}–${minuteLabel(activeEnd)}`}</td><td>${outsideWindow ? 'Not observed' : sessions.length}</td><td>${outsideWindow ? 'Not observed' : fmt.compact(tokens)}</td></tr>`
   }).join('')
-  $('#rhythmTable').innerHTML = `<table><thead><tr><th>Date</th><th>Activity window</th><th>Sessions</th><th>Recorded tokens</th></tr></thead><tbody>${rows}</tbody></table>`
+  $('#rhythmTable').innerHTML = `<table><thead><tr><th>Date</th><th>Activity window</th><th>Active sessions</th><th>Recorded tokens</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="rhythm-table-note">Recorded tokens land on the date each turn completed, so a session that ran across midnight leaves each date only the volume that landed on it; with no turn detail it counts entirely on the date it finished, which is the date the heatmap draws it on. Active sessions counts every session running at any point during the date, so one session spanning midnight is active on both.</p>`
 }
 
 function renderTopology(sessions, projectSummary) {
