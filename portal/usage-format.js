@@ -30,6 +30,7 @@
  * - `glanceShare` `.glance-share`, one model's percent
  * - `glanceDetail` `.glance-detail`, the latest session's figures, full width
  * - `machineField` `.top-meta b`, the machine field in the page header
+ * - `syncLabel`   `.refresh-label`, the refresh button's own state text
  *
  * `folioIndex` is the only budget that belongs to a row rather than to an
  * element. The index shares a flex row with its "Report plate" label, and both
@@ -51,11 +52,13 @@
  * rather than printing every digit; the dashboard is where a count is read in
  * full. `glanceMeta` and `glanceDetail` are the slots that concatenate.
  *
- * `machineField` is a slot whose text is a sentence built around a count
- * rather than a bare figure, and it is bounded here for the reason the figures
- * are: the header is sized once and cannot grow, while the field takes
- * whatever hostname the ledger recorded. Its budget is the character count the
- * rendered slot was measured to hold, in `test/portal-header.test.mjs`.
+ * `machineField` and `syncLabel` are the two slots whose text is a sentence
+ * built around a count rather than a bare figure, and they are bounded here
+ * for the reason the figures are: both are sized once and neither can grow.
+ * The header's machine field takes whatever hostname the ledger recorded, and
+ * the refresh button has to hold the report of a first synchronization, which
+ * can rewrite a whole ledger at once. Both budgets are character counts the
+ * rendered slots were measured to hold, in `test/portal-header.test.mjs`.
  */
 export const SLOT_BUDGET = {
   heroValue: 7,
@@ -70,6 +73,7 @@ export const SLOT_BUDGET = {
   glanceShare: 4,
   glanceDetail: 26,
   machineField: 16,
+  syncLabel: 19,
 };
 
 /** `text` cut to `budget` characters, with an ellipsis standing for the rest.
@@ -236,5 +240,31 @@ export function machineField(machines) {
  *  singular label. */
 export function machineFieldLabel(machines) {
   return machineNames(machines).length > 1 ? "Machines" : "Machine";
+}
+
+/**
+ * The refresh button's own state text, bounded to the label slot it fills.
+ *
+ * Syncing is a state of the button rather than a message beside it, because a
+ * message beside it moved the button out from under the pointer that had just
+ * clicked it (#36). The slot is therefore sized once, and every state has to
+ * fit: the state's own wording, and whatever a caller hands it.
+ */
+export function syncLabel(text) {
+  return clipToBudget(String(text ?? "").trim().toUpperCase(), SLOT_BUDGET.syncLabel);
+}
+
+/**
+ * How many sessions the last synchronization rewrote, in that same slot.
+ *
+ * The whole sentence is what a reader wants and what an ordinary refresh
+ * produces, so it is printed whenever the budget holds it. A first
+ * synchronization can rewrite a whole ledger at once, and past four digits the
+ * sentence no longer fits, so it folds to the count and the verb, which does.
+ */
+export function sessionsUpdated(count) {
+  const whole = Math.round(count);
+  const sentence = `${tally(whole)} SESSION${whole === 1 ? "" : "S"} UPDATED`;
+  return sentence.length <= SLOT_BUDGET.syncLabel ? sentence : `${tally(whole)} UPDATED`;
 }
 

@@ -9,9 +9,9 @@
  * one line are all questions only the renderer answers. This drives the real
  * page and reports what it drew, leaving the guard to decide what was owed.
  *
- * `probeInput.machineSlot` carries strings the machine field's formatter can
- * emit, which are computed in Node and written into the real slot here, the
- * way `portal-count-slot-probe.js` grounds a budget no fixture can reach.
+ * `probeInput.machineSlot` and `probeInput.syncSlot` carry strings those two
+ * formatters can emit, computed in Node and written into the real slots here,
+ * the way `portal-count-slot-probe.js` grounds a budget no fixture reaches.
  */
 (async () => {
   await waitForRender(() => [...document.querySelectorAll(".portal-view")].some((view) => !view.hidden));
@@ -113,5 +113,28 @@
 
   openView("overview");
 
-  return { header, machineSlot, topology };
+  // Whether a control moves under the pointer that clicked it is a question
+  // only a real click answers, so the probe clicks it and measures. The fetch
+  // behind the button has no server to reach here and fails, which is the
+  // point: the syncing state is set before it, and the failure state after it,
+  // so one click walks the button through both.
+  const button = document.querySelector("#refreshButton");
+  const labelOf = () => text(document.querySelector("#refreshLabel")) ?? text(button);
+  const boxOf = () => {
+    const box = button.getBoundingClientRect();
+    return {
+      x: Math.round(box.x * 100) / 100,
+      y: Math.round(box.y * 100) / 100,
+      width: Math.round(box.width * 100) / 100,
+      height: Math.round(box.height * 100) / 100,
+    };
+  };
+  const refresh = { resting: { box: boxOf(), label: labelOf() } };
+  button.click();
+  refresh.syncing = { box: boxOf(), label: labelOf() };
+  await waitForRender(() => labelOf() !== refresh.syncing.label, 5000);
+  refresh.settled = { box: boxOf(), label: labelOf() };
+  refresh.slot = fillSlot("#refreshLabel", probeInput?.syncSlot || []);
+
+  return { header, machineSlot, topology, refresh };
 })()

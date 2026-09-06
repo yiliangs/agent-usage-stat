@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import test from "node:test";
 
-import { SLOT_BUDGET, machineField, tally } from "../portal/usage-format.js";
+import { SLOT_BUDGET, machineField, sessionsUpdated, tally } from "../portal/usage-format.js";
 import { findChrome, runPortalProbe } from "../scripts/portal-probe-runner.mjs";
 import {
   EXPECTED_VALUES,
@@ -38,13 +38,25 @@ const MACHINE_SLOT = [
   "M".repeat(SLOT_BUDGET.machineField),
 ];
 
+/** Every state the refresh button can print, including the report of a first
+ *  synchronization, which no fixture the probe can serve produces. The label
+ *  is set in a proportional face, so the candidates are the strings the
+ *  formatters actually emit rather than a row of the widest glyph. */
+const SYNC_SLOT = [
+  "REFRESH DATA",
+  "SYNCING",
+  "UP TO DATE",
+  "SYNC FAILED",
+  ...[1, 12, 99, 999, 1247, 999_999, 9.9e14].map(sessionsUpdated),
+];
+
 async function probeHeader() {
   const [result] = await runPortalProbe({
     portalDir: join(process.cwd(), "dist", "portal"),
     data: buildHeaderFixture(),
     probe: new URL("../scripts/portal-header-probe.js", import.meta.url),
     widths: [PROBE_WIDTH],
-    input: { machineSlot: MACHINE_SLOT },
+    input: { machineSlot: MACHINE_SLOT, syncSlot: SYNC_SLOT },
   });
   return result;
 }
@@ -112,4 +124,29 @@ test("the folded topology row says what it stands for and offers no filter", { s
     folded.cells.some((cell) => cell.startsWith("$")),
     `the folded row printed no values: ${JSON.stringify(folded.cells)}`,
   );
+});
+
+test("the refresh control stays where it was clicked while it syncs", { skip }, async () => {
+  const result = await probeHeader();
+  const { resting, syncing, settled } = result.refresh;
+
+  // The reported defect (#36): a separate message appeared beside the button
+  // and pushed it left, out from under the pointer that had just clicked it.
+  assert.equal(syncing.label, "SYNCING", "the button did not take the syncing state itself");
+  assert.deepEqual(syncing.box, resting.box, "the button moved or resized while syncing");
+
+  // The probe's server has no refresh endpoint, so the request fails and the
+  // button reports it. That state has to hold the same box as the other two.
+  assert.equal(settled.label, "SYNC FAILED");
+  assert.deepEqual(settled.box, resting.box, "the button moved when the sync settled");
+});
+
+test("the refresh button's label slot holds every state it can print", { skip }, async () => {
+  const result = await probeHeader();
+
+  for (const slot of result.refresh.slot) {
+    assert.ok(!slot.missing, "the refresh button has no label slot to measure");
+    assert.equal(slot.lines, 1, `the refresh label wrapped on ${JSON.stringify(slot.text)}`);
+    assert.equal(slot.clippedPx, 0, `the refresh label clipped ${JSON.stringify(slot.text)}`);
+  }
 });

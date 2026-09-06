@@ -9,6 +9,8 @@ import {
   machineFieldLabel,
   pct,
   periodDelta,
+  sessionsUpdated,
+  syncLabel,
   tally,
   usd,
   usdHeadline,
@@ -207,4 +209,28 @@ test("the machine field stays inside the header slot for any ledger", () => {
   const long = machineField(["a-very-long-workstation-hostname"]);
   assert.equal(long.length, SLOT_BUDGET.machineField);
   assert.ok(long.endsWith("…"), `a clipped hostname should say so: ${JSON.stringify(long)}`);
+});
+
+test("every refresh-button state fits the one label slot they share", () => {
+  assert.equal(sessionsUpdated(1), "1 SESSION UPDATED");
+  assert.equal(sessionsUpdated(12), "12 SESSIONS UPDATED");
+  // Past four digits the sentence outgrows the slot, so it folds to the count
+  // and the verb rather than being cut mid-word.
+  assert.equal(sessionsUpdated(1247), "1,247 UPDATED");
+  assert.equal(sessionsUpdated(9.9e14), "990.00T UPDATED");
+
+  const counts = [0, 1, 5, 12, 99, 999, 1000, 12_345, 999_999, 1e6, 9.9e14, Number.MAX_SAFE_INTEGER];
+  const labels = ["REFRESH DATA", "SYNCING", "UP TO DATE", "SYNC FAILED", ...counts.map(sessionsUpdated)];
+  for (const label of labels) {
+    assert.ok(
+      label.length <= SLOT_BUDGET.syncLabel,
+      `refresh label ${JSON.stringify(label)} is ${label.length} characters, budget ${SLOT_BUDGET.syncLabel}`,
+    );
+    assert.equal(syncLabel(label), label.toUpperCase(), `refresh label ${JSON.stringify(label)} was cut`);
+  }
+
+  // Whatever reaches the slot, the button's box does not grow to take it.
+  assert.equal(syncLabel("sync failed"), "SYNC FAILED");
+  assert.equal(syncLabel("a state nobody measured this slot for").length, SLOT_BUDGET.syncLabel);
+  assert.equal(syncLabel(""), "");
 });

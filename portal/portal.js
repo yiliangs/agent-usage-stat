@@ -18,6 +18,8 @@ import {
   machineFieldLabel,
   pct,
   periodDelta,
+  sessionsUpdated,
+  syncLabel,
   tally,
   usd,
   usdHeadline,
@@ -106,6 +108,8 @@ const fmt = {
   folioIndex,
   machineField,
   machineFieldLabel,
+  sessionsUpdated,
+  syncLabel,
   pct,
   date: (value) => new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short' }).format(value).toUpperCase(),
   dateYear: (value) => new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short', year: 'numeric' }).format(value).toUpperCase(),
@@ -2490,37 +2494,45 @@ function bindTooltips() {
 
 let syncResetTimer = null
 
-async function setSyncState(status, detail = '') {
+/** What the button says in each state, and how it is drawn. Syncing is a state
+ *  of the button rather than a message beside it: a message beside it moved
+ *  the button away from the pointer that had just clicked it (#36). */
+const SYNC_STATES = {
+  idle: { label: 'REFRESH DATA', className: 'refresh-button' },
+  syncing: { label: 'SYNCING', className: 'refresh-button running' },
+  complete: { label: 'UP TO DATE', className: 'refresh-button success' },
+  error: { label: 'SYNC FAILED', className: 'refresh-button error' },
+}
+
+function paintSyncState(status, label) {
+  const state = SYNC_STATES[status]
   const button = $('#refreshButton')
-  const message = $('#refreshMessage')
+  button.disabled = status === 'syncing'
+  button.className = state.className
+  $('#refreshLabel').textContent = fmt.syncLabel(label || state.label)
+}
+
+/**
+ * Report a synchronization on the button that started it.
+ *
+ * `updated` is the session count a completed synchronization rewrote, and the
+ * sentence it becomes is composed here rather than by the caller, so the one
+ * slot on the page that carries it has one owner deciding what fits.
+ */
+async function setSyncState(status, updated = 0) {
   if (syncResetTimer) window.clearTimeout(syncResetTimer)
-
   if (status === 'syncing') {
-    button.disabled = true
-    button.className = 'refresh-button running'
-    message.textContent = detail || 'SYNCING'
+    paintSyncState('syncing')
     return
   }
-
-  if (status === 'complete') {
-    await load()
-    button.disabled = false
-    button.className = 'refresh-button success'
-    message.textContent = detail || 'UP TO DATE'
-  } else if (status === 'error') {
-    button.disabled = false
-    button.className = 'refresh-button error'
-    message.textContent = detail || 'SYNC FAILED'
-  } else {
-    button.disabled = false
-    button.className = 'refresh-button'
-    message.textContent = ''
+  if (status !== 'complete' && status !== 'error') {
+    paintSyncState('idle')
     return
   }
-
+  if (status === 'complete') await load()
+  paintSyncState(status, status === 'complete' && updated > 0 ? fmt.sessionsUpdated(updated) : '')
   syncResetTimer = window.setTimeout(() => {
-    button.className = 'refresh-button'
-    message.textContent = ''
+    paintSyncState('idle')
     syncResetTimer = null
   }, 3500)
 }
@@ -2530,17 +2542,14 @@ window.agentUsageStatSetSyncState = setSyncState
 async function refreshData() {
   const button = $('#refreshButton')
   if (button.disabled) return
-  await setSyncState('syncing', 'SYNCING')
+  await setSyncState('syncing')
   try {
     const response = await fetch('./api/refresh', { method: 'POST' })
     const result = await response.json().catch(() => null)
     if (!response.ok) throw new Error(result?.error || `Refresh failed (${response.status})`)
-    await setSyncState(
-      'complete',
-      result?.updated ? `${result.updated} SESSIONS UPDATED` : 'UP TO DATE',
-    )
+    await setSyncState('complete', result?.updated || 0)
   } catch (error) {
-    await setSyncState('error', 'SYNC FAILED')
+    await setSyncState('error')
     console.error(error.stack || error)
   }
 }

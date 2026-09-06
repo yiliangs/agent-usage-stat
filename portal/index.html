@@ -634,7 +634,17 @@
     .refresh-button.running i { animation: spin .7s linear infinite; }
     .refresh-button.success { border-color: var(--status-good); }
     .refresh-button.error { border-color: var(--status-error); }
-    .refresh-message { max-width: 170px; color: var(--graphite); font-family: var(--mono); font-size: 10px; }
+    /* The button carries its own sync state, so the slot that state is written
+       into is sized once and never resizes the control under the pointer that
+       just clicked it. `syncLabel` in usage-format.js keeps the text inside
+       this width; the ellipsis is the backstop if anything ever escapes it. */
+    .refresh-label {
+      display: inline-block;
+      width: 136px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .status-dot {
@@ -2467,7 +2477,6 @@
 
     /* Geist Mono is reserved for aligned or technically specific data. */
     .chip,
-    .refresh-message,
     .folio .index,
     .cadence-key,
     .hero-number .delta,
@@ -2773,8 +2782,7 @@
         <button class="portal-tab" role="tab" aria-selected="false" data-portal-view="sessions">Sessions</button>
       </div>
       <div class="view-switch">
-        <button class="refresh-button" id="refreshButton"><i></i>REFRESH DATA</button>
-        <span class="refresh-message" id="refreshMessage"></span>
+        <button class="refresh-button" id="refreshButton"><i></i><span class="refresh-label" id="refreshLabel">REFRESH DATA</span></button>
       </div>
     </nav>
 
