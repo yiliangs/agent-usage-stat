@@ -178,8 +178,8 @@ test("shell wrapper blocks are idempotent and reversible", async () => {
   await writeFile(profile.path, original, "utf8");
 
   try {
-    const cliPath = join(root, "bin", "agent-usage-stat.js");
-    await installTerminalWrappers(profile, cliPath);
+    const helperPath = join(home, "bin", "agent-usage-stat-helper.exe");
+    await installTerminalWrappers(profile, helperPath);
     let content = await readFile(profile.path, "utf8");
     assert.match(content, /function global:claude/);
     assert.match(content, /function global:codex/);
@@ -187,7 +187,7 @@ test("shell wrapper blocks are idempotent and reversible", async () => {
     assert.match(content, /Test-Path Function:\\claudex/);
     assert.match(content, /function claudex \{/);
 
-    await installTerminalWrappers(profile, cliPath);
+    await installTerminalWrappers(profile, helperPath);
     const repeated = await readFile(profile.path, "utf8");
     assert.equal(repeated, content);
 
@@ -196,9 +196,10 @@ test("shell wrapper blocks are idempotent and reversible", async () => {
     // Removal withdraws the block, not the encoding mark the install added.
     assert.equal(content, `${BOM}${original}`);
 
-    const helperPath = join(home, "bin", "agent-usage-stat-helper.exe");
-    await installTerminalWrappers(profile, helperPath, false);
+    await installTerminalWrappers(profile, helperPath);
     content = await readFile(profile.path, "utf8");
+    // The wrapper spawns the helper itself. It is a standalone executable, so
+    // a Node interpreter in front of it would be one more thing to find.
     assert.match(content, /agent-usage-stat-helper\.exe' run claude/);
     assert.doesNotMatch(content, /& node .*agent-usage-stat-helper/);
   } finally {
@@ -222,7 +223,7 @@ test("PowerShell profiles carry one UTF-8 byte order mark", async () => {
       kind: "powershell",
       path: join(home, "fresh", "profile.ps1"),
     };
-    await installTerminalWrappers(fresh, helperPath, false);
+    await installTerminalWrappers(fresh, helperPath);
     const freshBytes = await readFile(fresh.path);
     assert.deepEqual([...freshBytes.subarray(0, 3)], BOM_BYTES);
     const freshText = freshBytes.toString("utf8");
@@ -239,7 +240,7 @@ test("PowerShell profiles carry one UTF-8 byte order mark", async () => {
     await mkdir(join(home, "marked"), { recursive: true });
     await writeFile(marked.path, original, "utf8");
 
-    await installTerminalWrappers(marked, helperPath, false);
+    await installTerminalWrappers(marked, helperPath);
     const installed = await readFile(marked.path);
     const installedText = installed.toString("utf8");
     assert.deepEqual([...installed.subarray(0, 3)], BOM_BYTES);
@@ -248,7 +249,7 @@ test("PowerShell profiles carry one UTF-8 byte order mark", async () => {
     assert.ok(installedText.startsWith(original));
     assert.ok(installedText.includes("function global:claude"));
 
-    await installTerminalWrappers(marked, helperPath, false);
+    await installTerminalWrappers(marked, helperPath);
     assert.deepEqual(await readFile(marked.path), installed);
 
     await removeTerminalWrappers(marked);
@@ -260,14 +261,14 @@ test("PowerShell profiles carry one UTF-8 byte order mark", async () => {
 
 test("zsh and bash wrapper blocks preserve unrelated profile content", async () => {
   const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-posix-profile-"));
-  const cliPath = join(root, "bin", "agent-usage-stat.js");
+  const helperPath = join(home, "bin", "agent-usage-stat-helper");
   const original = "export EXISTING=value\n";
 
   try {
     for (const kind of ["zsh", "bash"]) {
       const profile = { kind, path: join(home, `${kind}rc`) };
       await writeFile(profile.path, original, "utf8");
-      await installTerminalWrappers(profile, cliPath);
+      await installTerminalWrappers(profile, helperPath);
       const content = await readFile(profile.path, "utf8");
       assert.match(content, /claude\(\)/);
       assert.match(content, /codex\(\)/);

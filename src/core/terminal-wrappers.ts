@@ -58,7 +58,6 @@ export function detectShellProfile(
 export async function installTerminalWrappers(
   profile: ShellProfile,
   cliPath: string,
-  usesNode = true,
   commands: readonly WrappedCommand[] = COMMANDS,
 ): Promise<ProfileUpdate> {
   const stored = await readOptional(profile.path);
@@ -68,7 +67,7 @@ export async function installTerminalWrappers(
   const withoutBlock = existing.replace(BLOCK_PATTERN, "");
   const separator = withoutBlock && !withoutBlock.endsWith(eol) ? eol : "";
   const blankLine = withoutBlock.trim() ? eol : "";
-  const block = renderBlock(profile.kind, cliPath, usesNode, eol, commands);
+  const block = renderBlock(profile.kind, cliPath, eol, commands);
   const body = `${withoutBlock}${separator}${blankLine}${block}${eol}`;
   // A PowerShell profile always gains the mark; every other kind keeps only the
   // one it already carried. Splicing the block on the unmarked text and adding
@@ -153,14 +152,13 @@ function commandExists(
 function renderBlock(
   kind: ShellProfileKind,
   cliPath: string,
-  usesNode: boolean,
   eol: string,
   commands: readonly WrappedCommand[],
 ): string {
   const functions = commands.map((command) =>
     kind === "powershell"
-      ? renderPowerShellFunction(command, cliPath, usesNode, eol)
-      : renderPosixFunction(command, cliPath, usesNode, eol),
+      ? renderPowerShellFunction(command, cliPath, eol)
+      : renderPosixFunction(command, cliPath, eol),
   ).join(eol + eol);
   return `${BLOCK_START}${eol}${functions}${eol}${BLOCK_END}`;
 }
@@ -168,13 +166,10 @@ function renderBlock(
 function renderPowerShellFunction(
   command: WrappedCommand,
   cliPath: string,
-  usesNode: boolean,
   eol: string,
 ): string {
   const quotedPath = cliPath.replace(/'/g, "''");
-  const invocation = usesNode
-    ? `& node '${quotedPath}' run ${command} -- @args`
-    : `& '${quotedPath}' run ${command} -- @args`;
+  const invocation = `& '${quotedPath}' run ${command} -- @args`;
   const lines = [
     `function global:${command} {`,
     `  ${invocation}`,
@@ -192,13 +187,10 @@ function renderPowerShellFunction(
 function renderPosixFunction(
   command: WrappedCommand,
   cliPath: string,
-  usesNode: boolean,
   eol: string,
 ): string {
   const quotedPath = cliPath.replace(/'/g, `'"'"'`);
-  const invocation = usesNode
-    ? `node '${quotedPath}' run ${command} -- "$@"`
-    : `'${quotedPath}' run ${command} -- "$@"`;
+  const invocation = `'${quotedPath}' run ${command} -- "$@"`;
   const lines = [
     `${command}() {`,
     `  ${invocation}`,

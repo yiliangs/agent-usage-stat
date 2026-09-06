@@ -15,6 +15,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import { detectInstalledAgents } from "../dist/commands/setup.js";
+import { helperBinaryName } from "../dist/core/helper-installation.js";
+import {
+  hookExecutablePath,
+  isAgentUsageStatCommand,
+} from "../dist/integrations/hook-command.js";
 import { installCodexHooks } from "../dist/integrations/codex-hooks.js";
 import { buildPortalData } from "../dist/desktop/portal-data.js";
 import { detectProvider } from "../dist/providers/registry.js";
@@ -86,26 +91,37 @@ test("legacy hookless capture config migrates to batch without re-enabling hooks
   }
 });
 
-test("standalone Codex hooks use the PowerShell command on Windows", async () => {
-  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-codex-hook-"));
+test("a hook names the installed helper rather than the process writing it", async () => {
+  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-hook-target-"));
   const hooksPath = join(home, ".codex", "hooks.json");
-  const previousStandalone = process.env.AGENT_USAGE_STAT_STANDALONE;
-  process.env.AGENT_USAGE_STAT_STANDALONE = "1";
 
   try {
-    await installCodexHooks(hooksPath);
-    const config = JSON.parse(await readFile(hooksPath, "utf8"));
-    const expected = `& "${process.execPath}" capture --detach --quiet`;
+    const { helper, config } = await withHome(home, async () => {
+      const helper = hookExecutablePath();
+      await installCodexHooks(hooksPath);
+      return { helper, config: JSON.parse(await readFile(hooksPath, "utf8")) };
+    });
+
+    // The stable installed location under that home. Setup runs from the
+    // packaged helper, a development build, or the application, and all three
+    // owe the host the one path a capture will actually be spawned from.
+    assert.equal(
+      helper,
+      join(home, ".agent-usage-stat", "bin", helperBinaryName()),
+    );
+    assert.notEqual(helper, process.execPath);
 
     for (const event of ["Stop", "SubagentStop"]) {
-      assert.equal(config.hooks[event][0].hooks[0].commandWindows, expected);
+      const hook = config.hooks[event][0].hooks[0];
+      assert.equal(hook.command, `"${helper}" capture --detach --quiet`);
+      assert.equal(hook.commandWindows, `& "${helper}" capture --detach --quiet`);
+      // Written so the inspectors and the uninstaller find it again.
+      assert.ok(
+        isAgentUsageStatCommand(hook.command),
+        `an unrecognizable hook command: ${hook.command}`,
+      );
     }
   } finally {
-    if (previousStandalone === undefined) {
-      delete process.env.AGENT_USAGE_STAT_STANDALONE;
-    } else {
-      process.env.AGENT_USAGE_STAT_STANDALONE = previousStandalone;
-    }
     await rm(home, { recursive: true, force: true });
   }
 });
@@ -988,11 +1004,31 @@ test("the internal helper version follows the application manifest", async () =>
   assert.equal(result.output.trim(), manifest.version);
 });
 
+/**
+ * Every application path derives from the home directory, so a guard that
+ * calls into the application in process states which home it means for the
+ * length of that call, the way a spawned guard states it in the child's
+ * environment.
+ */
+async function withHome(home, run) {
+  const previous = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    return await run();
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+}
+
 function runCli(args, home) {
   return new Promise((resolve, reject) => {
     const child = spawn(
-      process.execPath,
-      [join(process.cwd(), "dist", "helper.js"), ...args],
+      join(process.cwd(), "dist", "helper", helperBinaryName()),
+      args,
       {
         cwd: process.cwd(),
         env: {
