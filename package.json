@@ -1,7 +1,7 @@
 {
   "name": "agent-usage-stat",
   "productName": "Agent Usage Stat",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "description": "A private desktop application for Claude Code, Codex, and Copilot CLI usage analytics",
   "private": true,
   "license": "MIT",
