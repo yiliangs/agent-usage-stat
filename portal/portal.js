@@ -11,11 +11,24 @@ import {
 import { selectPortalView } from './portal-navigation.js'
 import { providerMark } from './provider-marks.js'
 import { escapeAttribute, escapeText } from './markup-escape.js'
-import { compact, folioIndex, pct, periodDelta, tally, usd, usdHeadline } from './usage-format.js'
+import {
+  compact,
+  folioIndex,
+  machineField,
+  machineFieldLabel,
+  pct,
+  periodDelta,
+  sessionsUpdated,
+  syncLabel,
+  tally,
+  usd,
+  usdHeadline,
+} from './usage-format.js'
 import {
   DAY,
   createCalendarProjection,
   familyOf,
+  foldProjects,
   makeIntervalBuckets,
   normalizeSession,
   shiftDateKey,
@@ -31,6 +44,9 @@ const RANGE_DAYS = { '07D': 7, '14D': 14, '30D': 30, '90D': 90 }
  *  and every chart buckets between them. Thirty days is the length the portal
  *  opens on, so an empty ledger reads the same on whichever chip is chosen. */
 const EMPTY_LEDGER_DAYS = 30
+/** How many rows the project topology table draws. Everything past them is
+ *  folded into the last one, so the Value column still sums to its footer. */
+const TOPOLOGY_ROWS = 7
 const state = {
   sessions: [],
   meta: null,
@@ -90,6 +106,10 @@ const fmt = {
   compact,
   tally,
   folioIndex,
+  machineField,
+  machineFieldLabel,
+  sessionsUpdated,
+  syncLabel,
   pct,
   date: (value) => new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short' }).format(value).toUpperCase(),
   dateYear: (value) => new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short', year: 'numeric' }).format(value).toUpperCase(),
@@ -258,10 +278,13 @@ function render() {
 
 function renderHeader(window, current) {
   const generated = new Date(state.meta?.generatedAt || Date.now())
-  const machines = group(current, (session) => session.machine, () => 1)
-  const machine = machines[0]?.key || state.sessions[0]?.machine || 'UNKNOWN'
+  // A period with nothing in it still has a ledger behind it, and the ledger's
+  // machines are what the field then reports.
+  const machines = (current.length ? current : state.sessions).map((session) => session.machine)
   const metaValues = $$('.top-meta b')
-  if (metaValues[0]) metaValues[0].textContent = machine.toUpperCase()
+  const metaLabel = $('.top-meta div:first-child .micro')
+  if (metaValues[0]) metaValues[0].textContent = fmt.machineField(machines)
+  if (metaLabel) metaLabel.textContent = fmt.machineFieldLabel(machines)
   if (metaValues[1]) metaValues[1].textContent = fmt.dateYear(generated)
   if (metaValues[2]) metaValues[2].textContent = `LIVE / ${fmt.time(generated)}`
 
@@ -2109,7 +2132,7 @@ function renderRhythmTable(dateKeys, segmentsByDate, observedThrough = null) {
 }
 
 function renderTopology(sessions, projectSummary) {
-  const projects = projectSummary.byCost.slice(0, 7)
+  const projects = foldProjects(projectSummary.byCost, TOPOLOGY_ROWS)
   const familyRows = group(sessions, (session) => familyOf(session.primaryModel), (session) => session.cost || 0)
   const families = familyRows.length > 4 ? [...familyRows.slice(0, 3).map((row) => row.key), 'Other'] : familyRows.map((row) => row.key)
   const visible = new Set(families.filter((family) => family !== 'Other'))
@@ -2127,11 +2150,20 @@ function renderTopology(sessions, projectSummary) {
       const value = family === 'Other'
         ? Object.entries(project.families).filter(([key]) => !visible.has(key)).reduce((total, [, amount]) => total + amount, 0)
         : project.families[family] || 0
+      // The folded row stands for several projects at once, so its cells carry
+      // the value and nothing to click: there is no one project to filter on.
+      if (project.synthetic) {
+        if (!value) return '<td><span class="topology-cell static empty" aria-label="No recorded value"></span></td>'
+        return `<td><span class="topology-cell static" style="--cell:${100 * value / maxCell}%" data-tip="${escapeAttribute(project.project)} | ${escapeAttribute(family)} | ${fmt.usd(value)}"><b>${fmt.usd(value)}</b></span></td>`
+      }
       if (!value) return '<td><button class="topology-cell empty" aria-label="No recorded value"></button></td>'
       return `<td><button class="topology-cell topology-filter" data-project="${escapeAttribute(project.project)}" data-family="${escapeAttribute(family)}" style="--cell:${100 * value / maxCell}%" data-tip="${escapeAttribute(project.project)} | ${escapeAttribute(family)} | ${fmt.usd(value)}"><b>${fmt.usd(value)}</b></button></td>`
     }).join('')
     const dominant = Object.entries(project.families).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other'
-    return `<tr><th class="topology-project">${escapeText(project.project)}<small>${escapeText(dominant)} dominant</small></th>${cellsHtml}<td class="topology-total">${fmt.usd(project.cost)}</td></tr>`
+    const caption = project.synthetic
+      ? `${project.projects} projects`
+      : `${escapeText(dominant)} dominant`
+    return `<tr><th class="topology-project">${escapeText(project.project)}<small>${caption}</small></th>${cellsHtml}<td class="topology-total">${fmt.usd(project.cost)}</td></tr>`
   }).join('')
   const foot = families.map((family) => {
     const value = family === 'Other'
@@ -2462,37 +2494,45 @@ function bindTooltips() {
 
 let syncResetTimer = null
 
-async function setSyncState(status, detail = '') {
+/** What the button says in each state, and how it is drawn. Syncing is a state
+ *  of the button rather than a message beside it: a message beside it moved
+ *  the button away from the pointer that had just clicked it (#36). */
+const SYNC_STATES = {
+  idle: { label: 'REFRESH DATA', className: 'refresh-button' },
+  syncing: { label: 'SYNCING', className: 'refresh-button running' },
+  complete: { label: 'UP TO DATE', className: 'refresh-button success' },
+  error: { label: 'SYNC FAILED', className: 'refresh-button error' },
+}
+
+function paintSyncState(status, label) {
+  const state = SYNC_STATES[status]
   const button = $('#refreshButton')
-  const message = $('#refreshMessage')
+  button.disabled = status === 'syncing'
+  button.className = state.className
+  $('#refreshLabel').textContent = fmt.syncLabel(label || state.label)
+}
+
+/**
+ * Report a synchronization on the button that started it.
+ *
+ * `updated` is the session count a completed synchronization rewrote, and the
+ * sentence it becomes is composed here rather than by the caller, so the one
+ * slot on the page that carries it has one owner deciding what fits.
+ */
+async function setSyncState(status, updated = 0) {
   if (syncResetTimer) window.clearTimeout(syncResetTimer)
-
   if (status === 'syncing') {
-    button.disabled = true
-    button.className = 'refresh-button running'
-    message.textContent = detail || 'SYNCING'
+    paintSyncState('syncing')
     return
   }
-
-  if (status === 'complete') {
-    await load()
-    button.disabled = false
-    button.className = 'refresh-button success'
-    message.textContent = detail || 'UP TO DATE'
-  } else if (status === 'error') {
-    button.disabled = false
-    button.className = 'refresh-button error'
-    message.textContent = detail || 'SYNC FAILED'
-  } else {
-    button.disabled = false
-    button.className = 'refresh-button'
-    message.textContent = ''
+  if (status !== 'complete' && status !== 'error') {
+    paintSyncState('idle')
     return
   }
-
+  if (status === 'complete') await load()
+  paintSyncState(status, status === 'complete' && updated > 0 ? fmt.sessionsUpdated(updated) : '')
   syncResetTimer = window.setTimeout(() => {
-    button.className = 'refresh-button'
-    message.textContent = ''
+    paintSyncState('idle')
     syncResetTimer = null
   }, 3500)
 }
@@ -2502,17 +2542,14 @@ window.agentUsageStatSetSyncState = setSyncState
 async function refreshData() {
   const button = $('#refreshButton')
   if (button.disabled) return
-  await setSyncState('syncing', 'SYNCING')
+  await setSyncState('syncing')
   try {
     const response = await fetch('./api/refresh', { method: 'POST' })
     const result = await response.json().catch(() => null)
     if (!response.ok) throw new Error(result?.error || `Refresh failed (${response.status})`)
-    await setSyncState(
-      'complete',
-      result?.updated ? `${result.updated} SESSIONS UPDATED` : 'UP TO DATE',
-    )
+    await setSyncState('complete', result?.updated || 0)
   } catch (error) {
-    await setSyncState('error', 'SYNC FAILED')
+    await setSyncState('error')
     console.error(error.stack || error)
   }
 }

@@ -29,6 +29,8 @@
  * - `glanceMeta`  `.glance-meta`, a band's own figures, right of its label
  * - `glanceShare` `.glance-share`, one model's percent
  * - `glanceDetail` `.glance-detail`, the latest session's figures, full width
+ * - `machineField` `.top-meta b`, the machine field in the page header
+ * - `syncLabel`   `.refresh-label`, the refresh button's own state text
  *
  * `folioIndex` is the only budget that belongs to a row rather than to an
  * element. The index shares a flex row with its "Report plate" label, and both
@@ -49,6 +51,14 @@
  * headline figures sit two to a row, in half a 360px panel, so they compact
  * rather than printing every digit; the dashboard is where a count is read in
  * full. `glanceMeta` and `glanceDetail` are the slots that concatenate.
+ *
+ * `machineField` and `syncLabel` are the two slots whose text is a sentence
+ * built around a count rather than a bare figure, and they are bounded here
+ * for the reason the figures are: both are sized once and neither can grow.
+ * The header's machine field takes whatever hostname the ledger recorded, and
+ * the refresh button has to hold the report of a first synchronization, which
+ * can rewrite a whole ledger at once. Both budgets are character counts the
+ * rendered slots were measured to hold, in `test/portal-header.test.mjs`.
  */
 export const SLOT_BUDGET = {
   heroValue: 7,
@@ -62,7 +72,15 @@ export const SLOT_BUDGET = {
   glanceMeta: 17,
   glanceShare: 4,
   glanceDetail: 26,
+  machineField: 16,
+  syncLabel: 19,
 };
+
+/** `text` cut to `budget` characters, with an ellipsis standing for the rest.
+ *  The last resort for a slot whose text is not a number the formats can
+ *  compact: a hostname the ledger chose, or a sentence a caller composed. */
+const clipToBudget = (text, budget) =>
+  text.length <= budget ? text : text.slice(0, budget - 1).trimEnd() + "…";
 
 /** Exact currency, cents included. For the slots with room to print it in
  *  full: the analysis KPIs, the tables, bar values and session detail. */
@@ -188,3 +206,65 @@ export function periodDelta(current, previous) {
   const size = Math.abs(change * 100);
   return `${change < 0 ? "−" : "+"}${size.toFixed(size < 10 ? 1 : 0)}% vs prior`;
 }
+
+/** The distinct machines in a set of sessions, as the header prints them. */
+const machineNames = (machines) => [
+  ...new Set(machines.filter(Boolean).map((name) => String(name).toUpperCase())),
+];
+
+/**
+ * The header's machine field: one name, or how many machines wrote the ledger.
+ *
+ * A ledger on a shared drive is written by several machines, which is a
+ * supported configuration rather than an edge case. Printing the busiest
+ * machine's name there states a fact that is only true of a single-machine
+ * ledger, and the reader is given no sign the others exist (#138). So the name
+ * is reserved for the single-machine case and anything plural is reported as a
+ * count, which is the one thing about a set of machines that fits the slot.
+ *
+ * The count form is `tally` plus " MACHINES", and that is what sets
+ * `SLOT_BUDGET.machineField`. A hostname longer than the budget is cut to it:
+ * the ledger chooses hostnames, and a long one would otherwise push the
+ * header's identity block out of its own row. Nothing is lost, because the
+ * Sessions table prints each session's machine in full.
+ */
+export function machineField(machines) {
+  const names = machineNames(machines);
+  if (!names.length) return "UNKNOWN";
+  if (names.length > 1) return `${tally(names.length)} MACHINES`;
+  return clipToBudget(names[0], SLOT_BUDGET.machineField);
+}
+
+/** The label above that field, which has to agree with it about number. The
+ *  two are decided together here so a plural field cannot end up under a
+ *  singular label. */
+export function machineFieldLabel(machines) {
+  return machineNames(machines).length > 1 ? "Machines" : "Machine";
+}
+
+/**
+ * The refresh button's own state text, bounded to the label slot it fills.
+ *
+ * Syncing is a state of the button rather than a message beside it, because a
+ * message beside it moved the button out from under the pointer that had just
+ * clicked it (#36). The slot is therefore sized once, and every state has to
+ * fit: the state's own wording, and whatever a caller hands it.
+ */
+export function syncLabel(text) {
+  return clipToBudget(String(text ?? "").trim().toUpperCase(), SLOT_BUDGET.syncLabel);
+}
+
+/**
+ * How many sessions the last synchronization rewrote, in that same slot.
+ *
+ * The whole sentence is what a reader wants and what an ordinary refresh
+ * produces, so it is printed whenever the budget holds it. A first
+ * synchronization can rewrite a whole ledger at once, and past four digits the
+ * sentence no longer fits, so it folds to the count and the verb, which does.
+ */
+export function sessionsUpdated(count) {
+  const whole = Math.round(count);
+  const sentence = `${tally(whole)} SESSION${whole === 1 ? "" : "S"} UPDATED`;
+  return sentence.length <= SLOT_BUDGET.syncLabel ? sentence : `${tally(whole)} UPDATED`;
+}
+

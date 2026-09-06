@@ -5,8 +5,12 @@ import {
   SLOT_BUDGET,
   compact,
   folioIndex,
+  machineField,
+  machineFieldLabel,
   pct,
   periodDelta,
+  sessionsUpdated,
+  syncLabel,
   tally,
   usd,
   usdHeadline,
@@ -154,4 +158,79 @@ test("the period comparison stays on one line for every prior period", () => {
 test("exact currency stays available for the panels wide enough to print it", () => {
   assert.equal(usd(126_987.25), "$126,987.25");
   assert.equal(usd(0), "$0.00");
+});
+
+test("the header names one machine and counts several", () => {
+  // The reported case (#138): a shared Drive ledger written by a laptop and a
+  // desktop printed the busiest machine's name under a singular label, so the
+  // reader was told the other half of their sessions did not exist.
+  assert.equal(machineField(["CHI-W11-01"]), "CHI-W11-01");
+  assert.equal(machineFieldLabel(["CHI-W11-01"]), "Machine");
+  assert.equal(machineField(["CHI-W11-01", "CHI-W11-01"]), "CHI-W11-01");
+  assert.equal(machineFieldLabel(["CHI-W11-01", "CHI-W11-01"]), "Machine");
+
+  assert.equal(machineField(["laptop-02", "CHI-W11-01", "MAC-STUDIO"]), "3 MACHINES");
+  assert.equal(machineFieldLabel(["laptop-02", "CHI-W11-01", "MAC-STUDIO"]), "Machines");
+  // The busiest machine is still first in the list the header hands over, and
+  // it is still not the answer.
+  assert.equal(machineField(["CHI-W11-01", "LAPTOP-02"]), "2 MACHINES");
+
+  // Case is the header's, not the ledger's, so two spellings of one hostname
+  // are one machine.
+  assert.equal(machineField(["chi-w11-01", "CHI-W11-01"]), "CHI-W11-01");
+  assert.equal(machineField([]), "UNKNOWN");
+  assert.equal(machineField([null, undefined, ""]), "UNKNOWN");
+  assert.equal(machineFieldLabel([]), "Machine");
+});
+
+test("the machine field stays inside the header slot for any ledger", () => {
+  // Ledgers a reader can actually assemble, measured through the formatter.
+  for (const size of [2, 3, 9, 42, 999, 5000]) {
+    const text = machineField(Array.from({ length: size }, (_, index) => `MACHINE-${index}`));
+    assert.ok(
+      text.length <= SLOT_BUDGET.machineField,
+      `machine field for ${size} machines ${JSON.stringify(text)} is ${text.length} characters`,
+    );
+  }
+
+  // The count form is what sets the budget, so its ceiling is checked at
+  // magnitudes no ledger reaches rather than only at the ones a reader has.
+  let longest = "";
+  for (const count of [1e6, 9.87e6, 1e9, 1e12, 9.9e14, 1e15, Number.MAX_SAFE_INTEGER]) {
+    const text = `${tally(count)} MACHINES`;
+    if (text.length > longest.length) longest = text;
+  }
+  assert.ok(
+    longest.length <= SLOT_BUDGET.machineField,
+    `widest machine count ${JSON.stringify(longest)} is ${longest.length} characters, budget ${SLOT_BUDGET.machineField}`,
+  );
+
+  // A hostname the ledger chose can be any length; the slot cannot.
+  const long = machineField(["a-very-long-workstation-hostname"]);
+  assert.equal(long.length, SLOT_BUDGET.machineField);
+  assert.ok(long.endsWith("…"), `a clipped hostname should say so: ${JSON.stringify(long)}`);
+});
+
+test("every refresh-button state fits the one label slot they share", () => {
+  assert.equal(sessionsUpdated(1), "1 SESSION UPDATED");
+  assert.equal(sessionsUpdated(12), "12 SESSIONS UPDATED");
+  // Past four digits the sentence outgrows the slot, so it folds to the count
+  // and the verb rather than being cut mid-word.
+  assert.equal(sessionsUpdated(1247), "1,247 UPDATED");
+  assert.equal(sessionsUpdated(9.9e14), "990.00T UPDATED");
+
+  const counts = [0, 1, 5, 12, 99, 999, 1000, 12_345, 999_999, 1e6, 9.9e14, Number.MAX_SAFE_INTEGER];
+  const labels = ["REFRESH DATA", "SYNCING", "UP TO DATE", "SYNC FAILED", ...counts.map(sessionsUpdated)];
+  for (const label of labels) {
+    assert.ok(
+      label.length <= SLOT_BUDGET.syncLabel,
+      `refresh label ${JSON.stringify(label)} is ${label.length} characters, budget ${SLOT_BUDGET.syncLabel}`,
+    );
+    assert.equal(syncLabel(label), label.toUpperCase(), `refresh label ${JSON.stringify(label)} was cut`);
+  }
+
+  // Whatever reaches the slot, the button's box does not grow to take it.
+  assert.equal(syncLabel("sync failed"), "SYNC FAILED");
+  assert.equal(syncLabel("a state nobody measured this slot for").length, SLOT_BUDGET.syncLabel);
+  assert.equal(syncLabel(""), "");
 });

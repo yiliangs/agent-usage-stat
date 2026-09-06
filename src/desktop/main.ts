@@ -320,24 +320,18 @@ async function chooseCapturePolicy(
 
 async function synchronizeCachedWindow(window: BrowserWindow): Promise<void> {
   try {
-    await setPortalSyncState(window, "syncing", "SYNCING");
+    await setPortalSyncState(window, "syncing");
     await helperRuntime.syncInstallation();
     await ensureDesktopSetup(notifyWithDialog);
     const result = await portalRuntime.refresh();
-    await setPortalSyncState(window, "complete", syncDetail(result.updated));
+    await setPortalSyncState(window, "complete", result.updated);
     traceStartup("background-sync-complete");
   } catch (error) {
-    await setPortalSyncState(window, "error", "SYNC FAILED").catch(() => undefined);
+    await setPortalSyncState(window, "error").catch(() => undefined);
     traceStartup("background-sync-failed");
     console.error(error);
   }
   await logbookWatcher.start(resolveUsageRootFromDisk().root);
-}
-
-function syncDetail(updated: number): string {
-  return updated > 0
-    ? `${updated} SESSION${updated === 1 ? "" : "S"} UPDATED`
-    : "UP TO DATE";
 }
 
 /**
@@ -355,23 +349,31 @@ async function autoRefreshPortal(): Promise<void> {
     return;
   }
   try {
-    await setPortalSyncState(window, "syncing", "SYNCING");
+    await setPortalSyncState(window, "syncing");
     const result = await portalRuntime.refresh();
     await statusArea.refresh();
-    await setPortalSyncState(window, "complete", syncDetail(result.updated));
+    await setPortalSyncState(window, "complete", result.updated);
   } catch {
-    await setPortalSyncState(window, "error", "SYNC FAILED").catch(() => undefined);
+    await setPortalSyncState(window, "error").catch(() => undefined);
   }
 }
 
+/**
+ * Drive the dashboard's refresh control from the main process.
+ *
+ * The state and the session count cross the boundary; the wording does not.
+ * The control is a button with one label slot, sized once, and what fits in it
+ * is decided in `portal/usage-format.js`, which this process cannot import. A
+ * sentence composed here would be a second opinion about that slot's width.
+ */
 async function setPortalSyncState(
   window: BrowserWindow,
   status: "syncing" | "complete" | "error",
-  detail: string,
+  updated = 0,
 ): Promise<void> {
   if (window.isDestroyed()) return;
   await window.webContents.executeJavaScript(
-    `window.agentUsageStatSetSyncState?.(${JSON.stringify(status)}, ${JSON.stringify(detail)})`,
+    `window.agentUsageStatSetSyncState?.(${JSON.stringify(status)}, ${JSON.stringify(updated)})`,
   );
 }
 

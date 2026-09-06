@@ -113,6 +113,49 @@ export function summarizeProjects(sessions) {
   }
 }
 
+/**
+ * The first `limit` projects, with everything past them folded into one row.
+ *
+ * A table that prints a bounded number of project rows under a footer totalling
+ * every project asks the reader to add up a column that cannot reach the total
+ * printed beneath it, with nothing on screen explaining the gap, and the gap
+ * grows with the number of projects (#134). Folding the tail into a single row
+ * closes it: the column sums to the footer again, and the row says how many
+ * projects stand behind it.
+ *
+ * Only what can be added survives the fold. `machineCount` cannot: a count of
+ * distinct machines is not a sum across projects, and by this point the sets of
+ * names it was derived from are gone. The row is marked `synthetic` because
+ * there is no project behind it to filter a view on or open a detail for, so a
+ * surface offering those has to leave it alone.
+ */
+export function foldProjects(projects, limit) {
+  if (projects.length <= limit) return projects
+  const kept = projects.slice(0, limit - 1)
+  const folded = projects.slice(limit - 1)
+  const families = {}
+  for (const project of folded) {
+    for (const [family, value] of Object.entries(project.families)) {
+      families[family] = (families[family] || 0) + value
+    }
+  }
+  const sessions = sum(folded, (project) => project.sessions)
+  const cost = sum(folded, (project) => project.cost)
+  return [...kept, {
+    project: 'Other',
+    synthetic: true,
+    projects: folded.length,
+    sessions,
+    cost,
+    tokens: sum(folded, (project) => project.tokens),
+    durSec: sum(folded, (project) => project.durSec),
+    families,
+    last: Math.max(...folded.map((project) => project.last)),
+    avgCost: sessions ? cost / sessions : 0,
+    family: Object.entries(families).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other',
+  }]
+}
+
 export function makeIntervalBuckets(sessions, start, end, preferredCount = 30) {
   const span = Math.max(DAY, end - start)
   const count = clamp(preferredCount, 1, 180)

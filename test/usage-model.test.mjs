@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   createCalendarProjection,
+  foldProjects,
   makeIntervalBuckets,
   normalizeSession,
   shiftDateKey,
@@ -74,6 +75,56 @@ test("one project summary preserves insertion ties and dominant-family ties", ()
     ],
   );
   assert.deepEqual(summary.all[0].families, { Sonnet: 2, Opus: 2 });
+});
+
+test("folding a project list keeps its total on the rows that remain", () => {
+  // The reported shape (#134): ten projects at ten dollars down to one, under
+  // a table that draws seven rows and a footer totalling all ten. Six visible
+  // rows carried $45 under a footer reading $55.
+  const projects = Array.from({ length: 10 }, (_, index) => ({
+    project: `project-${index + 1}`,
+    sessions: 2,
+    cost: 10 - index,
+    tokens: 100 * (10 - index),
+    durSec: 60 * (10 - index),
+    machineCount: 1,
+    avgCost: (10 - index) / 2,
+    families: { [index % 2 ? "Sonnet" : "Opus"]: 10 - index },
+    family: index % 2 ? "Sonnet" : "Opus",
+    last: 1000 + index,
+  }));
+
+  const folded = foldProjects(projects, 7);
+
+  assert.equal(folded.length, 7);
+  assert.deepEqual(folded.map((project) => project.project), [
+    "project-1", "project-2", "project-3", "project-4", "project-5", "project-6", "Other",
+  ]);
+  assert.deepEqual(folded.map((project) => project.cost), [10, 9, 8, 7, 6, 5, 10]);
+  assert.equal(
+    folded.reduce((total, project) => total + project.cost, 0),
+    projects.reduce((total, project) => total + project.cost, 0),
+  );
+
+  const other = folded[6];
+  assert.equal(other.synthetic, true);
+  assert.equal(other.projects, 4);
+  assert.equal(other.sessions, 8);
+  assert.equal(other.tokens, 1000);
+  assert.equal(other.durSec, 600);
+  assert.equal(other.avgCost, 1.25);
+  assert.equal(other.last, 1009);
+  assert.deepEqual(other.families, { Opus: 6, Sonnet: 4 });
+  assert.equal(other.family, "Opus");
+  // A count of distinct machines is not a sum, and the sets it came from are
+  // gone by this point, so the folded row does not claim one.
+  assert.equal("machineCount" in other, false);
+
+  // A list the table can draw whole is handed back untouched, identity and all.
+  const short = projects.slice(0, 5);
+  assert.equal(foldProjects(short, 7), short);
+  const exact = projects.slice(0, 7);
+  assert.equal(foldProjects(exact, 7), exact);
 });
 
 test("calendar projection assigns the local-midnight boundary exactly", () => {
