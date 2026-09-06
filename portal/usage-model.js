@@ -45,6 +45,49 @@ export function familyOf(model) {
   return 'Other'
 }
 
+/**
+ * What each model a session used cost, and the tokens behind that cost.
+ *
+ * A session that routed to more than one model owes each of them their own
+ * spend, and only the shard knows how it divided: a total cannot be split
+ * after the fact. The snapshot carries that division as `byModel`, and this is
+ * the one place that reads it, so every model figure on the page is fanned out
+ * the same way (#89).
+ *
+ * A snapshot built before the split was carried has no `byModel` at all. Those
+ * sessions keep the historical reading -- the whole session under the first
+ * model named -- rather than being divided on a guess.
+ */
+export function modelShares(session) {
+  const entries = Object.entries(session.byModel || {})
+  if (entries.length) {
+    return entries.map(([model, usage]) => ({
+      model,
+      family: familyOf(model),
+      cost: Number(usage?.cost) || 0,
+      tokens: Number(usage?.tokens) || 0,
+    }))
+  }
+  const model = session.models?.[0] || 'unknown'
+  return [{ model, family: familyOf(model), cost: session.cost || 0, tokens: session.totalTokens || 0 }]
+}
+
+/**
+ * The one model a single-valued surface names for a session.
+ *
+ * A timeline block carries one colour and a table cell prints one name, so
+ * both have to pick a model. The costliest share is the model that actually
+ * dominated the session, which is what a reader takes those surfaces to mean.
+ * A tie has no dominant model to report -- a legacy shard divided evenly is
+ * the common case -- so the session's own first model answers instead.
+ */
+function primaryModelOf(session) {
+  const ranked = modelShares(session).filter((share) => share.cost > 0).sort((a, b) => b.cost - a.cost)
+  const top = ranked[0]
+  if (!top || ranked[1]?.cost === top.cost) return session.models?.[0] || 'unknown'
+  return top.model
+}
+
 export function normalizeSession(session, index) {
   const time = Date.parse(session.end || session.start)
   return {
@@ -54,9 +97,59 @@ export function normalizeSession(session, index) {
     project: session.project || 'Unassigned',
     machine: session.machine || 'Unknown',
     provider: session.provider || 'claude',
-    primaryModel: session.models?.[0] || 'unknown',
+    primaryModel: primaryModelOf(session),
     turns: Array.isArray(session.turns) ? session.turns : [],
   }
+}
+
+/**
+ * Spend by model family across a session list, largest first.
+ *
+ * Rows come back in the shape the portal's own `group` returns, because this
+ * replaces `group` wherever the key is a model family: a family's spend is a
+ * sum over model shares, not over sessions, and a session with two families in
+ * it belongs to both.
+ */
+export function groupByFamily(sessions) {
+  const totals = new Map()
+  for (const session of sessions) {
+    for (const share of modelShares(session)) {
+      totals.set(share.family, (totals.get(share.family) || 0) + share.cost)
+    }
+  }
+  return [...totals].map(([key, value]) => ({ key, value })).sort((a, b) => b.value - a.value)
+}
+
+/**
+ * What `family` accounts for across `sessions`, and how many of them carried
+ * any of it.
+ *
+ * A drawer opened from a family slice reports the slice, so its figures are
+ * the family's own shares rather than the whole of every session that touched
+ * it. `sessions` counts sessions, not shares: a session that used two models
+ * is one session in each family's count.
+ */
+export function summarizeFamily(sessions, family) {
+  let cost = 0
+  let tokens = 0
+  let count = 0
+  for (const session of sessions) {
+    let touched = false
+    for (const share of modelShares(session)) {
+      if (share.family !== family) continue
+      cost += share.cost
+      tokens += share.tokens
+      touched = true
+    }
+    if (touched) count += 1
+  }
+  return { cost, tokens, sessions: count, avgCost: count ? cost / count : 0 }
+}
+
+/** Whether any model a session used belongs to `family`. A session is admitted
+ *  by any share it holds, not only by the model that dominated it. */
+export function inFamily(session, family) {
+  return modelShares(session).some((share) => share.family === family)
 }
 
 export function summarizeUsage(sessions) {
@@ -89,13 +182,14 @@ export function summarizeProjects(sessions) {
       families: {},
       last: 0,
     }
-    const family = familyOf(session.primaryModel)
     project.sessions += 1
     project.cost += session.cost || 0
     project.tokens += session.totalTokens || 0
     project.durSec += session.durSec || 0
     project.machines.add(session.machine)
-    project.families[family] = (project.families[family] || 0) + (session.cost || 0)
+    for (const share of modelShares(session)) {
+      project.families[share.family] = (project.families[share.family] || 0) + share.cost
+    }
     project.last = Math.max(project.last, session.t)
     projects.set(session.project, project)
   }
@@ -171,11 +265,12 @@ export function makeIntervalBuckets(sessions, start, end, preferredCount = 30) {
   for (const session of sessions) {
     const index = clamp(Math.floor((session.t - start) / width), 0, count - 1)
     const bucket = buckets[index]
-    const family = familyOf(session.primaryModel)
     bucket.cost += session.cost || 0
     bucket.sessions += 1
     bucket.tokens += session.totalTokens || 0
-    bucket.families[family] = (bucket.families[family] || 0) + (session.cost || 0)
+    for (const share of modelShares(session)) {
+      bucket.families[share.family] = (bucket.families[share.family] || 0) + share.cost
+    }
   }
   return buckets
 }
@@ -365,11 +460,12 @@ export function createCalendarProjection(timeZone) {
     for (const session of sessions) {
       const bucket = byDate.get(dateKey(new Date(session.t)))
       if (!bucket) continue
-      const family = familyOf(session.primaryModel)
       bucket.cost += session.cost || 0
       bucket.sessions += 1
       bucket.tokens += session.totalTokens || 0
-      bucket.families[family] = (bucket.families[family] || 0) + (session.cost || 0)
+      for (const share of modelShares(session)) {
+        bucket.families[share.family] = (bucket.families[share.family] || 0) + share.cost
+      }
     }
     return result
   }
@@ -424,7 +520,6 @@ export function createCalendarProjection(timeZone) {
     for (const session of sessions) {
       const row = byKey.get(SERIES_START[unit](dateKey(session.t)))
       if (!row) continue
-      const family = familyOf(session.primaryModel)
       row.cost += session.cost || 0
       row.sessions += 1
       row.tokens += session.totalTokens || 0
@@ -432,7 +527,9 @@ export function createCalendarProjection(timeZone) {
       row.output += session.output || 0
       row.cacheCreate += session.cacheCreate || 0
       row.cacheRead += session.cacheRead || 0
-      row.families[family] = (row.families[family] || 0) + (session.cost || 0)
+      for (const share of modelShares(session)) {
+        row.families[share.family] = (row.families[share.family] || 0) + share.cost
+      }
     }
     return { unit, buckets: rows }
   }

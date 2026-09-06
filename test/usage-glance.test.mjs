@@ -409,3 +409,27 @@ test("every panel string stays inside the slot the panel reserves for it", () =>
     `latest detail ${JSON.stringify(worst.latest.detail)} is ${worst.latest.detail.length} characters`,
   );
 });
+
+test("a session that routed to two models gives each family its own tokens", () => {
+  // The panel and the dashboard read the same shares, so a mixed session
+  // cannot be one family here and two on the dashboard beside it (#89).
+  const mixed = [{
+    ...session({ sid: "mixed", end: "2026-08-21T13:00:00.000Z", cost: 10, input: 1_000 }),
+    models: ["claude-sonnet-5", "gpt-5"],
+    byModel: {
+      "claude-sonnet-5": { cost: 3, tokens: 300 },
+      "gpt-5": { cost: 7, tokens: 700 },
+    },
+  }];
+
+  const { models } = buildGlance(mixed, { now: NOW, timeZone: ZONE });
+
+  assert.deepEqual(
+    models.map(({ family, tokens, share }) => ({ family, tokens, share })),
+    [
+      { family: "GPT", tokens: 700, share: 0.7 },
+      { family: "Sonnet", tokens: 300, share: 0.3 },
+    ],
+  );
+  assert.equal(models[0].series.variable, "--model-luna", "GPT draws in the series timeline-colors.js gives it");
+});
