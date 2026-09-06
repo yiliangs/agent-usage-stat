@@ -69,6 +69,7 @@ interface StoredSnapshot {
 
 const SYNTHETIC_MODEL = "<synthetic>";
 const TAIL_BYTES = 64 * 1024;
+const CHUNK_BYTES = 8 * 1024 * 1024;
 const LOCK_WAIT_ATTEMPTS = 250;
 
 /** Incrementally derive billing and metadata from one Claude session tree. */
@@ -91,7 +92,9 @@ export async function readClaudeSnapshot(
     }
 
     state.lastReadBytes = 0;
+    const applier = createLineApplier(state);
     for (const file of files) {
+      const isMain = file === expanded;
       try {
         const info = await stat(file);
         const stored = state.files[file] ?? {
@@ -99,13 +102,16 @@ export async function readClaudeSnapshot(
           sourceMtimeMs: 0,
           tailBase64: "",
         };
-        const appended = await readCompleteAppend(file, stored.processedBytes);
+        const appended = await readCompleteAppend(
+          file,
+          stored.processedBytes,
+          (line) => applier.apply(line, isMain),
+        );
         state.lastReadBytes += appended.bytesRead;
-        if (appended.text) {
-          applyLines(state, appended.text, file === expanded);
+        if (appended.acceptedBytes > 0) {
           stored.processedBytes = appended.nextOffset;
           const priorTail = Buffer.from(stored.tailBase64 || "", "base64");
-          const combined = Buffer.concat([priorTail, appended.completeBytes]);
+          const combined = Buffer.concat([priorTail, appended.tail]);
           stored.tailBase64 = combined
             .subarray(Math.max(0, combined.length - TAIL_BYTES))
             .toString("base64");
@@ -113,10 +119,11 @@ export async function readClaudeSnapshot(
         stored.sourceMtimeMs = info.mtimeMs;
         state.files[file] = stored;
       } catch {
-        if (file === expanded) throw new Error(`Transcript file not found: ${transcriptPath}`);
+        if (isMain) throw new Error(`Transcript file not found: ${transcriptPath}`);
         delete state.files[file];
       }
     }
+    applier.finish();
     state.sourceFingerprint = fingerprintTranscriptParts(
       Object.values(state.files).map((file) =>
         fingerprintTranscriptTail(
@@ -209,16 +216,28 @@ function newState(transcriptPath: string, sessionId: string): StoredSnapshot {
   };
 }
 
-function applyLines(state: StoredSnapshot, content: string, isMain: boolean): void {
+interface LineApplier {
+  apply(line: string, isMain: boolean): void;
+  finish(): void;
+}
+
+/**
+ * Fold transcript lines into `state` one line at a time, so a caller can feed
+ * them as they are read rather than holding the file. Billing keys and unknown
+ * models stay in sets across the whole session tree, exactly as one pass over
+ * one joined string did, and `finish` writes them back once at the end.
+ */
+function createLineApplier(state: StoredSnapshot): LineApplier {
   const seen = new Set(state.seenBillingKeys);
   const unknown = new Set(state.unknownModels);
-  for (const line of content.split("\n")) {
-    if (!line.trim()) continue;
+
+  function apply(line: string, isMain: boolean): void {
+    if (!line.trim()) return;
     let message: TranscriptMessage;
     try {
       message = JSON.parse(line) as TranscriptMessage;
     } catch {
-      continue;
+      return;
     }
     if (isMain) applyMetadata(state, message);
     if (
@@ -226,10 +245,10 @@ function applyLines(state: StoredSnapshot, content: string, isMain: boolean): vo
       !message.message?.usage ||
       !message.message.model ||
       message.message.model === SYNTHETIC_MODEL
-    ) continue;
+    ) return;
 
     const id = message.message.id;
-    if (id && seen.has(id)) continue;
+    if (id && seen.has(id)) return;
     if (id) seen.add(id);
     const model = normalizeModelId(message.message.model);
     const usage = message.message.usage;
@@ -249,7 +268,7 @@ function applyLines(state: StoredSnapshot, content: string, isMain: boolean): vo
 
     if (!message.timestamp || Number.isNaN(Date.parse(message.timestamp))) {
       state.temporalComplete = false;
-      continue;
+      return;
     }
     const breakdown = breakdownFor(model, input, output, cacheWrite, cacheRead, cost);
     state.turns.push(buildTurnUsage({
@@ -259,8 +278,13 @@ function applyLines(state: StoredSnapshot, content: string, isMain: boolean): vo
       modelBreakdowns: [breakdown],
     }));
   }
-  state.seenBillingKeys = [...seen];
-  state.unknownModels = [...unknown];
+
+  function finish(): void {
+    state.seenBillingKeys = [...seen];
+    state.unknownModels = [...unknown];
+  }
+
+  return { apply, finish };
 }
 
 function applyMetadata(state: StoredSnapshot, message: TranscriptMessage): void {
@@ -370,48 +394,100 @@ function emptyTotals(): ModelTotals {
   };
 }
 
-async function readCompleteAppend(path: string, offset: number): Promise<{
-  text: string;
-  completeBytes: Buffer;
+interface AppendedRange {
+  acceptedBytes: number;
   nextOffset: number;
   bytesRead: number;
-}> {
+  tail: Buffer;
+}
+
+/**
+ * Hand every complete JSONL line appended since `offset` to `onLine`, reading
+ * the pending range in bounded chunks. Any snapshot invalidation replays a
+ * session tree from byte zero, and a transcript can be larger than the heap
+ * comfortably holds and larger than one string may ever hold, so nothing on
+ * this path materializes the pending range whole. The final partial record is
+ * accepted only if it already parses, and deferred to the next checkpoint
+ * otherwise.
+ */
+async function readCompleteAppend(
+  path: string,
+  offset: number,
+  onLine: (line: string) => void,
+): Promise<AppendedRange> {
   const info = await stat(path);
   const requested = Math.max(0, info.size - offset);
   if (requested === 0) {
-    return { text: "", completeBytes: Buffer.alloc(0), nextOffset: offset, bytesRead: 0 };
+    return { acceptedBytes: 0, nextOffset: offset, bytesRead: 0, tail: Buffer.alloc(0) };
   }
   const handle = await open(path, "r");
   try {
-    const buffer = Buffer.allocUnsafe(requested);
-    const result = await handle.read(buffer, 0, requested, offset);
-    const bytes = buffer.subarray(0, result.bytesRead);
-    let completeLength = bytes.lastIndexOf(0x0a) + 1;
-    if (completeLength === 0) {
-      try {
-        JSON.parse(bytes.toString("utf-8"));
-        completeLength = bytes.length;
-      } catch {
-        completeLength = 0;
+    const chunk = Buffer.allocUnsafe(Math.min(requested, CHUNK_BYTES));
+    let pending = Buffer.alloc(0);
+    let acceptedBytes = 0;
+    let bytesRead = 0;
+    let tail: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+    while (bytesRead < requested) {
+      const result = await handle.read(
+        chunk,
+        0,
+        Math.min(chunk.length, requested - bytesRead),
+        offset + bytesRead,
+      );
+      if (result.bytesRead === 0) break;
+      bytesRead += result.bytesRead;
+      // What is scanned starts at the accepted cursor rather than at the read
+      // cursor, because it carries the partial line the last chunk ended on.
+      const scanned = pending.length === 0
+        ? chunk.subarray(0, result.bytesRead)
+        : Buffer.concat([pending, chunk.subarray(0, result.bytesRead)]);
+      const completeLength = scanned.lastIndexOf(0x0a) + 1;
+      if (completeLength > 0) {
+        emitLines(scanned.subarray(0, completeLength), onLine);
+        acceptedBytes += completeLength;
+        tail = extendTail(tail, scanned.subarray(0, completeLength));
       }
-    } else if (completeLength < bytes.length) {
+      pending = Buffer.from(scanned.subarray(completeLength));
+    }
+    if (pending.length > 0) {
+      const candidate = pending.toString("utf-8");
       try {
-        JSON.parse(bytes.subarray(completeLength).toString("utf-8"));
-        completeLength = bytes.length;
+        JSON.parse(candidate);
+        onLine(candidate);
+        acceptedBytes += pending.length;
+        tail = extendTail(tail, pending);
       } catch {
-        // Defer the partial final record until the next checkpoint.
+        // A writer is still appending the final JSONL record. Defer it.
       }
     }
-    const completeBytes = bytes.subarray(0, completeLength);
-    return {
-      text: completeBytes.toString("utf-8"),
-      completeBytes,
-      nextOffset: offset + completeLength,
-      bytesRead: result.bytesRead,
-    };
+    return { acceptedBytes, nextOffset: offset + acceptedBytes, bytesRead, tail };
   } finally {
     await handle.close();
   }
+}
+
+/**
+ * Split one newline-terminated block into lines. A line is decoded from the
+ * bytes that bound it, so a character split across two chunks is rejoined
+ * before it is decoded rather than after.
+ */
+function emitLines(block: Buffer, onLine: (line: string) => void): void {
+  let start = 0;
+  while (start < block.length) {
+    const newline = block.indexOf(0x0a, start);
+    const end = newline === -1 ? block.length : newline;
+    if (end > start) onLine(block.toString("utf-8", start, end));
+    start = end + 1;
+  }
+}
+
+/** Carry the last `TAIL_BYTES` of everything accepted so far. */
+function extendTail(tail: Buffer, block: Buffer): Buffer {
+  const combined = Buffer.concat([
+    tail,
+    block.subarray(Math.max(0, block.length - TAIL_BYTES)),
+  ]);
+  return combined.subarray(Math.max(0, combined.length - TAIL_BYTES));
 }
 
 async function readTail(path: string, size: number): Promise<Buffer> {

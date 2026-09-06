@@ -45,13 +45,13 @@ The `AGENT_USAGE_STAT_ALL_SESSIONS=1` environment variable disables the Claude a
 
 ## Incremental Codex snapshots
 
-Codex rollout files can exceed 100 MB during long sessions. The provider keeps a versioned per-rollout snapshot under `~/.agent-usage-stat/cache/codex/` with the processed byte cursor, a rolling tail fingerprint, usage totals, model splits, turn data, and transcript metadata. A normal Stop capture reads only complete bytes appended since the prior capture; an incomplete final JSONL line is deferred until a later capture completes it.
+Codex rollout files can exceed 100 MB during long sessions. The provider keeps a versioned per-rollout snapshot under `~/.agent-usage-stat/cache/codex/` with the processed byte cursor, a rolling tail fingerprint, usage totals, model splits, turn data, and transcript metadata. A normal Stop capture reads only complete bytes appended since the prior capture; an incomplete final JSONL line is deferred until a later capture completes it. Whatever the pending range, it is read in bounded chunks and folded in one line at a time, so peak memory follows the chunk size rather than the rollout size.
 
 Parser or pricing-version changes, truncation, replacement, and fingerprint mismatch invalidate the snapshot and trigger one full rebuild. Cache loss affects performance only, not recorded usage correctness.
 
 ## Incremental Claude snapshots
 
-Claude main transcripts and recursive subagent transcripts are also append-only in normal operation. Continuous checkpoints keep a versioned session-tree snapshot under `~/.agent-usage-stat/cache/claude/`. Each file has its own byte cursor and rolling tail while billing deduplication remains shared across the tree. New subagent files are incorporated without rereading prior files; partial final JSONL records are deferred. File removal, truncation, replacement, parser changes, or pricing changes rebuild the derived snapshot.
+Claude main transcripts and recursive subagent transcripts are also append-only in normal operation. Continuous checkpoints keep a versioned session-tree snapshot under `~/.agent-usage-stat/cache/claude/`. Each file has its own byte cursor and rolling tail while billing deduplication remains shared across the tree. New subagent files are incorporated without rereading prior files; partial final JSONL records are deferred. Each file's pending range is read in bounded chunks, as the Codex reader reads its rollout. File removal, truncation, replacement, parser changes, or pricing changes rebuild the derived snapshot.
 
 The hook observation files under `~/.agent-usage-stat/capture-health/` record the last observed attempt, last successful checkpoint, and last failure separately. Absence of a failure does not prove that a host invoked its hook.
 

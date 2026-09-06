@@ -26,6 +26,97 @@ function line(type, payload, timestamp) {
   return JSON.stringify({ type, payload, timestamp });
 }
 
+const CHUNK_BYTES = 8 * 1024 * 1024;
+const LINE_BYTES = 1_000;
+const SPLIT_OFFSET = CHUNK_BYTES % LINE_BYTES;
+
+/**
+ * Widen one JSONL record to exactly LINE_BYTES so a fixture written from these
+ * lines puts the reader's chunk boundary at a known offset inside a record. The
+ * padding is a run of two-byte characters positioned so the boundary bisects
+ * one of them, which a reader decoding whole chunks rather than whole lines
+ * would corrupt.
+ */
+function paddedLine(json) {
+  const head = `${json.slice(0, -1)},"pad":"`;
+  const lead = (SPLIT_OFFSET - Buffer.byteLength(head)) % 2 === 0 ? " " : "";
+  const room = LINE_BYTES - 3 - Buffer.byteLength(head) - lead.length;
+  const record = `${head}${lead}${"é".repeat(Math.floor(room / 2))}"}`;
+  return record + " ".repeat(LINE_BYTES - 1 - Buffer.byteLength(record)) + "\n";
+}
+
+test("Codex bills a record that straddles a read chunk boundary exactly once", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-codex-chunked-"));
+  const cache = join(dir, "cache");
+  const sessionId = "88888888-8888-8888-8888-888888888888";
+  const path = join(dir, `rollout-${sessionId}.jsonl`);
+  const priorCacheRoot = process.env.AGENT_USAGE_STAT_CACHE_ROOT;
+  process.env.AGENT_USAGE_STAT_CACHE_ROOT = cache;
+  const events = 9_000;
+  const lines = [
+    paddedLine(line(
+      "session_meta",
+      { id: sessionId, cwd: "C:\\work\\demo" },
+      "2026-08-09T10:00:00.000Z",
+    )),
+    paddedLine(line(
+      "turn_context",
+      { turn_id: "one", model: "gpt-5.6-sol" },
+      "2026-08-09T10:00:01.000Z",
+    )),
+  ];
+  for (let index = 0; index < events; index++) {
+    lines.push(paddedLine(line("event_msg", {
+      type: "token_count",
+      info: {
+        total_token_usage: {
+          input_tokens: 1_000 + index * 10,
+          cached_input_tokens: 0,
+          output_tokens: 1_000 + index,
+          total_tokens: 2_000 + index * 11,
+        },
+        last_token_usage: {
+          input_tokens: 10,
+          cached_input_tokens: 0,
+          output_tokens: 1,
+          total_tokens: 11,
+        },
+      },
+    }, "2026-08-09T10:00:02.000Z")));
+  }
+  const partial = '{"type":"event_msg"';
+  const content = Buffer.from(lines.join("") + partial, "utf8");
+  assert.ok(content.length > CHUNK_BYTES, "the fixture must outgrow one chunk");
+  assert.equal(
+    content[CHUNK_BYTES] & 0xc0,
+    0x80,
+    "the chunk boundary must fall inside a multi-byte character",
+  );
+  await writeFile(path, content);
+
+  try {
+    const provider = new CodexProvider();
+    const result = await provider.readSession(path, sessionId);
+    assert.equal(result.sessionData.totalTokens, events * 11);
+    assert.equal(result.sessionData.turns.length, 1);
+    assert.equal(result.sessionData.turns[0].totalTokens, events * 11);
+    assert.deepEqual(result.unknownModels, []);
+    assert.equal(result.transcriptData.cwd, "C:\\work\\demo");
+
+    const [cacheFile] = (await readdir(cache)).filter((x) => x.endsWith(".json"));
+    const cacheState = JSON.parse(await readFile(join(cache, cacheFile), "utf8"));
+    assert.equal(cacheState.processedBytes, content.length - partial.length);
+    assert.equal(cacheState.lastReadBytes, content.length);
+  } finally {
+    if (priorCacheRoot === undefined) {
+      delete process.env.AGENT_USAGE_STAT_CACHE_ROOT;
+    } else {
+      process.env.AGENT_USAGE_STAT_CACHE_ROOT = priorCacheRoot;
+    }
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Codex snapshot cache processes appended complete lines and defers partial tails", async () => {
   const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-incremental-"));
   const cache = join(dir, "cache");
