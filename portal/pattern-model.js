@@ -14,7 +14,7 @@
  * `usage-format.js`; neither is reached from here.
  */
 
-import { usageEvents } from './usage-model.js'
+import { usageEvents, weekKeyOf, weekdayOfKey } from './usage-model.js'
 
 export const HOURS_IN_DAY = 24
 export const DAYS_IN_WEEK = 7
@@ -58,20 +58,6 @@ const OTHER_PROJECTS = 'Other projects'
 
 const zeroes = (length) => Array.from({ length }, () => 0)
 const total = (values) => values.reduce((carried, value) => carried + value, 0)
-
-/** Monday-first weekday of a projected date key, so the fold reads MON to SUN
- *  rather than the Sunday-first order `Date` reports. The key is already in the
- *  reader's zone, so parsing it at noon UTC cannot cross a date boundary. */
-export function weekdayOfKey(dateKey) {
-  return (new Date(`${dateKey}T12:00:00Z`).getUTCDay() + 6) % 7
-}
-
-/** The date key of the Monday that opens `dateKey`'s calendar week. */
-export function weekKeyOf(dateKey) {
-  const date = new Date(`${dateKey}T12:00:00Z`)
-  date.setUTCDate(date.getUTCDate() - weekdayOfKey(dateKey))
-  return date.toISOString().slice(0, 10)
-}
 
 export function territoryOf(weekday, hour) {
   if (weekday >= 5) return 'weekend'

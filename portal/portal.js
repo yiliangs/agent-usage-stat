@@ -6,7 +6,6 @@ import {
   WEEKDAY_LABELS,
   WEEKDAY_NAMES,
   buildUsagePattern,
-  weekdayOfKey,
 } from './pattern-model.js'
 import { selectPortalView } from './portal-navigation.js'
 import { providerMark } from './provider-marks.js'
@@ -34,6 +33,7 @@ import {
   shiftDateKey,
   summarizeProjects,
   summarizeUsage,
+  weekdayOfKey,
 } from './usage-model.js'
 
 createIcons({ icons: { Settings } })
@@ -47,6 +47,28 @@ const EMPTY_LEDGER_DAYS = 30
 /** How many rows the project topology table draws. Everything past them is
  *  folded into the last one, so the Value column still sums to its footer. */
 const TOPOLOGY_ROWS = 7
+
+/**
+ * How many marks each chart can hold before its series folds into a coarser
+ * unit.
+ *
+ * These are geometry, not policy: a bar narrower than a couple of pixels is
+ * not a bar, and a cumulative line with a thousand vertices is a smear. The
+ * series covers the whole window at whatever unit fits, so a ceiling now costs
+ * resolution rather than sessions.
+ *
+ * The trend ceiling is 90 because that is the longest fixed range: every chip
+ * on the header stays daily, and only ALL over a long ledger coarsens.
+ */
+const SPEND_CHART_BUCKETS = 180
+const CUMULATIVE_BUCKETS = 120
+const TREND_BUCKETS = 90
+
+/** How a bucket unit reads: as the adjective a chart is labelled with, and as
+ *  the noun a sentence about one bucket uses. */
+const UNIT_LABEL = { day: 'Daily', week: 'Weekly', month: 'Monthly' }
+const UNIT_NOUN = { day: 'day', week: 'week', month: 'month' }
+
 const state = {
   sessions: [],
   meta: null,
@@ -115,8 +137,18 @@ const fmt = {
   dateYear: (value) => new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short', year: 'numeric' }).format(value).toUpperCase(),
   day: (key) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', day: '2-digit', month: 'short' }).format(dayCarrier(key)).toUpperCase(),
   dayYear: (key) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric' }).format(dayCarrier(key)).toUpperCase(),
+  month: (key) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', year: 'numeric' }).format(dayCarrier(key)).toUpperCase(),
   time: (value) => new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }).format(value),
 }
+
+/** An axis tick for one series bucket: the day it holds, or the month, since a
+ *  month named by its first date reads as a day rather than as a month. */
+const bucketTick = (bucket) => bucket.unit === 'month' ? fmt.month(bucket.key) : fmt.day(bucket.key)
+
+/** The same bucket named in a tooltip, where there is room to say which
+ *  interval a first day opens. A bucket that says only its first date reads as
+ *  that date's own figure, which for a week is seven times too small. */
+const bucketLabel = (bucket) => bucket.unit === 'week' ? `WEEK OF ${fmt.day(bucket.key)}` : bucketTick(bucket)
 
 const LOCAL_TIME_ZONE = resolveLocalTimeZone()
 const LOCAL_LOCATION = locationLabelForTimeZone(LOCAL_TIME_ZONE)
@@ -129,7 +161,7 @@ const {
   startOfDay: startOfLocalDay,
   calendarWindow: localCalendarWindow,
   buckets: makeCalendarBuckets,
-  dailyUsage: dailyUsageRows,
+  series: calendarSeries,
 } = createCalendarProjection(LOCAL_TIME_ZONE)
 const trafficTimeFormatter = new Intl.DateTimeFormat('en-US', {
   ...localTimeZoneOptions,
@@ -345,8 +377,12 @@ function renderCadence(sessions, window) {
 }
 
 function renderSpendField(sessions, window) {
-  renderSpendChart(sessions, window)
+  const unit = renderSpendChart(sessions, window)
   renderSpendHeatmap(state.sessions, window)
+  // The card holds two views of one window. The heatmap is a calendar and has
+  // one cell per date whatever the range; the bars fold to whatever unit the
+  // window needs, so the cadence the head prints follows whichever is showing.
+  $('#spendFieldUnit').textContent = state.spendView === 'heatmap' ? 'USD / day' : `USD / ${UNIT_NOUN[unit]}`
   $('.spend-bars-view').hidden = state.spendView !== 'bars'
   $('.spend-heatmap-view').hidden = state.spendView !== 'heatmap'
   $$('.spend-toggle button').forEach((button) => button.classList.toggle('active', button.dataset.spendView === state.spendView))
@@ -417,9 +453,7 @@ function renderSpendChart(sessions, window) {
   const renderedWidth = plot.getBoundingClientRect().width || Math.max(760, $('.hero-chart').clientWidth - 50)
   const viewWidth = Math.max(760, Math.round(renderedWidth))
   plot.setAttribute('viewBox', `0 0 ${viewWidth} 516`)
-  const selectedDays = RANGE_DAYS[state.range]
-  const count = selectedDays || clamp(Math.ceil((window.end - window.start) / DAY), 30, 180)
-  const buckets = makeCalendarBuckets(sessions, window.end, count)
+  const { unit, buckets } = calendarSeries(sessions, window, SPEND_CHART_BUCKETS)
   const familyTotals = new Map()
   for (const bucket of buckets) {
     for (const [family, value] of Object.entries(bucket.families)) {
@@ -462,7 +496,7 @@ function renderSpendChart(sessions, window) {
       const gap = segmentIndex === 0 ? 0 : 1
       const height = segment.rawHeight - gap
       const style = styleForFamily(segment.family)
-      return `<rect class="chart-mark stack-segment" data-family="${escapeAttribute(segment.family)}" data-tip="${fmt.day(bucket.key)} | ${escapeAttribute(segment.family)} | ${fmt.usd(segment.value)}" x="${x.toFixed(1)}" y="${cursor}" width="${barWidth.toFixed(1)}" height="${height}" rx=".8" fill="${style.color}"/>`
+      return `<rect class="chart-mark stack-segment" data-family="${escapeAttribute(segment.family)}" data-tip="${bucketLabel(bucket)} | ${escapeAttribute(segment.family)} | ${fmt.usd(segment.value)}" x="${x.toFixed(1)}" y="${cursor}" width="${barWidth.toFixed(1)}" height="${height}" rx=".8" fill="${style.color}"/>`
     }).join('')
   }).join('')
 
@@ -470,7 +504,7 @@ function renderSpendChart(sessions, window) {
   const labels = labelIndexes.map((index) => {
     const x = left + slot * index + slot / 2
     const anchor = index === 0 ? 'start' : index === buckets.length - 1 ? 'end' : 'middle'
-    return `<text x="${x}" y="500" text-anchor="${anchor}">${fmt.day(buckets[index].key)}</text>`
+    return `<text x="${x}" y="500" text-anchor="${anchor}">${bucketTick(buckets[index])}</text>`
   }).join('')
 
   $('.legend').innerHTML = families.map((family) => {
@@ -479,20 +513,24 @@ function renderSpendChart(sessions, window) {
   }).join('')
 
   $('.plot').innerHTML = `
-    <title>Daily API-equivalent spend stacked by model family</title>
-    <desc>${sessions.length} sessions in the selected period. Each daily bar is divided by model family.</desc>
+    <title>${UNIT_LABEL[unit]} API-equivalent spend stacked by model family</title>
+    <desc>${sessions.length} sessions in the selected period, drawn one bar per ${UNIT_NOUN[unit]} across the whole of it. Each bar is divided by model family.</desc>
     ${grid}${bars}
     <line x1="${peakX}" y1="${Math.max(28, baseline - chartHeight * peak.cost / top - 5)}" x2="${peakX}" y2="25" stroke="var(--ink)"/>
     <text class="annotation" x="${Math.min(right - 130, peakX + 10)}" y="31">PERIOD PEAK</text>
     <text class="annotation" x="${Math.min(right - 130, peakX + 10)}" y="46">${fmt.usd(peak.cost)} / ${peak.sessions} SESSIONS</text>
     ${labels}`
   bindTooltips()
+  return unit
 }
 
 function renderCumulativeSpend(sessions, window) {
-  const selectedDays = RANGE_DAYS[state.range]
-  const count = selectedDays || clamp(Math.ceil((window.end - window.start) / DAY), 30, 120)
-  const buckets = makeCalendarBuckets(sessions, window.end, count)
+  // The series covers the whole window, so the last cumulative value is the
+  // period's total by construction rather than by coincidence. It used to be
+  // the total of however many days fitted under the bucket ceiling, printed
+  // under a PERIOD TOTAL annotation that was 70 percent low on a long ALL
+  // range (#130).
+  const { unit, buckets } = calendarSeries(sessions, window, CUMULATIVE_BUCKETS)
   let running = 0
   const values = buckets.map((bucket) => (running += bucket.cost))
   const total = Math.max(1, values[values.length - 1] || 0)
@@ -507,15 +545,20 @@ function renderCumulativeSpend(sessions, window) {
     return `<line class="${ratio ? 'cumulative-gridline' : 'cumulative-axis'}" x1="${left}" y1="${y}" x2="${right}" y2="${y}"/><text x="4" y="${y + 4}">${fmt.usd(total * ratio).replace('.00', '')}</text>`
   }).join('')
   const points = values.map((value, index) => {
-    const key = buckets[index].key
-    const weeklyCheckpoint = weekdayOfKey(key) === 0
-    if (index !== 0 && !weeklyCheckpoint && index !== values.length - 1) return ''
+    const bucket = buckets[index]
+    // On a daily series a checkpoint is every Monday. Once the series folds to
+    // weeks or months every bucket is already a checkpoint, so marking Mondays
+    // would leave a month series with almost no dots on it.
+    const checkpoint = unit === 'day' ? weekdayOfKey(bucket.key) === 0 : true
+    if (index !== 0 && !checkpoint && index !== values.length - 1) return ''
     const isEnd = index === values.length - 1
-    const role = isEnd ? 'period total' : index === 0 ? 'period start' : 'weekly checkpoint'
-    return `<circle class="${isEnd ? 'cumulative-end' : 'cumulative-point'}" cx="${xFor(index)}" cy="${yFor(value)}" r="${isEnd ? 5 : 3.5}" data-tip="${fmt.day(key)} | ${role} | cumulative ${fmt.usd(value)} | day ${fmt.usd(buckets[index].cost)}"/>`
+    const cadence = unit === 'day' ? 'weekly' : `${UNIT_NOUN[unit]}ly`
+    const role = isEnd ? 'period total' : index === 0 ? 'period start' : `${cadence} checkpoint`
+    return `<circle class="${isEnd ? 'cumulative-end' : 'cumulative-point'}" cx="${xFor(index)}" cy="${yFor(value)}" r="${isEnd ? 5 : 3.5}" data-tip="${bucketLabel(bucket)} | ${role} | cumulative ${fmt.usd(value)} | ${UNIT_NOUN[unit]} ${fmt.usd(bucket.cost)}"/>`
   }).join('')
-  const labels = [0, Math.round((buckets.length - 1) / 2), buckets.length - 1].map((index) => `<text x="${xFor(index)}" y="406" text-anchor="${index === 0 ? 'start' : index === buckets.length - 1 ? 'end' : 'middle'}">${fmt.day(buckets[index].key)}</text>`).join('')
+  const labels = [0, Math.round((buckets.length - 1) / 2), buckets.length - 1].map((index) => `<text x="${xFor(index)}" y="406" text-anchor="${index === 0 ? 'start' : index === buckets.length - 1 ? 'end' : 'middle'}">${bucketTick(buckets[index])}</text>`).join('')
   $('.cumulative-plot').innerHTML = `<defs><linearGradient id="cumulativeFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--token-mid)" stop-opacity=".28"/><stop offset="1" stop-color="var(--token-mid)" stop-opacity=".03"/></linearGradient></defs>${grid}<path class="cumulative-area" d="${area}"/><path class="cumulative-line" d="${line}"/>${points}${labels}<text x="${right}" y="25" text-anchor="end" class="annotation">PERIOD TOTAL / ${fmt.usd(values[values.length - 1] || 0)}</text>`
+  $('#cumulativeMeta').textContent = unit === 'day' ? 'Dots / weekly checkpoints' : `Steps / ${UNIT_NOUN[unit]}ly totals`
 }
 
 function renderModels(sessions) {
@@ -672,7 +715,7 @@ function renderTokenTraffic(sessions, period) {
   requestAnimationFrame(() => { scroller.scrollLeft = scroller.scrollWidth })
 }
 
-function renderDailyTokenBars(rows) {
+function renderDailyTokenBars(rows, unit = 'day') {
   const values = rows.map((row) => row.tokens)
   const count = Math.max(1, rows.length)
   const slot = Math.max(4, Math.floor(760 / count))
@@ -695,7 +738,7 @@ function renderDailyTokenBars(rows) {
   const breakMarkers = outliers.map(({ index }) => brokenBarMarker(index * slot + slot / 2, breakY, Math.max(6, barWidth))).join('')
   const labelEvery = Math.max(1, Math.ceil(104 / slot))
   const labels = rows.map((row, index) => index % labelEvery === 0 || index === rows.length - 1
-    ? `<text class="traffic-axis-label" x="${index * slot + slot / 2}" y="226">${escapeText(fmt.day(row.key))}</text>`
+    ? `<text class="traffic-axis-label" x="${index * slot + slot / 2}" y="226">${escapeText(bucketTick(row))}</text>`
     : '').join('')
   const yLabels = Array.from({ length: 5 }, (_, index) => {
     const value = scale.max * (4 - index) / 4
@@ -706,23 +749,23 @@ function renderDailyTokenBars(rows) {
     ? `<text class="traffic-break-label" x="48" y="10" text-anchor="end">BREAK</text><path class="traffic-y-break" d="M42 ${breakY - 4}l3 3l3 -3l3 3 M42 ${breakY + 1}l3 3l3 -3l3 3"/>`
     : ''
   const hitBuckets = rows.map((row, index) => {
-    const date = fmt.day(row.key)
-    const tip = `${date}\nTOTAL ${fmt.compact(row.tokens)}\nINPUT ${fmt.compact(row.input)} · OUTPUT ${fmt.compact(row.output)}\nCACHE WRITE ${fmt.compact(row.cacheCreate)} · CACHE READ ${fmt.compact(row.cacheRead)}`
+    const tip = `${bucketLabel(row)}\nTOTAL ${fmt.compact(row.tokens)}\nINPUT ${fmt.compact(row.input)} · OUTPUT ${fmt.compact(row.output)}\nCACHE WRITE ${fmt.compact(row.cacheCreate)} · CACHE READ ${fmt.compact(row.cacheRead)}`
     return `<rect class="traffic-hit-bucket multiline-tip" x="${index * slot}" y="${top}" width="${slot}" height="${plotHeight}" data-tip="${escapeAttribute(tip)}"/>`
   }).join('')
   const description = scale.broken
-    ? `Daily token volume shown as bars with ${scale.outlierCount} outlier day${scale.outlierCount === 1 ? '' : 's'} cut above ${fmt.compact(scale.max)} tokens. Hover retains actual values.`
-    : 'Daily token volume shown as monochrome bars on a linear scale.'
+    ? `${UNIT_LABEL[unit]} token volume shown as bars with ${scale.outlierCount} outlier ${UNIT_NOUN[unit]}${scale.outlierCount === 1 ? '' : 's'} cut above ${fmt.compact(scale.max)} tokens. Hover retains actual values.`
+    : `${UNIT_LABEL[unit]} token volume shown as monochrome bars on a linear scale.`
   const clip = scale.broken ? `<defs><clipPath id="dailyTokenClip"><rect x="0" y="${breakY}" width="${width}" height="${usableHeight + 1}"/></clipPath></defs>` : ''
   const barGroup = scale.broken ? `<g clip-path="url(#dailyTokenClip)">${bars}</g>` : bars
   const svg = $('#tokenTrend')
   svg.setAttribute('viewBox', `0 0 ${width} 245`)
   svg.style.width = `${width}px`
-  svg.innerHTML = `<title id="dailyTokenTitle">Daily token volume</title><desc id="dailyTokenDescription">${escapeText(description)}</desc>${clip}${grid}${barGroup}${breakMarkers}<line class="traffic-axis" x1="0" y1="${bottom}" x2="${width}" y2="${bottom}"/>${labels}${hitBuckets}`
+  svg.innerHTML = `<title id="dailyTokenTitle">${escapeText(`${UNIT_LABEL[unit]} token volume`)}</title><desc id="dailyTokenDescription">${escapeText(description)}</desc>${clip}${grid}${barGroup}${breakMarkers}<line class="traffic-axis" x1="0" y1="${bottom}" x2="${width}" y2="${bottom}"/>${labels}${hitBuckets}`
   $('#dailyTokenYAxis').innerHTML = `${yLabels}${yBreak}`
+  $('#tokenTrendHeading').textContent = `${UNIT_LABEL[unit]} token volume`
   $('#dailyTokenMeta').textContent = scale.broken
-    ? `Daily bars / axis break at ${fmt.compact(scale.max)}`
-    : 'Daily bars / all token types'
+    ? `${UNIT_LABEL[unit]} bars / axis break at ${fmt.compact(scale.max)}`
+    : `${UNIT_LABEL[unit]} bars / all token types`
   const scroller = $('.daily-token-scroll')
   requestAnimationFrame(() => { scroller.scrollLeft = scroller.scrollWidth })
 }
@@ -802,8 +845,10 @@ function renderSpendAnalysis(current, previous, period, projects) {
     { label: 'Spend / active day', value: fmt.usd(value.cost / Math.max(1, activeDays)), note: `${activeDays} active day${activeDays === 1 ? '' : 's'}` },
     { label: 'Most expensive', value: fmt.usd(maximum?.cost || 0), note: maximum?.project || 'No sessions' },
   ])
-  const days = dailyUsageRows(current, period)
-  renderLineChart('#spendTrend', days, (row) => row.cost, fmt.usd)
+  const { unit, buckets } = calendarSeries(current, period, TREND_BUCKETS)
+  $('#spendTrendMeta').textContent = `${UNIT_LABEL[unit]} / USD`
+  $('#spendTrend').setAttribute('aria-label', `${UNIT_LABEL[unit]} spend over the selected period`)
+  renderLineChart('#spendTrend', buckets, (row) => row.cost, fmt.usd)
   const machines = group(current, (session) => session.machine, (session) => session.cost || 0)
   renderComposition('#spendMachines', machines, value.cost)
   renderAnalysisBars('#spendProjects', projects.byCost.slice(0, 10).map((project) => ({ label: project.project, note: project.family, value: project.cost, project: project.project, color: styleForFamily(project.family).base })), { format: fmt.usd })
@@ -821,8 +866,8 @@ function renderTokenAnalysis(current, previous, period, projects) {
     { label: 'Tokens / dollar', value: fmt.compact(tokensPerDollar), note: 'Recorded volume per API-equivalent dollar' },
   ])
   renderTokenTraffic(current, period)
-  const days = dailyUsageRows(current, period)
-  renderDailyTokenBars(days)
+  const { unit, buckets } = calendarSeries(current, period, TREND_BUCKETS)
+  renderDailyTokenBars(buckets, unit)
   const composition = [
     { key: 'Input', value: value.input, color: 'var(--token-mid)' },
     { key: 'Output', value: value.output, color: 'var(--token-dark)' },
@@ -832,7 +877,8 @@ function renderTokenAnalysis(current, previous, period, projects) {
   renderComposition('#tokenComposition', composition, value.tokens, fmt.compact)
   const byTokens = projects.all.slice().sort((a, b) => b.tokens - a.tokens).slice(0, 10)
   renderAnalysisBars('#tokenProjects', byTokens.map((project) => ({ label: project.project, note: project.family, value: project.tokens, project: project.project, color: styleForFamily(project.family).base })))
-  const cacheRows = days.filter((row) => row.tokens > 0).slice(-10).map((row) => ({ label: row.key.slice(5), note: `${fmt.compact(row.cacheRead)} cache-read tokens`, value: row.cacheRead / row.tokens }))
+  $('#cacheCadence').textContent = `Cache hit by ${UNIT_NOUN[unit]}`
+  const cacheRows = buckets.filter((row) => row.tokens > 0).slice(-10).map((row) => ({ label: row.key.slice(5), note: `${fmt.compact(row.cacheRead)} cache-read tokens`, value: row.cacheRead / row.tokens }))
   renderAnalysisBars('#cacheDays', cacheRows, { format: fmt.pct })
 }
 

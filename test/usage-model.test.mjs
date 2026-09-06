@@ -142,10 +142,12 @@ test("calendar projection assigns the local-midnight boundary exactly", () => {
     ],
   );
 
-  const julySecond = calendar.dailyUsage(sessions, { start: end - 7 * 86_400_000, end })
-    .find((row) => row.key === "2026-07-02");
+  const julySecond = calendar.series(sessions, { start: end - 7 * 86_400_000, end }, 30)
+    .buckets.find((row) => row.key === "2026-07-02");
   assert.deepEqual(julySecond, {
     key: "2026-07-02",
+    unit: "day",
+    days: 1,
     start: Date.parse("2026-07-02T12:00:00.000Z"),
     cost: 5,
     sessions: 2,
@@ -271,6 +273,102 @@ test("a date key opens at the first instant that belongs to it, across every zon
       );
     }
   }
+});
+
+/**
+ * Guards for issues #130 and #131.
+ *
+ * A chart has a finite number of marks it can draw, and both charts answered
+ * that by capping the bucket count and keeping the newest buckets. Everything
+ * older matched no bucket and was dropped, so a figure labelled PERIOD TOTAL
+ * read 70 percent low over a long ledger and a 90-day selection was drawn from
+ * its last thirty days. A series that covers the window at a coarser unit
+ * keeps every session; only the resolution falls.
+ */
+function dailyLedger(dayCount, { cost = 1, tokens = 1_000, end = Date.parse("2026-08-31T18:00:00.000Z") } = {}) {
+  return Array.from({ length: dayCount }, (_, index) =>
+    normalizeSession(
+      {
+        start: new Date(end - (dayCount - 1 - index) * 86_400_000).toISOString(),
+        end: new Date(end - (dayCount - 1 - index) * 86_400_000).toISOString(),
+        project: "Alpha",
+        machine: "One",
+        provider: "claude",
+        models: ["claude-opus-4-1"],
+        cost,
+        totalTokens: tokens,
+        input: tokens,
+        output: 0,
+        cacheCreate: 0,
+        cacheRead: 0,
+      },
+      index,
+    ),
+  );
+}
+
+test("a window longer than the bucket ceiling coarsens rather than losing its tail", () => {
+  const calendar = createCalendarProjection("America/Chicago");
+  const ledger = dailyLedger(400);
+  const period = { start: ledger[0].t, end: ledger[ledger.length - 1].t };
+
+  const { unit, buckets } = calendar.series(ledger, period, 120);
+
+  assert.equal(unit, "week", "400 days do not fit in 120 daily buckets, but they do in weekly ones");
+  assert.ok(buckets.length <= 120, `drew ${buckets.length} buckets against a ceiling of 120`);
+  assert.equal(
+    buckets.reduce((total, bucket) => total + bucket.cost, 0),
+    400,
+    "the series does not add up to the period total it is annotated with",
+  );
+  assert.equal(buckets.reduce((total, bucket) => total + bucket.sessions, 0), 400);
+  assert.ok(
+    buckets[0].key <= calendar.dateKey(period.start),
+    "the first bucket opens after the window does, so the window's first days fall outside every bucket",
+  );
+  assert.ok(
+    buckets[buckets.length - 1].key <= calendar.dateKey(period.end),
+    "the last bucket opens after the window closes",
+  );
+});
+
+test("a 90-day selection is drawn across 90 days rather than its last 30", () => {
+  const calendar = createCalendarProjection("America/Chicago");
+  const ledger = dailyLedger(90);
+  const period = calendar.calendarWindow(ledger[ledger.length - 1].t, 90);
+
+  const { unit, buckets } = calendar.series(ledger, period, 90);
+
+  assert.equal(unit, "day");
+  assert.equal(buckets.length, 90, "a 90-day window drew a different number of daily buckets");
+  assert.equal(buckets.reduce((total, bucket) => total + bucket.cost, 0), 90);
+  assert.equal(buckets.reduce((total, bucket) => total + bucket.tokens, 0), 90_000);
+  assert.equal(buckets[0].key, period.firstKey, "the chart opens somewhere other than the window does");
+});
+
+test("a series folds to months only once weeks no longer fit, and stays whole", () => {
+  const calendar = createCalendarProjection("America/Chicago");
+  const ledger = dailyLedger(1_200);
+  const period = { start: ledger[0].t, end: ledger[ledger.length - 1].t };
+
+  const weekly = calendar.series(ledger, period, 180);
+  assert.equal(weekly.unit, "week");
+  assert.equal(weekly.buckets.reduce((total, bucket) => total + bucket.cost, 0), 1_200);
+
+  const monthly = calendar.series(ledger, period, 60);
+  assert.equal(monthly.unit, "month", "1,200 days need more than 60 weekly buckets");
+  assert.ok(monthly.buckets.length <= 60);
+  assert.equal(monthly.buckets.reduce((total, bucket) => total + bucket.cost, 0), 1_200);
+  assert.deepEqual(
+    monthly.buckets.map((bucket) => bucket.key.slice(8)),
+    monthly.buckets.map(() => "01"),
+    "a month bucket must be named by the first of its month",
+  );
+  assert.equal(
+    monthly.buckets.reduce((total, bucket) => total + bucket.days, 0),
+    1_200,
+    "the bucket day spans must partition the window: the short bucket at each end counts only the days the window holds",
+  );
 });
 
 test("interval projection preserves whole-session primary-model attribution", () => {

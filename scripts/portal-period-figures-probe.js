@@ -46,7 +46,16 @@
     .map((node) => node.textContent.trim())
     .find((value) => value.startsWith("PERIOD TOTAL"));
 
+  // The expenditure card holds a calendar and a bar chart, and only one of them
+  // is on screen at a time. The heatmap is always a day per cell; the bars fold
+  // to whatever the window needs, so the cadence the card head prints is read
+  // once on each view.
+  const heatmapFieldUnit = text(document.querySelector("#spendFieldUnit"));
+  const barsToggle = all(".spend-toggle button").find((button) => button.dataset.spendView === "bars");
+  if (barsToggle) barsToggle.click();
+
   return {
+    heatmapFieldUnit,
     selectedRange: text(all(".ranges .chip").find((chip) => chip.classList.contains("active"))),
     hero: text(document.querySelector(".hero-number .value")),
     periodRange: text(document.querySelector(".period-range span")),

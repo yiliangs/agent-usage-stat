@@ -201,6 +201,57 @@ export function shiftDateKey(key, days) {
   return date.toISOString().slice(0, 10)
 }
 
+/** Monday-first weekday of a projected date key, so a week reads MON to SUN
+ *  rather than the Sunday-first order `Date` reports. The key is already in the
+ *  reader's zone, so parsing it at noon UTC cannot cross a date boundary. */
+export function weekdayOfKey(key) {
+  return (new Date(`${key}T12:00:00Z`).getUTCDay() + 6) % 7
+}
+
+/** The date key of the Monday that opens `key`'s calendar week. */
+export function weekKeyOf(key) {
+  return shiftDateKey(key, -weekdayOfKey(key))
+}
+
+/** The date key of the first day of `key`'s calendar month. */
+export function monthKeyOf(key) {
+  return `${key.slice(0, 7)}-01`
+}
+
+/**
+ * The units a calendar series can fold a window into, finest first.
+ *
+ * A chart draws one mark per bucket and has a finite number of marks it can
+ * hold, so a long window has to be folded rather than truncated. Truncating is
+ * what it did: the bucket count was capped and every day older than the cap
+ * matched no bucket and vanished, taking 70 percent of a long ledger out of a
+ * figure labelled PERIOD TOTAL (#130) and two thirds of a 90-day selection out
+ * of the trend charts (#131). Coarsening keeps every session in the series;
+ * only the resolution drops.
+ */
+const SERIES_UNITS = ['day', 'week', 'month']
+
+/** The bucket a date key belongs to, per unit, named by the bucket's first day. */
+const SERIES_START = { day: (key) => key, week: weekKeyOf, month: monthKeyOf }
+
+/** The next bucket after the one opening on `key`. A month is stepped through
+ *  its own first day: no month is longer than 31 days and none is shorter than
+ *  28, so 31 days on from the first lands inside the next month every time. */
+const SERIES_STEP = {
+  day: (key) => shiftDateKey(key, 1),
+  week: (key) => shiftDateKey(key, 7),
+  month: (key) => monthKeyOf(shiftDateKey(key, 31)),
+}
+
+/** Every bucket key from the one holding `firstKey` through the one holding
+ *  `lastKey`, so the series opens at or before the window's first day and
+ *  closes at or after its last. */
+function seriesKeys(firstKey, lastKey, unit) {
+  const keys = []
+  for (let key = SERIES_START[unit](firstKey); key <= lastKey; key = SERIES_STEP[unit](key)) keys.push(key)
+  return keys.length ? keys : [SERIES_START[unit](firstKey)]
+}
+
 export function createCalendarProjection(timeZone) {
   const timeZoneOptions = timeZone ? { timeZone } : {}
   const partsFormatter = new Intl.DateTimeFormat('en-US', {
@@ -323,26 +374,68 @@ export function createCalendarProjection(timeZone) {
     return result
   }
 
-  function dailyUsage(sessions, period) {
-    const count = clamp(Math.ceil((period.end - period.start) / DAY), 7, 30)
-    const rows = buckets(sessions, period.end, count).map((bucket) => ({
-      ...bucket,
-      input: 0,
-      output: 0,
-      cacheCreate: 0,
-      cacheRead: 0,
-    }))
-    const byDate = new Map(rows.map((row) => [row.key, row]))
+  /**
+   * The whole window as a series of at most `maxBuckets` buckets.
+   *
+   * A chart says how many marks it can draw, not how long a bucket is. This
+   * picks the finest unit that fits inside that ceiling and covers the window
+   * end to end, so every session the caller was handed lands in a bucket and
+   * the series adds back up to the period's own total. A caller that capped
+   * the count instead kept the newest `count` days and silently dropped the
+   * rest (#130, #131).
+   *
+   * `unit` comes back with the buckets because a chart drawn in weeks has to
+   * say so: the same marks under a "Daily" label are a second wrong reading of
+   * the same window.
+   */
+  function series(sessions, period, maxBuckets = 30) {
+    const ceiling = Math.max(1, Math.round(maxBuckets))
+    const firstKey = dateKey(period.start)
+    const lastKey = dateKey(period.end)
+    const unit = SERIES_UNITS.find((candidate) => seriesKeys(firstKey, lastKey, candidate).length <= ceiling)
+      || SERIES_UNITS[SERIES_UNITS.length - 1]
+    const keys = seriesKeys(firstKey, lastKey, unit)
+    const dayAfterLast = shiftDateKey(lastKey, 1)
+    const rows = keys.map((key, index) => {
+      // How many of the window's own days this bucket holds, not how long the
+      // unit is. A window opening mid-week and closing mid-month leaves a
+      // short bucket at each end, and a reader comparing one bucket against
+      // another has to be able to tell which ones are short.
+      const from = index === 0 && key < firstKey ? firstKey : key
+      const to = keys[index + 1] || dayAfterLast
+      return {
+        key,
+        unit,
+        days: Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / DAY),
+        // As in `buckets`: `start` orders and positions the bucket, `key`
+        // names it, and only `key` may be formatted (#91).
+        start: Date.parse(`${key}T12:00:00Z`),
+        cost: 0,
+        sessions: 0,
+        tokens: 0,
+        families: {},
+        input: 0,
+        output: 0,
+        cacheCreate: 0,
+        cacheRead: 0,
+      }
+    })
+    const byKey = new Map(rows.map((row) => [row.key, row]))
     for (const session of sessions) {
-      const row = byDate.get(dateKey(new Date(session.t)))
+      const row = byKey.get(SERIES_START[unit](dateKey(session.t)))
       if (!row) continue
+      const family = familyOf(session.primaryModel)
+      row.cost += session.cost || 0
+      row.sessions += 1
+      row.tokens += session.totalTokens || 0
       row.input += session.input || 0
       row.output += session.output || 0
       row.cacheCreate += session.cacheCreate || 0
       row.cacheRead += session.cacheRead || 0
+      row.families[family] = (row.families[family] || 0) + (session.cost || 0)
     }
-    return rows
+    return { unit, buckets: rows }
   }
 
-  return { parts, dateKey, hour, minute, startOfDay, calendarWindow, buckets, dailyUsage }
+  return { parts, dateKey, hour, minute, startOfDay, calendarWindow, buckets, series }
 }

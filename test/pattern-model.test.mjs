@@ -8,10 +8,13 @@ import {
   TERRITORIES,
   buildUsagePattern,
   territoryOf,
+} from "../portal/pattern-model.js";
+import {
+  createCalendarProjection,
+  normalizeSession,
   weekKeyOf,
   weekdayOfKey,
-} from "../portal/pattern-model.js";
-import { createCalendarProjection, normalizeSession } from "../portal/usage-model.js";
+} from "../portal/usage-model.js";
 
 const utc = createCalendarProjection("UTC");
 
