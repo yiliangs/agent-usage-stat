@@ -33,6 +33,82 @@ function assistant(
   });
 }
 
+const CHUNK_BYTES = 8 * 1024 * 1024;
+const LINE_BYTES = 1_000;
+const SPLIT_OFFSET = CHUNK_BYTES % LINE_BYTES;
+
+/**
+ * Widen one JSONL record to exactly LINE_BYTES so a fixture written from these
+ * lines puts the reader's chunk boundary at a known offset inside a record. The
+ * padding is a run of two-byte characters positioned so the boundary bisects
+ * one of them, which a reader decoding whole chunks rather than whole lines
+ * would corrupt.
+ */
+function paddedLine(json) {
+  const head = `${json.slice(0, -1)},"pad":"`;
+  const lead = (SPLIT_OFFSET - Buffer.byteLength(head)) % 2 === 0 ? " " : "";
+  const room = LINE_BYTES - 3 - Buffer.byteLength(head) - lead.length;
+  const record = `${head}${lead}${"é".repeat(Math.floor(room / 2))}"}`;
+  return record + " ".repeat(LINE_BYTES - 1 - Buffer.byteLength(record)) + "\n";
+}
+
+test("Claude bills a record that straddles a read chunk boundary exactly once", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-claude-chunked-"));
+  const cache = join(dir, "cache");
+  const sessionId = "33333333-3333-4333-8333-333333333333";
+  const path = join(dir, `${sessionId}.jsonl`);
+  const priorCacheRoot = process.env.AGENT_USAGE_STAT_CACHE_ROOT;
+  process.env.AGENT_USAGE_STAT_CACHE_ROOT = cache;
+  const responses = 9_000;
+  const lines = [
+    paddedLine(JSON.stringify({
+      type: "user",
+      timestamp: "2026-08-09T10:00:00.000Z",
+      cwd: "C:\\work\\demo",
+      message: { role: "user", content: "First prompt" },
+    })),
+  ];
+  for (let index = 0; index < responses; index++) {
+    lines.push(paddedLine(assistant(
+      `bulk-${index}`,
+      { input_tokens: 10, output_tokens: 1 },
+      "claude-sonnet-4-6",
+      "2026-08-09T10:00:01.000Z",
+    )));
+  }
+  const partial = '{"type":"assistant"';
+  const content = Buffer.from(lines.join("") + partial, "utf8");
+  assert.ok(content.length > CHUNK_BYTES, "the fixture must outgrow one chunk");
+  assert.equal(
+    content[CHUNK_BYTES] & 0xc0,
+    0x80,
+    "the chunk boundary must fall inside a multi-byte character",
+  );
+  await writeFile(path, content);
+
+  try {
+    const provider = new ClaudeProvider();
+    const result = await provider.readSession(path, sessionId);
+    assert.equal(result.sessionData.totalTokens, responses * 11);
+    assert.equal(result.sessionData.turns.length, responses);
+    assert.deepEqual(result.unknownModels, []);
+    assert.equal(result.transcriptData.firstPrompt, "First prompt");
+
+    const [cacheFile] = (await readdir(join(cache, "claude")))
+      .filter((name) => name.endsWith(".json"));
+    const cacheState = JSON.parse(
+      await readFile(join(cache, "claude", cacheFile), "utf8"),
+    );
+    const [stored] = Object.values(cacheState.files);
+    assert.equal(stored.processedBytes, content.length - partial.length);
+    assert.equal(cacheState.lastReadBytes, content.length);
+  } finally {
+    if (priorCacheRoot === undefined) delete process.env.AGENT_USAGE_STAT_CACHE_ROOT;
+    else process.env.AGENT_USAGE_STAT_CACHE_ROOT = priorCacheRoot;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Claude checkpoints process only appended transcript bytes across the session tree", async () => {
   const dir = await mkdtemp(join(tmpdir(), "agent-usage-stat-claude-incremental-"));
   const cache = join(dir, "cache");

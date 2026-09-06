@@ -82,6 +82,8 @@ interface MemoEntry {
 }
 
 const memo = new Map<string, MemoEntry>();
+const TAIL_BYTES = 64 * 1024;
+const CHUNK_BYTES = 8 * 1024 * 1024;
 const LOCK_WAIT_ATTEMPTS = 250;
 
 /** Read one append-only rollout once and derive both billing and metadata. */
@@ -122,18 +124,23 @@ export async function readCodexSnapshot(
       }
     }
 
-    const appended = await readCompleteAppend(expanded, state.processedBytes);
+    if (state.processedBytes === 0) {
+      state.currentModel = (await firstDeclaredModel(expanded)) ?? "unknown";
+    }
+    const applier = createLineApplier(state);
+    const appended = await readCompleteAppend(
+      expanded,
+      state.processedBytes,
+      applier.apply,
+    );
+    applier.finish();
     state.lastReadBytes = appended.bytesRead;
-    if (appended.text) {
-      if (state.processedBytes === 0) {
-        state.currentModel = firstDeclaredModel(appended.text) ?? "unknown";
-      }
-      applyLines(state, appended.text);
+    if (appended.acceptedBytes > 0) {
       state.processedBytes = appended.nextOffset;
       const priorTail = Buffer.from(state.tailBase64 || "", "base64");
-      const combined = Buffer.concat([priorTail, appended.completeBytes]);
+      const combined = Buffer.concat([priorTail, appended.tail]);
       state.tailBase64 = combined
-        .subarray(Math.max(0, combined.length - 64 * 1024))
+        .subarray(Math.max(0, combined.length - TAIL_BYTES))
         .toString("base64");
     }
     state.sourceMtimeMs = currentInfo.mtimeMs;
@@ -210,70 +217,124 @@ function newState(
   };
 }
 
+interface AppendedRange {
+  acceptedBytes: number;
+  nextOffset: number;
+  bytesRead: number;
+  tail: Buffer;
+}
+
+/**
+ * Hand every complete JSONL line appended since `offset` to `onLine`, reading
+ * at most `limit` bytes and never more than one chunk at a time. A rollout can
+ * exceed 100 MB, any snapshot invalidation replays it from byte zero, and one
+ * string cannot hold that much, so nothing on this path materializes the
+ * pending range whole. The final partial record is accepted only if it already
+ * parses, and deferred to the next checkpoint otherwise.
+ */
 async function readCompleteAppend(
   path: string,
   offset: number,
-): Promise<{
-  text: string;
-  completeBytes: Buffer;
-  nextOffset: number;
-  bytesRead: number;
-}> {
+  onLine: (line: string) => void,
+  limit = Number.POSITIVE_INFINITY,
+): Promise<AppendedRange> {
   const info = await stat(path);
-  const requested = Math.max(0, info.size - offset);
+  const requested = Math.min(Math.max(0, info.size - offset), limit);
   if (requested === 0) {
-    return { text: "", completeBytes: Buffer.alloc(0), nextOffset: offset, bytesRead: 0 };
+    return { acceptedBytes: 0, nextOffset: offset, bytesRead: 0, tail: Buffer.alloc(0) };
   }
   const handle = await open(path, "r");
   try {
-    const buffer = Buffer.allocUnsafe(requested);
-    const result = await handle.read(buffer, 0, requested, offset);
-    const bytes = buffer.subarray(0, result.bytesRead);
-    let completeLength = bytes.lastIndexOf(0x0a) + 1;
-    if (completeLength === 0) {
-      const candidate = bytes.toString("utf-8");
-      try {
-        JSON.parse(candidate);
-        completeLength = bytes.length;
-      } catch {
-        return {
-          text: "",
-          completeBytes: Buffer.alloc(0),
-          nextOffset: offset,
-          bytesRead: result.bytesRead,
-        };
+    const chunk = Buffer.allocUnsafe(Math.min(requested, CHUNK_BYTES));
+    let pending = Buffer.alloc(0);
+    let acceptedBytes = 0;
+    let bytesRead = 0;
+    let tail: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+    while (bytesRead < requested) {
+      const result = await handle.read(
+        chunk,
+        0,
+        Math.min(chunk.length, requested - bytesRead),
+        offset + bytesRead,
+      );
+      if (result.bytesRead === 0) break;
+      bytesRead += result.bytesRead;
+      // What is scanned starts at the accepted cursor rather than at the read
+      // cursor, because it carries the partial line the last chunk ended on.
+      const scanned = pending.length === 0
+        ? chunk.subarray(0, result.bytesRead)
+        : Buffer.concat([pending, chunk.subarray(0, result.bytesRead)]);
+      const completeLength = scanned.lastIndexOf(0x0a) + 1;
+      if (completeLength > 0) {
+        emitLines(scanned.subarray(0, completeLength), onLine);
+        acceptedBytes += completeLength;
+        tail = extendTail(tail, scanned.subarray(0, completeLength));
       }
-    } else if (completeLength < bytes.length) {
-      const candidate = bytes.subarray(completeLength).toString("utf-8");
+      pending = Buffer.from(scanned.subarray(completeLength));
+    }
+    if (pending.length > 0) {
+      const candidate = pending.toString("utf-8");
       try {
         JSON.parse(candidate);
-        completeLength = bytes.length;
+        onLine(candidate);
+        acceptedBytes += pending.length;
+        tail = extendTail(tail, pending);
       } catch {
         // A writer is still appending the final JSONL record. Defer it.
       }
     }
-    const completeBytes = bytes.subarray(0, completeLength);
-    return {
-      text: completeBytes.toString("utf-8"),
-      completeBytes,
-      nextOffset: offset + completeLength,
-      bytesRead: result.bytesRead,
-    };
+    return { acceptedBytes, nextOffset: offset + acceptedBytes, bytesRead, tail };
   } finally {
     await handle.close();
   }
 }
 
-function applyLines(state: StoredSnapshot, content: string): void {
+/**
+ * Split one newline-terminated block into lines. A line is decoded from the
+ * bytes that bound it, so a character split across two chunks is rejoined
+ * before it is decoded rather than after.
+ */
+function emitLines(block: Buffer, onLine: (line: string) => void): void {
+  let start = 0;
+  while (start < block.length) {
+    const newline = block.indexOf(0x0a, start);
+    const end = newline === -1 ? block.length : newline;
+    if (end > start) onLine(block.toString("utf-8", start, end));
+    start = end + 1;
+  }
+}
+
+/** Carry the last `TAIL_BYTES` of everything accepted so far. */
+function extendTail(tail: Buffer, block: Buffer): Buffer {
+  const combined = Buffer.concat([
+    tail,
+    block.subarray(Math.max(0, block.length - TAIL_BYTES)),
+  ]);
+  return combined.subarray(Math.max(0, combined.length - TAIL_BYTES));
+}
+
+interface LineApplier {
+  apply(line: string): void;
+  finish(): void;
+}
+
+/**
+ * Fold rollout lines into `state` one line at a time, so a caller can feed them
+ * as they are read rather than holding the file. The cumulative-usage keys and
+ * unknown models stay in sets for the whole pass, exactly as one pass over one
+ * joined string did, and `finish` writes them back once at the end.
+ */
+function createLineApplier(state: StoredSnapshot): LineApplier {
   const seen = new Set(state.seenCumulativeUsage);
   const unknown = new Set(state.unknownModels);
-  for (const line of content.split("\n")) {
-    if (!line.trim()) continue;
+
+  function apply(line: string): void {
+    if (!line.trim()) return;
     let record: CodexRolloutRecord;
     try {
       record = JSON.parse(line) as CodexRolloutRecord;
     } catch {
-      continue;
+      return;
     }
     applyMetadata(state, record);
 
@@ -285,7 +346,7 @@ function applyLines(state: StoredSnapshot, content: string): void {
       }
       state.cwd ||= record.payload?.cwd;
       state.gitBranch ||= record.payload?.git?.branch;
-      continue;
+      return;
     }
 
     const declared = declaredModel(record);
@@ -298,7 +359,7 @@ function applyLines(state: StoredSnapshot, content: string): void {
       if (typeof record.payload.thread_settings?.service_tier === "string") {
         state.currentServiceTier = record.payload.thread_settings.service_tier;
       }
-      continue;
+      return;
     }
 
     if (record.type === "turn_context") {
@@ -312,7 +373,7 @@ function applyLines(state: StoredSnapshot, content: string): void {
         totalsByModel: {},
       };
       if (record.payload?.cwd) state.cwd = record.payload.cwd;
-      continue;
+      return;
     }
 
     const currentTurn = state.currentTurnId
@@ -324,13 +385,13 @@ function applyLines(state: StoredSnapshot, content: string): void {
       record.payload?.type !== "token_count" ||
       !record.payload.info?.last_token_usage
     ) {
-      continue;
+      return;
     }
 
     const cumulative = record.payload.info.total_token_usage;
     if (cumulative) {
       const key = usageKey(cumulative);
-      if (seen.has(key)) continue;
+      if (seen.has(key)) return;
       seen.add(key);
     }
     const usage = record.payload.info.last_token_usage;
@@ -368,8 +429,13 @@ function applyLines(state: StoredSnapshot, content: string): void {
     addUsage(state.totalsByModel, model, uncached, cached, cacheWrite, output, cost);
     addUsage(turn.totalsByModel, model, uncached, cached, cacheWrite, output, cost);
   }
-  state.seenCumulativeUsage = [...seen];
-  state.unknownModels = [...unknown];
+
+  function finish(): void {
+    state.seenCumulativeUsage = [...seen];
+    state.unknownModels = [...unknown];
+  }
+
+  return { apply, finish };
 }
 
 function applyMetadata(state: StoredSnapshot, record: CodexRolloutRecord): void {
@@ -559,20 +625,26 @@ function declaredModel(record: CodexRolloutRecord): string | null {
   return null;
 }
 
-function firstDeclaredModel(content: string): string | null {
-  for (const line of content.split("\n")) {
+/**
+ * The model to bill a rollout read from its start with. Events can precede the
+ * first record that declares one, so the opening chunk is scanned ahead of the
+ * pass that bills it. A rollout declares its model within the first records,
+ * which is why one chunk is enough to look at.
+ */
+async function firstDeclaredModel(path: string): Promise<string | null> {
+  const seed: { model: string | null } = { model: null };
+  await readCompleteAppend(path, 0, (line) => {
     if (
-      !line.includes("turn_context") &&
-      !line.includes("thread_settings_applied")
-    ) continue;
+      seed.model ||
+      (!line.includes("turn_context") && !line.includes("thread_settings_applied"))
+    ) return;
     try {
-      const model = declaredModel(JSON.parse(line) as CodexRolloutRecord);
-      if (model) return model;
+      seed.model = declaredModel(JSON.parse(line) as CodexRolloutRecord);
     } catch {
-      continue;
+      // A record that does not parse declares nothing.
     }
-  }
-  return null;
+  }, CHUNK_BYTES);
+  return seed.model;
 }
 
 async function saveState(path: string, state: StoredSnapshot): Promise<void> {
