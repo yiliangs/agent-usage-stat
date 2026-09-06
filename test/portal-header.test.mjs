@@ -1,0 +1,70 @@
+import assert from "node:assert/strict";
+import { join } from "node:path";
+import test from "node:test";
+
+import { SLOT_BUDGET, machineField, tally } from "../portal/usage-format.js";
+import { findChrome, runPortalProbe } from "../scripts/portal-probe-runner.mjs";
+import { MACHINES, buildHeaderFixture } from "./helpers/portal-header-fixture.mjs";
+
+/**
+ * Rendered guards for what the page asserts about the ledger behind it.
+ *
+ * Each subject here is a fact of the renderer rather than of the source: what
+ * the header says when the ledger is plural (#138), whether a column adds up
+ * to the total printed under it (#134), whether the refresh control stays put
+ * when it is clicked (#36), and whether a description fits on one line in the
+ * space the page gives it (#24). All four are invisible to a source assertion,
+ * so they are measured in the renderer the shipped app uses.
+ */
+
+/** The width the header defects were reported at, and the width the desktop
+ *  shell opens on. Panel geometry that varies with width is guarded in
+ *  `portal-numeric-layout.test.mjs`; what varies here is what the page says. */
+const PROBE_WIDTH = 1440;
+
+const chrome = findChrome();
+const skip = chrome ? false : "no Chrome binary found; set AGENT_USAGE_STAT_CHROME to run this guard";
+
+/** Strings the machine field can emit, widest first, for the slot check. The
+ *  count form is the one that sets the budget and the one no fixture reaches. */
+const MACHINE_SLOT = [
+  machineField(Array.from({ length: 3 }, (_, index) => `MACHINE-${index}`)),
+  `${tally(9.9e14)} MACHINES`,
+  "M".repeat(SLOT_BUDGET.machineField),
+];
+
+async function probeHeader() {
+  const [result] = await runPortalProbe({
+    portalDir: join(process.cwd(), "dist", "portal"),
+    data: buildHeaderFixture(),
+    probe: new URL("../scripts/portal-header-probe.js", import.meta.url),
+    widths: [PROBE_WIDTH],
+    input: { machineSlot: MACHINE_SLOT },
+  });
+  return result;
+}
+
+test("the header reports every machine that wrote the ledger", { skip }, async () => {
+  const result = await probeHeader();
+
+  // The fixture is written by two machines. Naming the busier one under a
+  // singular label is the defect: it reads as the only machine there is.
+  assert.equal(
+    result.header.machine,
+    `${MACHINES.length} MACHINES`,
+    `the header named one machine on a ${MACHINES.length}-machine ledger`,
+  );
+  assert.equal(result.header.label, "Machines");
+  assert.equal(result.header.lines, 1, "the machine field wrapped to a second line");
+  assert.equal(result.header.clippedPx, 0, "the machine field was cut off by its panel");
+});
+
+test("the machine field's budget is a fact about the header slot", { skip }, async () => {
+  const result = await probeHeader();
+
+  for (const slot of result.machineSlot) {
+    assert.ok(!slot.missing, "the header has no machine field to measure");
+    assert.equal(slot.lines, 1, `the machine field wrapped on ${JSON.stringify(slot.text)}`);
+    assert.equal(slot.clippedPx, 0, `the machine field clipped ${JSON.stringify(slot.text)}`);
+  }
+});

@@ -11,7 +11,17 @@ import {
 import { selectPortalView } from './portal-navigation.js'
 import { providerMark } from './provider-marks.js'
 import { escapeAttribute, escapeText } from './markup-escape.js'
-import { compact, folioIndex, pct, periodDelta, tally, usd, usdHeadline } from './usage-format.js'
+import {
+  compact,
+  folioIndex,
+  machineField,
+  machineFieldLabel,
+  pct,
+  periodDelta,
+  tally,
+  usd,
+  usdHeadline,
+} from './usage-format.js'
 import {
   DAY,
   createCalendarProjection,
@@ -90,6 +100,8 @@ const fmt = {
   compact,
   tally,
   folioIndex,
+  machineField,
+  machineFieldLabel,
   pct,
   date: (value) => new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short' }).format(value).toUpperCase(),
   dateYear: (value) => new Intl.DateTimeFormat('en-US', { day: '2-digit', month: 'short', year: 'numeric' }).format(value).toUpperCase(),
@@ -258,10 +270,13 @@ function render() {
 
 function renderHeader(window, current) {
   const generated = new Date(state.meta?.generatedAt || Date.now())
-  const machines = group(current, (session) => session.machine, () => 1)
-  const machine = machines[0]?.key || state.sessions[0]?.machine || 'UNKNOWN'
+  // A period with nothing in it still has a ledger behind it, and the ledger's
+  // machines are what the field then reports.
+  const machines = (current.length ? current : state.sessions).map((session) => session.machine)
   const metaValues = $$('.top-meta b')
-  if (metaValues[0]) metaValues[0].textContent = machine.toUpperCase()
+  const metaLabel = $('.top-meta div:first-child .micro')
+  if (metaValues[0]) metaValues[0].textContent = fmt.machineField(machines)
+  if (metaLabel) metaLabel.textContent = fmt.machineFieldLabel(machines)
   if (metaValues[1]) metaValues[1].textContent = fmt.dateYear(generated)
   if (metaValues[2]) metaValues[2].textContent = `LIVE / ${fmt.time(generated)}`
 

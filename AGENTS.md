@@ -74,6 +74,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `scripts/measure-portal-layout.mjs`: catches panels whose numbers wrap or clip
 - `scripts/portal-timeline-probe.js`: reports what each session block on the timeline actually draws
 - `scripts/portal-heatmap-probe.js`: reports what clicking each heatmap day cell opens
+- `scripts/portal-header-probe.js`: reports what the rendered page states about the ledger behind it
 - `scripts/typeface-probe.js`: reports faces a rendered surface draws with but does not ship
 - `scripts/install-local.mjs`: refreshes the installed application in place from a packaged build
 
