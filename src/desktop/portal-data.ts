@@ -36,7 +36,10 @@ export interface BuildPortalDataOptions {
   outDir: string;
 }
 
-export interface PortalVendorRecord {
+/** One key's slice of a session's spend and tokens. The key is a model vendor
+ *  on one axis and a model name on the other, and both axes carry the same
+ *  pair of figures, so one shape serves them. */
+export interface PortalSplitRecord {
   cost: number;
   tokens: number;
 }
@@ -75,7 +78,11 @@ export interface PortalSessionRecord {
   models: string[];
   turns: PortalTurnRecord[];
   provider: string;
-  byVendor: Record<string, PortalVendorRecord>;
+  byVendor: Record<string, PortalSplitRecord>;
+  /** Per-model spend and tokens, the axis every model chart is drawn on. A
+   *  session's total alone cannot be divided between the models that produced
+   *  it, so the split is carried rather than reconstructed downstream. */
+  byModel: Record<string, PortalSplitRecord>;
 }
 
 export interface PortalSnapshotSpan {
@@ -319,6 +326,10 @@ function normalizeSession(
   const start = record.start_time as string | undefined;
   if (!start || Number.isNaN(Date.parse(start))) return null;
   const cwd = (record.cwd || "") as string;
+  const models = Array.isArray(record.models)
+    ? record.models.map(String).map((model) => model.trim()).filter(Boolean)
+    : String(record.models || "").split(/[;,]/).map((model) => model.trim()).filter(Boolean);
+  const splits = usageSplits(record, models);
   return {
     slug: (
       record.session_slug ||
@@ -344,63 +355,92 @@ function normalizeSession(
     cacheRead: number(record.cache_read_tokens),
     totalTokens: number(record.total_tokens),
     cost: number(record.total_cost_usd),
-    models: Array.isArray(record.models)
-      ? record.models.map(String).map((model) => model.trim()).filter(Boolean)
-      : String(record.models || "").split(/[;,]/).map((model) => model.trim()).filter(Boolean),
+    models,
     turns: Array.isArray(record.turns)
       ? record.turns.map(normalizeTurn).filter(isPresent)
       : [],
     provider: String(record.provider || "claude"),
-    byVendor: vendorSplit(record),
+    byVendor: splits.byVendor,
+    byModel: splits.byModel,
   };
 }
 
+interface PortalUsageSplits {
+  byVendor: Record<string, PortalSplitRecord>;
+  byModel: Record<string, PortalSplitRecord>;
+}
+
 /**
- * Split a session's spend and tokens by model vendor, independently of the
- * host provider. Claude Code can route to GPT, so provider is not a billing or
- * chart-series key.
+ * Split a session's spend and tokens by model vendor and by model, both
+ * independently of the host provider. Claude Code can route to GPT, so
+ * provider is neither a billing key nor a chart series.
  *
- * Current shards carry model_breakdowns and split exactly. Legacy mixed-vendor
- * shards retain the historical equal split, despite the prior implementation's
- * inaccurate token-share comment.
+ * The two axes are read off one walk of `model_breakdowns`, because they are
+ * two groupings of the same per-model figures rather than two measurements.
+ * Legacy shards carry no breakdowns at all, so both axes fall back to the
+ * historical equal split, through one helper so they cannot drift apart.
  */
-function vendorSplit(
+function usageSplits(
   record: RawLogbookRecord,
-): Record<string, PortalVendorRecord> {
-  const split: Record<string, PortalVendorRecord> = {};
-  const add = (vendor: string, cost: number, tokens: number): void => {
-    const bucket = (split[vendor] ??= { cost: 0, tokens: 0 });
-    bucket.cost += cost;
-    bucket.tokens += tokens;
-  };
+  models: string[],
+): PortalUsageSplits {
+  const byVendor: Record<string, PortalSplitRecord> = {};
+  const byModel: Record<string, PortalSplitRecord> = {};
 
   if (Array.isArray(record.model_breakdowns) && record.model_breakdowns.length) {
     for (const value of record.model_breakdowns) {
       const breakdown = value as RawLogbookModelRecord;
-      add(
-        (breakdown.vendor ||
-          vendorForModel(String(breakdown.model || ""))) as string,
-        number(breakdown.total_cost_usd),
-        number(breakdown.total_tokens),
+      const model = String(breakdown.model || "").trim();
+      const cost = number(breakdown.total_cost_usd);
+      const tokens = number(breakdown.total_tokens);
+      addSlice(
+        byVendor,
+        (breakdown.vendor || vendorForModel(model)) as string,
+        cost,
+        tokens,
       );
+      addSlice(byModel, model || "unknown", cost, tokens);
     }
-    return split;
+    return { byVendor, byModel };
   }
 
-  const models = Array.isArray(record.models) ? record.models : [];
   const vendors = [
-    ...new Set<ModelVendor>(models.map((model) => vendorForModel(String(model)))),
+    ...new Set<ModelVendor>(models.map((model) => vendorForModel(model))),
   ];
   const cost = number(record.total_cost_usd);
   const tokens = number(record.total_tokens);
-  if (vendors.length <= 1) {
-    add(vendors[0] || "unknown", cost, tokens);
-  } else {
-    for (const vendor of vendors) {
-      add(vendor, cost / vendors.length, tokens / vendors.length);
-    }
+  equalSplit(byVendor, vendors, cost, tokens);
+  equalSplit(byModel, models, cost, tokens);
+  return { byVendor, byModel };
+}
+
+function addSlice(
+  split: Record<string, PortalSplitRecord>,
+  key: string,
+  cost: number,
+  tokens: number,
+): void {
+  const bucket = (split[key] ??= { cost: 0, tokens: 0 });
+  bucket.cost += cost;
+  bucket.tokens += tokens;
+}
+
+/** Divide a session evenly between the keys it names. A legacy shard records
+ *  no per-model figures, so an even division is the only split available; a
+ *  shard naming one key, or none, hands that key the whole session. */
+function equalSplit(
+  split: Record<string, PortalSplitRecord>,
+  keys: string[],
+  cost: number,
+  tokens: number,
+): void {
+  if (!keys.length) {
+    addSlice(split, "unknown", cost, tokens);
+    return;
   }
-  return split;
+  for (const key of keys) {
+    addSlice(split, key, cost / keys.length, tokens / keys.length);
+  }
 }
 
 function normalizeTurn(

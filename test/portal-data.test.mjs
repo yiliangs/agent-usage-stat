@@ -146,6 +146,12 @@ test("portal artifacts preserve the exact current and legacy ledger boundary", a
         anthropic: { cost: 0.75, tokens: 120 },
         openai: { cost: 0.5, tokens: 80 },
       },
+      // Each model keeps its own figures. A chart that fans a session out over
+      // its models can only do so from a split the snapshot carries (#89).
+      byModel: {
+        "claude-opus-5": { cost: 0.75, tokens: 120 },
+        "gpt-5.6-sol": { cost: 0.5, tokens: 80 },
+      },
     };
     const legacySession = {
       slug: "legacy-s",
@@ -183,6 +189,13 @@ test("portal artifacts preserve the exact current and legacy ledger boundary", a
       byVendor: {
         anthropic: { cost: 0.45, tokens: 45 },
         openai: { cost: 0.45, tokens: 45 },
+      },
+      // No breakdowns to read, so the model axis falls back the way the vendor
+      // axis does: evenly between the names the shard carries.
+      byModel: {
+        "claude-sonnet-4-6": { cost: 0.3, tokens: 30 },
+        "gpt-5.4": { cost: 0.3, tokens: 30 },
+        "gpt-5.6-sol": { cost: 0.3, tokens: 30 },
       },
     };
     const expectedSessions = [currentSession, legacySession];
@@ -230,6 +243,97 @@ test("portal artifacts preserve the exact current and legacy ledger boundary", a
       },
     };
     assert.equal(metaRaw, JSON.stringify(expectedMeta, null, 2));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a session's per-model split survives into the snapshot the portal reads", async () => {
+  // Every model chart draws one series per model family, and a session that
+  // used more than one model owes each family its own spend. The shard records
+  // that split; before #89 the snapshot folded it to vendors and dropped it,
+  // leaving the renderer nothing to fan a session out over.
+  const root = await mkdtemp(join(tmpdir(), "agent-usage-stat-portal-models-"));
+  const shardDir = join(root, "logbook.d");
+  const outDir = join(root, "portal");
+  await mkdir(shardDir);
+
+  const shard = (fields) => ({
+    session_id: fields.session_id,
+    project: "Split",
+    machine: "machine-a",
+    start_time: fields.start_time,
+    end_time: fields.start_time,
+    total_tokens: fields.total_tokens,
+    total_cost_usd: fields.total_cost_usd,
+    models: fields.models,
+    provider: "claude",
+    ...(fields.model_breakdowns ? { model_breakdowns: fields.model_breakdowns } : {}),
+  });
+
+  await writeFile(
+    join(shardDir, "mixed.json"),
+    JSON.stringify(shard({
+      session_id: "mixed-session",
+      start_time: "2026-08-11T10:00:00.000Z",
+      total_tokens: 1000,
+      total_cost_usd: 10,
+      models: ["claude-sonnet-5", "gpt-5"],
+      model_breakdowns: [
+        {
+          model: "claude-sonnet-5",
+          vendor: "anthropic",
+          input_tokens: 100,
+          output_tokens: 100,
+          cache_creation_tokens: 50,
+          cache_read_tokens: 50,
+          total_tokens: 300,
+          total_cost_usd: 3,
+        },
+        {
+          model: "gpt-5",
+          vendor: "openai",
+          input_tokens: 200,
+          output_tokens: 200,
+          cache_creation_tokens: 150,
+          cache_read_tokens: 150,
+          total_tokens: 700,
+          total_cost_usd: 7,
+        },
+      ],
+    })),
+  );
+  await writeFile(
+    join(shardDir, "legacy-single.json"),
+    JSON.stringify(shard({
+      session_id: "legacy-single-session",
+      start_time: "2026-08-11T11:00:00.000Z",
+      total_tokens: 400,
+      total_cost_usd: 4,
+      models: ["claude-haiku-4-5"],
+    })),
+  );
+
+  try {
+    await buildPortalData({ root, outDir });
+    const sessions = JSON.parse(await readFile(join(outDir, "sessions.json"), "utf8"));
+    const byId = new Map(sessions.map((session) => [session.sid, session]));
+
+    assert.deepEqual(byId.get("mixed-session").byModel, {
+      "claude-sonnet-5": { cost: 3, tokens: 300 },
+      "gpt-5": { cost: 7, tokens: 700 },
+    });
+    // The two axes are two groupings of the same figures, so neither may drift.
+    assert.deepEqual(byId.get("mixed-session").byVendor, {
+      anthropic: { cost: 3, tokens: 300 },
+      openai: { cost: 7, tokens: 700 },
+    });
+
+    // One model on the shard means one model owns the session, whether or not
+    // the shard is old enough to carry breakdowns.
+    assert.deepEqual(byId.get("legacy-single-session").byModel, {
+      "claude-haiku-4-5": { cost: 4, tokens: 400 },
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
