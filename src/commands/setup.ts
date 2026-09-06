@@ -1,3 +1,4 @@
+import { existsSync } from "fs";
 import { mkdir } from "fs/promises";
 import { join, resolve } from "path";
 import chalk from "chalk";
@@ -18,7 +19,7 @@ import {
   createAgentIntegrations,
   type AgentIntegration,
 } from "../integrations/agent-integrations.js";
-import { hookExecutablePaths } from "../integrations/hook-command.js";
+import { hookExecutablePath } from "../integrations/hook-command.js";
 import {
   resolvedCaptureStrategy,
   type AppConfig,
@@ -187,6 +188,7 @@ export class SetupCommand {
         }
       }
       reportHookFailures(hookFailures, "configuration");
+      if (continuousProviders.length > 0) reportMissingHelper();
       if (terminalProfile) {
         const terminalEnabled = continuousProviders.length > 0 && terminalMessage;
         const action = terminalEnabled ? "enabled" : "disabled";
@@ -253,11 +255,9 @@ export class SetupCommand {
 
     try {
       if (enabled) {
-        const { windowsBin, windowsUsesNode } = hookExecutablePaths();
         await installTerminalWrappers(
           profile,
-          windowsBin,
-          windowsUsesNode,
+          hookExecutablePath(),
           wrapperCommands(providers),
         );
       } else {
@@ -318,6 +318,22 @@ async function applyPerHost(
     }
   }
   return failures;
+}
+
+/**
+ * Every hook names the installed helper whether or not the application has put
+ * it there yet, so a setup run from anywhere else can configure hosts whose
+ * target is still missing. That is one fact about this machine rather than a
+ * per-host failure, and the hooks become live the moment the file appears, so
+ * it is reported once and does not fail the run.
+ */
+function reportMissingHelper(): void {
+  const helper = hookExecutablePath();
+  if (existsSync(helper)) return;
+  console.log(chalk.yellow(`\nThe capture helper is not installed yet: ${helper}`));
+  console.log(
+    chalk.gray("  Hooks start firing once the application installs it there."),
+  );
 }
 
 function reportHookFailures(failures: HookFailure[], action: string): void {

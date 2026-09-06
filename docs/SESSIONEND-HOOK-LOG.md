@@ -20,7 +20,6 @@ The hook log is `~/.agent-usage-stat/hook.log`.
 
 ```bash
 time (printf '' | node dist/helper.js capture --detach)
-time (printf '' | bash bin/run-hook.sh capture --detach --quiet)
 time node dist/helper.js --version
 ```
 
@@ -31,15 +30,13 @@ Manual checks validate startup and wiring. Only a real Claude Code `/exit` valid
 1. `src/cli.ts`, `src/commands/detach-shim.ts`, and `src/utils/hook-log.ts` may import only lightweight modules on the shim path.
 2. The shim does only stdin read, entrypoint gate, temporary file write, detached spawn, and exit.
 3. Do not mark Claude `Stop` or `SessionEnd` hooks async. The host must wait long enough for the shim to spawn its worker.
-4. Keep Node resolution in `bin/run-hook.sh`. Never write an absolute Node executable into host settings.
-5. Read no more than 128 KB from a transcript for the entrypoint gate.
-6. Use valid JSON paths in synthetic hook tests. Raw Windows backslashes are invalid JSON escapes.
-7. Validate changes with a real `/exit`, not only `/clear`.
-8. Keep `bin/run-hook.sh` executable in Git.
-9. Codex transcript parsing and usage pricing share one incremental snapshot. Do not reintroduce independent full-file scans.
-10. Persistent Codex caches are derived acceleration only. The rollout and immutable logbook shard remain the sources of truth.
-11. Claude billing and metadata share one incremental session-tree snapshot. A `Stop` checkpoint must not rescan the main transcript or accumulated subagent files.
-12. Hook configuration is best effort. Application launch and Sync now must always run provider reconciliation in both capture policies. Setup and uninstall apply every host behind its own error boundary, so one unreadable hook file is a reported per-host skip rather than a failed run.
+4. Read no more than 128 KB from a transcript for the entrypoint gate.
+5. Use valid JSON paths in synthetic hook tests. Raw Windows backslashes are invalid JSON escapes.
+6. Validate changes with a real `/exit`, not only `/clear`.
+7. Codex transcript parsing and usage pricing share one incremental snapshot. Do not reintroduce independent full-file scans.
+8. Persistent Codex caches are derived acceleration only. The rollout and immutable logbook shard remain the sources of truth.
+9. Claude billing and metadata share one incremental session-tree snapshot. A `Stop` checkpoint must not rescan the main transcript or accumulated subagent files.
+10. Hook configuration is best effort. Application launch and Sync now must always run provider reconciliation in both capture policies. Setup and uninstall apply every host behind its own error boundary, so one unreadable hook file is a reported per-host skip rather than a failed run.
 
 The `AGENT_USAGE_STAT_ALL_SESSIONS=1` environment variable disables the Claude automation gate when SDK session capture is intentional.
 

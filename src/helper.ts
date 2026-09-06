@@ -18,7 +18,6 @@ const appVersion = typeof __APP_VERSION__ === "string"
     readFileSync(resolve(dirname(process.argv[1]), "..", "package.json"), "utf8"),
   ).version as string;
 const args = process.argv.slice(2);
-if (isSea()) process.env.AGENT_USAGE_STAT_STANDALONE = "1";
 
 main(args).catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
