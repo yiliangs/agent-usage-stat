@@ -5,9 +5,12 @@ import test from "node:test";
 import {
   createCalendarProjection,
   foldProjects,
+  groupByFamily,
+  inFamily,
   makeIntervalBuckets,
   normalizeSession,
   shiftDateKey,
+  summarizeFamily,
   summarizeProjects,
   summarizeUsage,
 } from "../portal/usage-model.js";
@@ -440,4 +443,125 @@ test("interval projection preserves whole-session primary-model attribution", ()
     { cost: 7, sessions: 3, tokens: 350, families: { Sonnet: 2, Sol: 3, Opus: 2 } },
     { cost: 0, sessions: 0, tokens: 0, families: {} },
   ]);
+});
+
+/**
+ * One session that routed to two models, carrying the split the shard recorded
+ * and the snapshot now preserves.
+ *
+ * Seven of its ten dollars went to GPT and three to Sonnet, and the model named
+ * first is the cheaper of the two, so any surface still reading `models[0]`
+ * reports the whole ten under Sonnet and names the wrong model as the session's
+ * own (#89).
+ */
+const MIXED = normalizeSession({
+  slug: "mixed",
+  sid: "mixed",
+  project: "Split",
+  machine: "north",
+  provider: "claude",
+  start: "2026-07-02T05:00:00.000Z",
+  end: "2026-07-02T06:00:00.000Z",
+  durSec: 3600,
+  input: 200,
+  output: 200,
+  cacheCreate: 300,
+  cacheRead: 300,
+  totalTokens: 1000,
+  cost: 10,
+  models: ["claude-sonnet-5", "gpt-5"],
+  turns: [],
+  byModel: {
+    "claude-sonnet-5": { cost: 3, tokens: 300 },
+    "gpt-5": { cost: 7, tokens: 700 },
+  },
+}, 0);
+
+test("a project charges each model family the spend that family earned", () => {
+  const summary = summarizeProjects([MIXED]);
+
+  assert.deepEqual(summary.all[0].families, { Sonnet: 3, GPT: 7 });
+  // The families still add up to the project, so the topology grid and the
+  // Value column beside it read the same total.
+  assert.equal(summary.all[0].cost, 10);
+  assert.equal(summary.all[0].family, "GPT");
+});
+
+test("a session is named by the model that dominated it, not the one listed first", () => {
+  assert.equal(MIXED.primaryModel, "gpt-5");
+  // A snapshot with no split to read keeps the historical reading, and so does
+  // an even split, which has no dominant model to report.
+  assert.equal(sessions[1].primaryModel, "gpt-5.6-sol");
+  assert.equal(
+    normalizeSession({
+      start: "2026-07-01T00:00:00.000Z",
+      cost: 4,
+      totalTokens: 100,
+      models: ["claude-opus-5", "gpt-5"],
+      byModel: {
+        "claude-opus-5": { cost: 2, tokens: 50 },
+        "gpt-5": { cost: 2, tokens: 50 },
+      },
+    }, 1).primaryModel,
+    "claude-opus-5",
+  );
+});
+
+test("spend by family is a sum over model shares, not over sessions", () => {
+  assert.deepEqual(groupByFamily([MIXED]), [
+    { key: "GPT", value: 7 },
+    { key: "Sonnet", value: 3 },
+  ]);
+  // Without a split there is nothing to fan out, so the whole session still
+  // lands on one family.
+  assert.deepEqual(groupByFamily([sessions[1]]), [{ key: "Sol", value: 3 }]);
+  assert.deepEqual(
+    groupByFamily([MIXED, sessions[1]]).reduce((total, row) => total + row.value, 0),
+    13,
+  );
+});
+
+test("every bucket a chart draws splits a mixed session the same way", () => {
+  const projection = createCalendarProjection("UTC");
+
+  const [day] = projection.buckets([MIXED], "2026-07-02", 1);
+  assert.deepEqual(day.families, { Sonnet: 3, GPT: 7 });
+  assert.equal(day.cost, 10);
+
+  const { buckets } = projection.series([MIXED], {
+    start: Date.parse("2026-07-02T00:00:00.000Z"),
+    end: Date.parse("2026-07-02T23:00:00.000Z"),
+  }, 30);
+  assert.deepEqual(buckets[0].families, { Sonnet: 3, GPT: 7 });
+  assert.equal(buckets[0].cost, 10);
+
+  const interval = makeIntervalBuckets(
+    [MIXED],
+    Date.parse("2026-07-02T04:00:00.000Z"),
+    Date.parse("2026-07-02T08:00:00.000Z"),
+    2,
+  );
+  assert.deepEqual(interval[0].families, { Sonnet: 3, GPT: 7 });
+  assert.equal(interval[0].cost, 10);
+});
+
+test("a family drawer reports its own share of every session it opened over", () => {
+  // A session belongs to each family it routed to, and each family's figures
+  // are its own shares, so the drawer agrees with the slice that opened it.
+  assert.equal(inFamily(MIXED, "GPT"), true);
+  assert.equal(inFamily(MIXED, "Sonnet"), true);
+  assert.equal(inFamily(MIXED, "Opus"), false);
+
+  assert.deepEqual(summarizeFamily([MIXED], "GPT"), {
+    cost: 7,
+    tokens: 700,
+    sessions: 1,
+    avgCost: 7,
+  });
+  assert.deepEqual(summarizeFamily([MIXED], "Opus"), {
+    cost: 0,
+    tokens: 0,
+    sessions: 0,
+    avgCost: 0,
+  });
 });

@@ -21,6 +21,7 @@ import {
   DAY,
   createCalendarProjection,
   familyOf,
+  modelShares,
   normalizeSession,
   summarizeUsage,
 } from './usage-model.js'
@@ -166,6 +167,10 @@ function intensity(tokens, peak) {
 /**
  * The week's tokens by model family, largest first.
  *
+ * A session is fanned out over the models it used, through the same
+ * `modelShares` the dashboard's own model charts read, so the panel and the
+ * dashboard cannot disagree about what a mixed session went on.
+ *
  * Past three named families the rest become one slice: a ring with nine
  * slivers in it names nothing. `usage-model.js` already calls an unrecognised
  * model's family Other, so a fold joins that slice rather than drawing a
@@ -176,8 +181,9 @@ function modelSplit(sessions) {
   const total = sessions.reduce((sum, session) => sum + (session.totalTokens || 0), 0)
   const byFamily = new Map()
   for (const session of sessions) {
-    const family = familyOf(session.primaryModel)
-    byFamily.set(family, (byFamily.get(family) || 0) + (session.totalTokens || 0))
+    for (const share of modelShares(session)) {
+      byFamily.set(share.family, (byFamily.get(share.family) || 0) + share.tokens)
+    }
   }
 
   const ranked = [...byFamily.entries()]

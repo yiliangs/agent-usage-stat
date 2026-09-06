@@ -28,9 +28,12 @@ import {
   createCalendarProjection,
   familyOf,
   foldProjects,
+  groupByFamily,
+  inFamily,
   makeIntervalBuckets,
   normalizeSession,
   shiftDateKey,
+  summarizeFamily,
   summarizeProjects,
   summarizeUsage,
   weekdayOfKey,
@@ -563,7 +566,7 @@ function renderCumulativeSpend(sessions, window) {
 }
 
 function renderModels(sessions) {
-  const rows = group(sessions, (session) => familyOf(session.primaryModel), (session) => session.cost || 0)
+  const rows = groupByFamily(sessions)
   const total = sum(rows, (row) => row.value)
   const visible = foldRows(rows, 4)
   let cursor = 0
@@ -2209,7 +2212,7 @@ function renderRhythmTable(dateKeys, segmentsByDate, tokensOnDate, observedThrou
 
 function renderTopology(sessions, projectSummary) {
   const projects = foldProjects(projectSummary.byCost, TOPOLOGY_ROWS)
-  const familyRows = group(sessions, (session) => familyOf(session.primaryModel), (session) => session.cost || 0)
+  const familyRows = groupByFamily(sessions)
   const families = familyRows.length > 4 ? [...familyRows.slice(0, 3).map((row) => row.key), 'Other'] : familyRows.map((row) => row.key)
   const visible = new Set(families.filter((family) => family !== 'Other'))
   const cells = projects.flatMap((project) => families.map((family) => family === 'Other'
@@ -2297,7 +2300,7 @@ function openDayDetail(dateKey) {
   const sessions = state.sessions.filter((session) => localDateKey(new Date(session.t)) === dateKey)
   const value = summarizeUsage(sessions)
   const projects = group(sessions, (session) => session.project, (session) => session.cost || 0)
-  const models = group(sessions, (session) => familyOf(session.primaryModel), (session) => session.cost || 0)
+  const models = groupByFamily(sessions)
   const ordered = sessions.slice().sort((a, b) => a.t - b.t)
   openDetail({
     eyebrow: 'Day detail',
@@ -2320,7 +2323,7 @@ function openDayDetail(dateKey) {
 function openProjectDetail(project) {
   const sessions = state.current.filter((session) => session.project === project)
   const value = summarizeUsage(sessions)
-  const models = group(sessions, (session) => familyOf(session.primaryModel), (session) => session.cost || 0)
+  const models = groupByFamily(sessions)
   const providers = group(sessions, (session) => session.provider, () => 1)
   openDetail({
     eyebrow: 'Project detail',
@@ -2363,7 +2366,7 @@ function openSessionDetail(session) {
         { label: 'Session', value: session.slug || session.sid || 'Unknown' },
         { label: 'Provider', value: String(session.provider || 'unknown').toUpperCase() },
         { label: 'Machine', value: session.machine },
-        { label: 'Primary model', value: shortModel(session.primaryModel) },
+        { label: 'Top model', value: shortModel(session.primaryModel) },
       ]) },
       { title: 'Token composition', html: detailList(tokenRows) },
       ...(vendorRows.length ? [{ title: 'Vendor allocation', html: detailList(vendorRows) }] : []),
@@ -2373,33 +2376,43 @@ function openSessionDetail(session) {
 }
 
 function openTopologyDetail(project, family) {
-  const familyRows = group(state.current, (session) => familyOf(session.primaryModel), (session) => session.cost || 0)
+  const familyRows = groupByFamily(state.current)
   const visible = new Set(familyRows.slice(0, 3).map((row) => row.key))
-  const sessions = state.current.filter((session) => {
-    if (session.project !== project) return false
-    const sessionFamily = familyOf(session.primaryModel)
-    return family === 'Other' ? !visible.has(sessionFamily) : sessionFamily === family
-  })
-  const value = summarizeUsage(sessions)
+  // The families the folded column stands for, named, so the drawer sums the
+  // same shares the cell drew rather than whole sessions.
+  const folded = familyRows.map((row) => row.key).filter((key) => !visible.has(key))
+  const families = family === 'Other' ? folded : [family]
+  const sessions = state.current.filter((session) => session.project === project && families.some((name) => inFamily(session, name)))
+  // A cell holds these families' share of a session, not the session, so every
+  // figure beneath it is a share too. Anything else reads higher than the cell
+  // the reader clicked.
+  const cellUsage = (list) => families.reduce((total, name) => {
+    const summary = summarizeFamily(list, name)
+    return { cost: total.cost + summary.cost, tokens: total.tokens + summary.tokens }
+  }, { cost: 0, tokens: 0 })
+  const value = cellUsage(sessions)
   openDetail({
     eyebrow: 'Project × model detail',
     title: `${project} / ${family}`,
     stats: [
       { label: 'Period value', value: fmt.usd(value.cost) },
-      { label: 'Sessions', value: String(value.sessions) },
+      { label: 'Sessions', value: String(sessions.length) },
       { label: 'Tokens', value: fmt.compact(value.tokens) },
-      { label: 'Cache read', value: fmt.pct(value.cacheRatio) },
+      { label: 'Average / session', value: fmt.usd(sessions.length ? value.cost / sessions.length : 0) },
     ],
     sections: [
-      { title: 'Recent sessions', html: detailList(sessions.slice().sort((a, b) => b.t - a.t).slice(0, 6).map((session) => ({ label: `${fmt.date(new Date(session.t))} / ${shortModel(session.primaryModel)}`, value: fmt.usd(session.cost || 0) }))) },
+      { title: 'Recent sessions', html: detailList(sessions.slice().sort((a, b) => b.t - a.t).slice(0, 6).map((session) => ({ label: `${fmt.date(new Date(session.t))} / ${shortModel(session.primaryModel)}`, value: fmt.usd(cellUsage([session]).cost) }))) },
     ],
   })
 }
 
 function openModelDetail(family) {
-  const sessions = state.current.filter((session) => familyOf(session.primaryModel) === family)
-  const value = summarizeUsage(sessions)
-  const projects = group(sessions, (session) => session.project, (session) => session.cost || 0).slice(0, 6)
+  // A session belongs to every family it routed to, not only to the one that
+  // dominated it, and the drawer reports this family's own share of each so
+  // its total is the slice the reader clicked (#89).
+  const sessions = state.current.filter((session) => inFamily(session, family))
+  const value = summarizeFamily(sessions, family)
+  const projects = group(sessions, (session) => session.project, (session) => summarizeFamily([session], family).cost).slice(0, 6)
   openDetail({
     eyebrow: 'Model detail',
     title: family,

@@ -87,7 +87,8 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
   cannot hold replaced, so a caller that spells the path itself stops finding
   the file the writer wrote the moment a provider id carries one.
 - `provider` is the host tool; model vendor is a separate axis. Claude Code can route to GPT, so never pick a pricing table or a chart series by provider alone. Derive vendor per model via `src/core/model-vendor.ts`.
-- Persist `model_breakdowns` on every shard. Session totals alone cannot be split by vendor after the fact.
+- Persist `model_breakdowns` on every shard, and carry them through to the snapshot as `byModel`. Session totals alone cannot be split by vendor or by model after the fact.
+- A session's spend belongs to the models that earned it, divided once by `modelShares` in `portal/usage-model.js`. Every model-family figure on either document fans out over it; none charges a whole session to one model. A snapshot with no split to read keeps the historical whole-session reading rather than dividing on a guess.
 - Never let a recomputation replace a recorded session with lower tokens. Cumulative tokens order two observations of one session; cost does not, because a pricing correction lowers the rate underneath reads already on disk. Keep the winning observation whole rather than merging the two: totals, breakdown, turns, and time window came from one transcript read and agree only with each other.
 - A session's project comes from `project-name.ts` and nowhere else. `cwd` is the recorded fact; `project` is derived from it, so a worktree checkout counts toward the project it was cut from rather than the worktree directory. The portal re-derives it for shards written before a layout was known, and otherwise leaves a recorded name alone.
 - Every numeric format that feeds a single-line panel slot is bounded in `portal/usage-format.js` and declared in `SLOT_BUDGET`. Panels are sized once; the values they hold are not.
