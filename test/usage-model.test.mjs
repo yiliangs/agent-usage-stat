@@ -142,10 +142,12 @@ test("calendar projection assigns the local-midnight boundary exactly", () => {
     ],
   );
 
-  const julySecond = calendar.dailyUsage(sessions, { start: end - 7 * 86_400_000, end })
-    .find((row) => row.key === "2026-07-02");
+  const julySecond = calendar.series(sessions, { start: end - 7 * 86_400_000, end }, 30)
+    .buckets.find((row) => row.key === "2026-07-02");
   assert.deepEqual(julySecond, {
     key: "2026-07-02",
+    unit: "day",
+    days: 1,
     start: Date.parse("2026-07-02T12:00:00.000Z"),
     cost: 5,
     sessions: 2,
@@ -194,6 +196,238 @@ test("calendar windows keyed by date survive a zone past UTC+12", () => {
     prior.filter((key) => key >= "2026-07-01").length,
     0,
     "the prior window overlaps the current one",
+  );
+});
+
+/**
+ * Guard for issue #92.
+ *
+ * A range chip names calendar days, and the heatmap can only draw whole ones.
+ * The window a fixed range selects therefore has to open at local midnight on
+ * the first of those days: a window that opened at the closing instant's own
+ * clock time that many days earlier admitted the tail of a day the heatmap had
+ * no cell for, so the hero total and the heatmap's "Current 30D" panel counted
+ * different sets of sessions and disagreed by whatever fell in that tail.
+ */
+test("a fixed range opens at local midnight on the first of its calendar days", () => {
+  const calendar = createCalendarProjection("America/Chicago");
+  // 18:00 local, the reading in the issue: late enough in the day that six
+  // hours of the thirtieth day back sat inside the rolling window.
+  const end = Date.parse("2026-07-15T23:00:00.000Z");
+
+  const window = calendar.calendarWindow(end, 30);
+  assert.equal(window.lastKey, "2026-07-15");
+  assert.equal(window.firstKey, "2026-06-16", "thirty calendar days ending on the 15th open on the 16th");
+  assert.equal(window.end, end, "the window still closes on the instant it was given");
+  assert.equal(
+    window.start,
+    Date.parse("2026-06-16T05:00:00.000Z"),
+    "the window opens at 00:00 local on its first day, not at 18:00 local thirty days back",
+  );
+
+  const eveningBefore = Date.parse("2026-06-16T00:30:00.000Z");
+  assert.equal(calendar.dateKey(eveningBefore), "2026-06-15");
+  assert.ok(eveningBefore < window.start, "19:30 on the day before the window opens is outside it");
+
+  const firstMorning = Date.parse("2026-06-16T05:30:00.000Z");
+  assert.equal(calendar.dateKey(firstMorning), "2026-06-16");
+  assert.ok(firstMorning >= window.start, "00:30 on the window's first day is inside it");
+
+  assert.deepEqual(
+    calendar.buckets([], window.lastKey, 30).map((bucket) => bucket.key).at(0),
+    window.firstKey,
+    "the heatmap's current-window keys must open on the same day the window does",
+  );
+});
+
+/**
+ * A day boundary is a fact of the zone, not of a fixed offset.
+ *
+ * The contract holds whatever the rules are: the instant a key opens on reads
+ * back as that key, and the millisecond before it reads back as the day
+ * before. Both directions are asserted rather than a literal offset, so the
+ * guard survives a tzdata release that moves one of these transitions.
+ */
+test("a date key opens at the first instant that belongs to it, across every zone rule", () => {
+  const cases = [
+    // Ordinary days, an hour lost in spring and an hour repeated in autumn.
+    ["America/Chicago", ["2026-06-16", "2026-03-08", "2026-11-01"]],
+    // Half-hour and three-quarter-hour offsets, and one past UTC+12.
+    ["Asia/Kolkata", ["2026-06-16"]],
+    ["Pacific/Chatham", ["2026-04-05", "2026-09-27"]],
+    ["Pacific/Kiritimati", ["2026-07-03"]],
+    // Southern-hemisphere transitions, including zones that move at midnight.
+    ["America/Santiago", ["2026-04-04", "2026-09-05", "2026-09-06", "2026-09-07"]],
+    ["Australia/Lord_Howe", ["2026-04-05", "2026-10-04"]],
+  ];
+
+  for (const [zone, keys] of cases) {
+    const calendar = createCalendarProjection(zone);
+    for (const key of keys) {
+      const start = calendar.startOfDay(key);
+      assert.equal(calendar.dateKey(start), key, `${zone} ${key} does not open on its own day`);
+      assert.equal(
+        calendar.dateKey(start - 1),
+        shiftDateKey(key, -1),
+        `${zone} ${key} does not open where the previous day ends`,
+      );
+    }
+  }
+});
+
+/**
+ * Guards for issues #130 and #131.
+ *
+ * A chart has a finite number of marks it can draw, and both charts answered
+ * that by capping the bucket count and keeping the newest buckets. Everything
+ * older matched no bucket and was dropped, so a figure labelled PERIOD TOTAL
+ * read 70 percent low over a long ledger and a 90-day selection was drawn from
+ * its last thirty days. A series that covers the window at a coarser unit
+ * keeps every session; only the resolution falls.
+ */
+function dailyLedger(dayCount, { cost = 1, tokens = 1_000, end = Date.parse("2026-08-31T18:00:00.000Z") } = {}) {
+  return Array.from({ length: dayCount }, (_, index) =>
+    normalizeSession(
+      {
+        start: new Date(end - (dayCount - 1 - index) * 86_400_000).toISOString(),
+        end: new Date(end - (dayCount - 1 - index) * 86_400_000).toISOString(),
+        project: "Alpha",
+        machine: "One",
+        provider: "claude",
+        models: ["claude-opus-4-1"],
+        cost,
+        totalTokens: tokens,
+        input: tokens,
+        output: 0,
+        cacheCreate: 0,
+        cacheRead: 0,
+      },
+      index,
+    ),
+  );
+}
+
+test("a window longer than the bucket ceiling coarsens rather than losing its tail", () => {
+  const calendar = createCalendarProjection("America/Chicago");
+  const ledger = dailyLedger(400);
+  const period = { start: ledger[0].t, end: ledger[ledger.length - 1].t };
+
+  const { unit, buckets } = calendar.series(ledger, period, 120);
+
+  assert.equal(unit, "week", "400 days do not fit in 120 daily buckets, but they do in weekly ones");
+  assert.ok(buckets.length <= 120, `drew ${buckets.length} buckets against a ceiling of 120`);
+  assert.equal(
+    buckets.reduce((total, bucket) => total + bucket.cost, 0),
+    400,
+    "the series does not add up to the period total it is annotated with",
+  );
+  assert.equal(buckets.reduce((total, bucket) => total + bucket.sessions, 0), 400);
+  assert.ok(
+    buckets[0].key <= calendar.dateKey(period.start),
+    "the first bucket opens after the window does, so the window's first days fall outside every bucket",
+  );
+  assert.ok(
+    buckets[buckets.length - 1].key <= calendar.dateKey(period.end),
+    "the last bucket opens after the window closes",
+  );
+});
+
+test("a 90-day selection is drawn across 90 days rather than its last 30", () => {
+  const calendar = createCalendarProjection("America/Chicago");
+  const ledger = dailyLedger(90);
+  const period = calendar.calendarWindow(ledger[ledger.length - 1].t, 90);
+
+  const { unit, buckets } = calendar.series(ledger, period, 90);
+
+  assert.equal(unit, "day");
+  assert.equal(buckets.length, 90, "a 90-day window drew a different number of daily buckets");
+  assert.equal(buckets.reduce((total, bucket) => total + bucket.cost, 0), 90);
+  assert.equal(buckets.reduce((total, bucket) => total + bucket.tokens, 0), 90_000);
+  assert.equal(buckets[0].key, period.firstKey, "the chart opens somewhere other than the window does");
+});
+
+test("a series folds to months only once weeks no longer fit, and stays whole", () => {
+  const calendar = createCalendarProjection("America/Chicago");
+  const ledger = dailyLedger(1_200);
+  const period = { start: ledger[0].t, end: ledger[ledger.length - 1].t };
+
+  const weekly = calendar.series(ledger, period, 180);
+  assert.equal(weekly.unit, "week");
+  assert.equal(weekly.buckets.reduce((total, bucket) => total + bucket.cost, 0), 1_200);
+
+  const monthly = calendar.series(ledger, period, 60);
+  assert.equal(monthly.unit, "month", "1,200 days need more than 60 weekly buckets");
+  assert.ok(monthly.buckets.length <= 60);
+  assert.equal(monthly.buckets.reduce((total, bucket) => total + bucket.cost, 0), 1_200);
+  assert.deepEqual(
+    monthly.buckets.map((bucket) => bucket.key.slice(8)),
+    monthly.buckets.map(() => "01"),
+    "a month bucket must be named by the first of its month",
+  );
+  assert.equal(
+    monthly.buckets.reduce((total, bucket) => total + bucket.days, 0),
+    1_200,
+    "the bucket day spans must partition the window: the short bucket at each end counts only the days the window holds",
+  );
+});
+
+/**
+ * Guard for issue #93.
+ *
+ * A session that ran across midnight is active on both dates, and the timeline
+ * fans it out into one segment per date to draw it. Its tokens are not on both
+ * dates: they land where each token-bearing event completed, the rule
+ * `usageEvents` owns and every view plotting completion time reads. Reading
+ * whole-session totals off each segment counted the whole volume twice, so the
+ * table's token column exceeded the ledger for any week holding one overnight
+ * session.
+ */
+test("an overnight session leaves each date only the tokens that landed on it", () => {
+  const calendar = createCalendarProjection("America/Chicago");
+  // 23:00 on the 1st through 01:00 on the 2nd, local.
+  const overnight = normalizeSession(
+    {
+      start: "2026-07-02T04:00:00.000Z",
+      end: "2026-07-02T06:00:00.000Z",
+      project: "Alpha",
+      machine: "One",
+      provider: "claude",
+      models: ["claude-opus-4-1"],
+      cost: 4,
+      input: 600,
+      output: 400,
+      cacheCreate: 0,
+      cacheRead: 0,
+      totalTokens: 1_000,
+    },
+    0,
+  );
+
+  const whole = calendar.tokensByDate([overnight]);
+  assert.equal(whole.get("2026-07-01"), undefined, "the date the session started on carries none of its volume");
+  assert.equal(whole.get("2026-07-02"), 1_000, "a session with no turn detail lands on the date it finished");
+  assert.equal([...whole.values()].reduce((total, value) => total + value, 0), 1_000);
+
+  // The same session with a turn breakdown that accounts for it: each date now
+  // gets its own turns rather than the session twice.
+  const split = normalizeSession(
+    {
+      ...overnight,
+      turns: [
+        { end: "2026-07-02T04:30:00.000Z", input: 400, output: 200, cacheCreate: 0, cacheRead: 0, totalTokens: 600 },
+        { end: "2026-07-02T05:30:00.000Z", input: 200, output: 200, cacheCreate: 0, cacheRead: 0, totalTokens: 400 },
+      ],
+    },
+    0,
+  );
+
+  const perTurn = calendar.tokensByDate([split]);
+  assert.equal(perTurn.get("2026-07-01"), 600);
+  assert.equal(perTurn.get("2026-07-02"), 400);
+  assert.equal(
+    [...perTurn.values()].reduce((total, value) => total + value, 0),
+    1_000,
+    "the dates must partition the session, not repeat it",
   );
 });
 

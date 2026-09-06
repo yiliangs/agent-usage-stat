@@ -2061,6 +2061,12 @@
     .rhythm-data-table td:first-child { text-align: left; }
     .rhythm-data-table thead th { color: var(--muted); font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
     .rhythm-data-table tbody th { color: var(--ink); font-weight: 500; }
+    .rhythm-table-note {
+      padding: 11px 10px 2px;
+      color: var(--graphite);
+      font-size: 10px;
+      line-height: 1.5;
+    }
 
     .settings-view {
       min-height: 780px;
@@ -2822,10 +2828,10 @@
 
       <section class="hero-chart">
         <div class="section-head">
-          <h2>Daily expenditure field</h2>
+          <h2>Expenditure field</h2>
           <span class="rule"></span>
-          <span class="micro">USD / day</span>
-          <div class="view-toggle spend-toggle" aria-label="Daily expenditure view">
+          <span class="micro" id="spendFieldUnit">USD / day</span>
+          <div class="view-toggle spend-toggle" aria-label="Expenditure field view">
             <button class="active" data-spend-view="bars">Bars</button>
             <button data-spend-view="heatmap">Heatmap</button>
           </div>
@@ -2922,7 +2928,7 @@
 
       <div class="cumulative-pair">
         <section class="cumulative-module">
-          <div class="section-head"><h2>Cumulative spend</h2><span class="rule"></span><span class="micro">Dots / weekly checkpoints</span></div>
+          <div class="section-head"><h2>Cumulative spend</h2><span class="rule"></span><span class="micro" id="cumulativeMeta">Dots / weekly checkpoints</span></div>
           <svg class="cumulative-plot" viewBox="0 0 760 430" role="img" aria-label="Cumulative API-equivalent spend over the selected period"></svg>
         </section>
 
@@ -3009,7 +3015,7 @@
       </header>
       <div class="analysis-kpis" id="spendKpis"></div>
       <div class="analysis-grid">
-        <section class="analysis-card wide"><div class="analysis-card-head"><h2>Spend over time</h2><span>Daily / USD</span></div><svg class="analysis-chart" id="spendTrend" viewBox="0 0 760 245" role="img" aria-label="Daily spend over time"></svg></section>
+        <section class="analysis-card wide"><div class="analysis-card-head"><h2>Spend over time</h2><span id="spendTrendMeta">Daily / USD</span></div><svg class="analysis-chart" id="spendTrend" viewBox="0 0 760 245" role="img" aria-label="Daily spend over the selected period"></svg></section>
         <section class="analysis-card narrow"><div class="analysis-card-head"><h2>By machine</h2><span>Share of value</span></div><div class="composition-list" id="spendMachines"></div></section>
         <section class="analysis-card"><div class="analysis-card-head"><h2>Cost by project</h2><span>Click for detail</span></div><div class="analysis-bars" id="spendProjects"></div></section>
         <section class="analysis-card"><div class="analysis-card-head"><h2>Highest-cost sessions</h2><span>Click for detail</span></div><div class="analysis-bars" id="spendSessions"></div></section>
@@ -3055,7 +3061,7 @@
           <p class="token-traffic-attribution" id="tokenTrafficAttribution"></p>
         </section>
         <section class="analysis-card wide daily-token-card">
-          <div class="analysis-card-head"><h2>Daily token volume</h2><span id="dailyTokenMeta">Daily / all token types</span></div>
+          <div class="analysis-card-head"><h2 id="tokenTrendHeading">Daily token volume</h2><span id="dailyTokenMeta">Daily bars / all token types</span></div>
           <div class="token-traffic-shell daily-token-shell">
             <svg class="token-traffic-y-axis daily-token-y-axis" id="dailyTokenYAxis" viewBox="0 0 52 245" aria-hidden="true"></svg>
             <div class="token-traffic-scroll daily-token-scroll">
@@ -3065,7 +3071,7 @@
         </section>
         <section class="analysis-card narrow"><div class="analysis-card-head"><h2>Token mix</h2><span>Composition</span></div><div class="composition-list" id="tokenComposition"></div></section>
         <section class="analysis-card"><div class="analysis-card-head"><h2>Tokens by project</h2><span>Click for detail</span></div><div class="analysis-bars" id="tokenProjects"></div></section>
-        <section class="analysis-card"><div class="analysis-card-head"><h2>Cache hit by day</h2><span>Cache-read share</span></div><div class="analysis-bars" id="cacheDays"></div></section>
+        <section class="analysis-card"><div class="analysis-card-head"><h2 id="cacheCadence">Cache hit by day</h2><span>Cache-read share</span></div><div class="analysis-bars" id="cacheDays"></div></section>
       </div>
     </section>
 
