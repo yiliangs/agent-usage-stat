@@ -82,8 +82,36 @@
     ...measure(machineValue),
   };
 
-  return {
-    header,
-    machineSlot: fillSlot(".top-meta b", probeInput?.machineSlot || []),
+  const machineSlot = fillSlot(".top-meta b", probeInput?.machineSlot || []);
+
+  // The topology table is behind the Projects tab and its own view toggle, so
+  // the probe navigates the way a reader does rather than reading the markup.
+  const openView = (view) => {
+    const tab = [...document.querySelectorAll("[data-portal-view]")]
+      .find((element) => element.dataset.portalView === view);
+    if (tab) tab.click();
   };
+  openView("projects");
+  const topologyToggle = [...document.querySelectorAll(".project-toggle button")]
+    .find((button) => button.dataset.projectView === "topology");
+  if (topologyToggle) topologyToggle.click();
+  await waitForRender(() => document.querySelectorAll("#projectTopology .topology-total").length > 0);
+
+  const footRow = document.querySelector("#projectTopology tfoot tr");
+  const topology = {
+    rows: [...document.querySelectorAll("#projectTopology tbody tr")].map((row) => ({
+      project: text(row.querySelector(".topology-project")?.firstChild),
+      caption: text(row.querySelector(".topology-project small")),
+      value: text(row.querySelector(".topology-total")),
+      // A row standing for several projects has nothing to filter on, so the
+      // guard can ask whether the page still offers it.
+      filters: row.querySelectorAll(".topology-filter").length,
+      cells: [...row.querySelectorAll(".topology-cell")].map((cell) => text(cell)),
+    })),
+    footer: text(footRow?.lastElementChild),
+  };
+
+  openView("overview");
+
+  return { header, machineSlot, topology };
 })()

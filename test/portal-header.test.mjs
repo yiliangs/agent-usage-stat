@@ -4,7 +4,12 @@ import test from "node:test";
 
 import { SLOT_BUDGET, machineField, tally } from "../portal/usage-format.js";
 import { findChrome, runPortalProbe } from "../scripts/portal-probe-runner.mjs";
-import { MACHINES, buildHeaderFixture } from "./helpers/portal-header-fixture.mjs";
+import {
+  EXPECTED_VALUES,
+  MACHINES,
+  TOPOLOGY_LIMIT,
+  buildHeaderFixture,
+} from "./helpers/portal-header-fixture.mjs";
 
 /**
  * Rendered guards for what the page asserts about the ledger behind it.
@@ -67,4 +72,44 @@ test("the machine field's budget is a fact about the header slot", { skip }, asy
     assert.equal(slot.lines, 1, `the machine field wrapped on ${JSON.stringify(slot.text)}`);
     assert.equal(slot.clippedPx, 0, `the machine field clipped ${JSON.stringify(slot.text)}`);
   }
+});
+
+/** Dollars back out of a rendered `$1,234.56`, so the guard adds the column
+ *  the way a reader would: from what is on screen. */
+const dollars = (money) => Number(String(money).replace(/[^0-9.-]/g, ""));
+
+test("the topology Value column adds up to the total printed under it", { skip }, async () => {
+  const result = await probeHeader();
+  const { rows, footer } = result.topology;
+
+  assert.equal(rows.length, TOPOLOGY_LIMIT, "the table drew a different number of rows");
+  const column = rows.map((row) => dollars(row.value));
+  assert.equal(
+    column.reduce((total, value) => total + value, 0),
+    dollars(footer),
+    `the Value column reads ${column.join(" + ")} under a footer of ${footer}`,
+  );
+  assert.equal(dollars(footer), EXPECTED_VALUES.total);
+
+  // The rows the table has room for are still the costliest projects, named.
+  assert.deepEqual(column.slice(0, -1), EXPECTED_VALUES.kept);
+  assert.ok(
+    rows.slice(0, -1).every((row) => row.project !== "Other"),
+    "the table folded a row before it had run out of room",
+  );
+});
+
+test("the folded topology row says what it stands for and offers no filter", { skip }, async () => {
+  const result = await probeHeader();
+  const folded = result.topology.rows[result.topology.rows.length - 1];
+
+  assert.equal(folded.project, "Other");
+  assert.equal(dollars(folded.value), EXPECTED_VALUES.folded);
+  assert.equal(folded.caption, `${EXPECTED_VALUES.foldedProjects} projects`);
+  // There is no one project behind the row, so nothing in it opens a project.
+  assert.equal(folded.filters, 0, "the folded row offered a per-project filter");
+  assert.ok(
+    folded.cells.some((cell) => cell.startsWith("$")),
+    `the folded row printed no values: ${JSON.stringify(folded.cells)}`,
+  );
 });

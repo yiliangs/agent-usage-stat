@@ -26,6 +26,7 @@ import {
   DAY,
   createCalendarProjection,
   familyOf,
+  foldProjects,
   makeIntervalBuckets,
   normalizeSession,
   shiftDateKey,
@@ -41,6 +42,9 @@ const RANGE_DAYS = { '07D': 7, '14D': 14, '30D': 30, '90D': 90 }
  *  and every chart buckets between them. Thirty days is the length the portal
  *  opens on, so an empty ledger reads the same on whichever chip is chosen. */
 const EMPTY_LEDGER_DAYS = 30
+/** How many rows the project topology table draws. Everything past them is
+ *  folded into the last one, so the Value column still sums to its footer. */
+const TOPOLOGY_ROWS = 7
 const state = {
   sessions: [],
   meta: null,
@@ -2124,7 +2128,7 @@ function renderRhythmTable(dateKeys, segmentsByDate, observedThrough = null) {
 }
 
 function renderTopology(sessions, projectSummary) {
-  const projects = projectSummary.byCost.slice(0, 7)
+  const projects = foldProjects(projectSummary.byCost, TOPOLOGY_ROWS)
   const familyRows = group(sessions, (session) => familyOf(session.primaryModel), (session) => session.cost || 0)
   const families = familyRows.length > 4 ? [...familyRows.slice(0, 3).map((row) => row.key), 'Other'] : familyRows.map((row) => row.key)
   const visible = new Set(families.filter((family) => family !== 'Other'))
@@ -2142,11 +2146,20 @@ function renderTopology(sessions, projectSummary) {
       const value = family === 'Other'
         ? Object.entries(project.families).filter(([key]) => !visible.has(key)).reduce((total, [, amount]) => total + amount, 0)
         : project.families[family] || 0
+      // The folded row stands for several projects at once, so its cells carry
+      // the value and nothing to click: there is no one project to filter on.
+      if (project.synthetic) {
+        if (!value) return '<td><span class="topology-cell static empty" aria-label="No recorded value"></span></td>'
+        return `<td><span class="topology-cell static" style="--cell:${100 * value / maxCell}%" data-tip="${escapeAttribute(project.project)} | ${escapeAttribute(family)} | ${fmt.usd(value)}"><b>${fmt.usd(value)}</b></span></td>`
+      }
       if (!value) return '<td><button class="topology-cell empty" aria-label="No recorded value"></button></td>'
       return `<td><button class="topology-cell topology-filter" data-project="${escapeAttribute(project.project)}" data-family="${escapeAttribute(family)}" style="--cell:${100 * value / maxCell}%" data-tip="${escapeAttribute(project.project)} | ${escapeAttribute(family)} | ${fmt.usd(value)}"><b>${fmt.usd(value)}</b></button></td>`
     }).join('')
     const dominant = Object.entries(project.families).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Other'
-    return `<tr><th class="topology-project">${escapeText(project.project)}<small>${escapeText(dominant)} dominant</small></th>${cellsHtml}<td class="topology-total">${fmt.usd(project.cost)}</td></tr>`
+    const caption = project.synthetic
+      ? `${project.projects} projects`
+      : `${escapeText(dominant)} dominant`
+    return `<tr><th class="topology-project">${escapeText(project.project)}<small>${caption}</small></th>${cellsHtml}<td class="topology-total">${fmt.usd(project.cost)}</td></tr>`
   }).join('')
   const foot = families.map((family) => {
     const value = family === 'Other'

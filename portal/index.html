@@ -1633,7 +1633,10 @@
     }
     .topology-cell.empty { cursor: default; }
     .topology-cell.empty::before { display: none; }
-    .topology-cell:hover:not(.empty) { outline: 1px solid var(--ink); outline-offset: -2px; }
+    /* The folded row's cells are values, not controls: nothing to click and
+       nothing to hover, since no single project stands behind them. */
+    .topology-cell.static { display: flex; align-items: center; justify-content: center; cursor: default; }
+    .topology-cell:hover:not(.empty):not(.static) { outline: 1px solid var(--ink); outline-offset: -2px; }
     .topology-total {
       padding-left: 12px;
       font-family: var(--mono);
