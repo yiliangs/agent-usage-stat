@@ -136,5 +136,16 @@
   refresh.settled = { box: boxOf(), label: labelOf() };
   refresh.slot = fillSlot("#refreshLabel", probeInput?.syncSlot || []);
 
-  return { header, machineSlot, topology, refresh };
+  const paragraph = document.querySelector("#rhythmDescription");
+  const column = paragraph?.parentElement;
+  const description = {
+    text: text(paragraph),
+    ...measure(paragraph),
+    // What the sentence needs against what the column gives it, so a guard
+    // that fails can say which of the two was the constraint.
+    width: paragraph ? Math.round(paragraph.getBoundingClientRect().width) : 0,
+    columnWidth: column ? Math.round(column.getBoundingClientRect().width) : 0,
+  };
+
+  return { header, machineSlot, topology, refresh, description };
 })()

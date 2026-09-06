@@ -1687,8 +1687,10 @@
       font-weight: 400;
       letter-spacing: -.04em;
     }
+    /* No measure of its own: the heading already sits in a grid column the
+       tools beside it bound, and a second ceiling under that one broke the
+       sentence a word early with the column still half empty. */
     .rhythm-heading p {
-      max-width: 660px;
       margin: 0;
       color: var(--graphite);
       font-family: var(--sans);

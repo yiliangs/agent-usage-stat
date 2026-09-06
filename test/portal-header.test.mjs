@@ -150,3 +150,18 @@ test("the refresh button's label slot holds every state it can print", { skip },
     assert.equal(slot.clippedPx, 0, `the refresh label clipped ${JSON.stringify(slot.text)}`);
   }
 });
+
+test("the session timeline description uses the column it was given", { skip }, async () => {
+  const result = await probeHeader();
+  const { text: sentence, lines, width, columnWidth } = result.description;
+
+  // The reported defect (#24): the final word sat alone on a second line while
+  // the column it wrapped inside still had room to spare, because the
+  // paragraph carried a ceiling narrower than its own column.
+  assert.ok(sentence?.length > 0, "the timeline description rendered nothing");
+  assert.equal(
+    lines,
+    1,
+    `the description wrapped to ${lines} lines in ${width}px of a ${columnWidth}px column`,
+  );
+});
