@@ -277,6 +277,68 @@ test("a rejected recompute invents no split for a multi-model legacy shard", asy
   });
 });
 
+test("a rejected recompute carries its own split onto a multi-model legacy shard it fully names (#85)", async () => {
+  await withRoot(async (root) => {
+    await writeLegacyShard(root, {
+      input_tokens: 400,
+      output_tokens: 600,
+      cache_creation_tokens: 0,
+      cache_read_tokens: 0,
+      total_tokens: 1000,
+      total_cost_usd: 5,
+      models: ["claude-sonnet-4-5", "gpt-5.6-codex"],
+    });
+
+    const shard = await new LogbookWriter().append(root, {
+      sessionData: sessionData({
+        inputTokens: 360,
+        outputTokens: 540,
+        totalTokens: 900,
+        totalCost: 4,
+        sourceFingerprint: "recompute",
+        modelBreakdowns: [
+          ...wholeSessionOn("claude-sonnet-4-5", { input: 120, output: 180, cost: 1 }),
+          ...wholeSessionOn("gpt-5.6-codex", { input: 240, output: 360, cost: 3 }),
+        ],
+      }),
+      transcriptData: transcriptData(),
+    });
+
+    const record = JSON.parse(await readFile(shard, "utf8"));
+    assert.equal(record.total_tokens, 1000, "the recorded totals stand");
+    assert.equal(record.total_cost_usd, 5);
+    assert.equal(record.source_fingerprint, "recompute");
+
+    assert.ok(Array.isArray(record.model_breakdowns),
+      "the shard keeps a breakdown rather than leaving the reader to split it evenly");
+    const byModel = Object.fromEntries(
+      record.model_breakdowns.map((entry) => [entry.model, entry]),
+    );
+    assert.deepEqual(Object.keys(byModel).sort(), ["claude-sonnet-4-5", "gpt-5.6-codex"]);
+    assert.equal(byModel["gpt-5.6-codex"].vendor, "openai");
+
+    const sum = (field) =>
+      record.model_breakdowns.reduce((total, entry) => total + entry[field], 0);
+    for (const field of [
+      "input_tokens",
+      "output_tokens",
+      "cache_creation_tokens",
+      "cache_read_tokens",
+      "total_tokens",
+    ]) {
+      assert.equal(sum(field), record[field], `the breakdown's ${field} sums to the recorded one`);
+    }
+    assert.ok(Math.abs(sum("total_cost_usd") - record.total_cost_usd) < 1e-9,
+      "the breakdown's cost sums to the recorded cost");
+
+    assert.equal(byModel["claude-sonnet-4-5"].total_cost_usd, 1.25,
+      "each model keeps the share of spend the recompute measured, not half");
+    assert.equal(byModel["gpt-5.6-codex"].total_cost_usd, 3.75);
+    assert.equal(byModel["claude-sonnet-4-5"].output_tokens, 200);
+    assert.equal(byModel["gpt-5.6-codex"].output_tokens, 400);
+  });
+});
+
 test("a shard write leaves the directory holding the shard and nothing else", async () => {
   await withRoot(async (root) => {
     const writer = new LogbookWriter();

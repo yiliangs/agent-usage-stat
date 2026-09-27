@@ -95,7 +95,10 @@ export class LogbookWriter {
 
     return {
       ...existing,
-      model_breakdowns: existing.model_breakdowns ?? soleModelBreakdown(existing),
+      model_breakdowns:
+        existing.model_breakdowns ??
+        soleModelBreakdown(existing) ??
+        measuredSplitOf(existing, next),
       // The source was successfully examined even when its recomputation was
       // lower. Advancing the fingerprint prevents an unchanged truncated or
       // pruned transcript from being retried on every reconciliation.
@@ -167,8 +170,8 @@ export class LogbookWriter {
  * implies when it names exactly one model: that model holds every token and
  * every dollar the record carries, so the split is read off the record rather
  * than estimated from a read that saw less. A record naming several models
- * implies no such split from its totals alone and is given none, which is what
- * the reader's legacy `models` fallback exists to cover.
+ * implies no such split from its totals alone; `measuredSplitOf` decides
+ * whether the rejected read supplies one.
  */
 function soleModelBreakdown(
   record: LogbookRecord,
@@ -185,6 +188,109 @@ function soleModelBreakdown(
     total_tokens: record.total_tokens,
     total_cost_usd: record.total_cost_usd,
   }];
+}
+
+const TOKEN_FIELDS = [
+  "input_tokens",
+  "output_tokens",
+  "cache_creation_tokens",
+  "cache_read_tokens",
+] as const;
+
+/**
+ * The breakdown a multi-model legacy shard is given when a rejected recompute
+ * measured how the same session divided among the same models (#85).
+ *
+ * The shard's totals stand, so the recompute's breakdown cannot be written as
+ * it is: it sums to the read that lost. Its proportions are still the only
+ * per-model evidence this session will ever have, because the fingerprint
+ * advances and no later sync revisits the shard, and the reader's alternative
+ * is an even split between models that measured nothing. So each recorded
+ * component, and the recorded cost, is apportioned over the models in the
+ * proportion the recompute found for that component, and the breakdown sums
+ * to the recorded totals exactly.
+ *
+ * The recompute must name exactly the models the shard records. A read that
+ * never saw a recorded model cannot say what that model earned, and a split
+ * that charges its spend to another model is the invention this refuses; that
+ * shard keeps no breakdown and the reader's legacy fallback stands.
+ */
+function measuredSplitOf(
+  existing: LogbookRecord,
+  next: LogbookRecord,
+): LogbookModelRecord[] | undefined {
+  const fresh = next.model_breakdowns ?? [];
+  const recorded = [...new Set(existing.models ?? [])].sort();
+  const measured = [...new Set(fresh.map((entry) => entry.model))].sort();
+  if (
+    !recorded.length ||
+    fresh.length !== measured.length ||
+    recorded.join("\n") !== measured.join("\n")
+  ) {
+    return undefined;
+  }
+
+  const byTokens = fresh.map((entry) => entry.total_tokens);
+  const components = TOKEN_FIELDS.map((field) =>
+    apportion(
+      existing[field],
+      fresh.map((entry) => entry[field]),
+      byTokens,
+    ),
+  );
+  const microDollars = apportion(
+    Math.round(existing.total_cost_usd * 1e6),
+    fresh.map((entry) => entry.total_cost_usd),
+    byTokens,
+  );
+  if (components.some((split) => !split) || !microDollars) return undefined;
+
+  return fresh.map((entry, index) => {
+    const [input, output, cacheCreation, cacheRead] = components.map(
+      (split) => split![index],
+    );
+    return {
+      model: entry.model,
+      vendor: entry.vendor ?? vendorForModel(entry.model),
+      input_tokens: input,
+      output_tokens: output,
+      cache_creation_tokens: cacheCreation,
+      cache_read_tokens: cacheRead,
+      total_tokens: input + output + cacheCreation + cacheRead,
+      total_cost_usd: microDollars[index] / 1e6,
+    };
+  });
+}
+
+/**
+ * Divide a whole number in proportion to `weights`, falling back to
+ * `fallback` when the weights are all zero, by largest remainder so the parts
+ * sum to the whole exactly. Undefined when neither set of weights has mass.
+ */
+function apportion(
+  whole: number,
+  weights: number[],
+  fallback: number[],
+): number[] | undefined {
+  const total = (values: number[]) =>
+    values.reduce((sum, value) => sum + Math.max(0, value || 0), 0);
+  const basis = total(weights) > 0 ? weights : fallback;
+  const mass = total(basis);
+  if (!(whole > 0)) return basis.map(() => 0);
+  if (!(mass > 0)) return undefined;
+
+  const exact = basis.map((weight) => (Math.max(0, weight || 0) / mass) * whole);
+  const parts = exact.map(Math.floor);
+  let left = whole - parts.reduce((sum, part) => sum + part, 0);
+  const order = exact
+    .map((value, index) => ({ index, remainder: value - Math.floor(value) }))
+    .sort((a, b) => b.remainder - a.remainder);
+  for (const { index } of order) {
+    if (left <= 0) break;
+    parts[index] += 1;
+    left -= 1;
+  }
+  return parts;
 }
 
 function formatDuration(seconds: number): string {
