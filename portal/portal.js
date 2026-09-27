@@ -30,6 +30,7 @@ import {
   foldProjects,
   groupByFamily,
   inFamily,
+  isUnpriced,
   makeIntervalBuckets,
   normalizeSession,
   shiftDateKey,
@@ -1367,6 +1368,20 @@ function renderPatternProjects(pattern, projectColors) {
       : ''
 }
 
+/** A session's cost as the ledger supports it. Models no pricing source
+ *  covered are left out of the recorded figure, so a session made only of them
+ *  reads "Unpriced" and one mixing them with priced models reads as a lower
+ *  bound, never as the zero it was billed at. */
+function sessionCostText(session) {
+  const cost = session.cost || 0
+  if (!isUnpriced(session)) return fmt.usd(cost)
+  return cost > 0 ? `${fmt.usd(cost)}+` : 'Unpriced'
+}
+
+function unpricedTitle(session) {
+  return isUnpriced(session) ? ` title="${escapeAttribute(`No price for ${session.unpricedModels.join(', ')}`)}"` : ''
+}
+
 function formatDuration(seconds) {
   const value = Math.max(0, Math.round(seconds || 0))
   if (value < 60) return `${value}s`
@@ -1432,13 +1447,14 @@ function renderSessionAnalysis(sessions) {
     tokens: (session) => session.totalTokens || 0,
     cost: (session) => session.cost || 0,
   })
-  $('#sessionCount').textContent = `${sorted.length} of ${sessions.length} sessions / ${fmt.usd(sum(sorted, (session) => session.cost || 0))}`
+  const unpriced = sorted.filter(isUnpriced).length
+  $('#sessionCount').textContent = `${sorted.length} of ${sessions.length} sessions / ${fmt.usd(sum(sorted, (session) => session.cost || 0))}${unpriced ? ` / ${unpriced} unpriced` : ''}`
   const columns = [
     ['slug', 'Session'], ['project', 'Project'], ['machine', 'Machine'], ['model', 'Model'], ['start', 'Started'], ['durSec', 'Duration'], ['tokens', 'Tokens'], ['cost', 'Cost'],
   ]
   $('#sessionTable').innerHTML = `<thead><tr>${columns.map(([key, label]) => `<th data-session-sort="${key}" class="${['durSec', 'tokens', 'cost'].includes(key) ? 'numeric' : ''}">${label}${sortMark(key, state.sessionSort)}</th>`).join('')}</tr></thead><tbody>${sorted.map((session) => {
     const family = familyOf(session.primaryModel)
-    return `<tr data-analysis-session="${session._i}"><td>${escapeText(session.slug || session.sid || 'Session')}</td><td class="primary">${escapeText(session.project)}</td><td>${escapeText(session.machine)}</td><td><i class="model-mark" style="--series:${styleForFamily(family).base}"></i>${escapeText(shortModel(session.primaryModel))}</td><td>${fmt.dateYear(new Date(session.start))} / ${clockTime(Date.parse(session.start))}</td><td class="numeric">${escapeText(session.durHuman || formatDuration(session.durSec))}</td><td class="numeric">${fmt.compact(session.totalTokens || 0)}</td><td class="numeric">${fmt.usd(session.cost || 0)}</td></tr>`
+    return `<tr data-analysis-session="${session._i}"><td>${escapeText(session.slug || session.sid || 'Session')}</td><td class="primary">${escapeText(session.project)}</td><td>${escapeText(session.machine)}</td><td><i class="model-mark" style="--series:${styleForFamily(family).base}"></i>${escapeText(shortModel(session.primaryModel))}</td><td>${fmt.dateYear(new Date(session.start))} / ${clockTime(Date.parse(session.start))}</td><td class="numeric">${escapeText(session.durHuman || formatDuration(session.durSec))}</td><td class="numeric">${fmt.compact(session.totalTokens || 0)}</td><td class="numeric"${unpricedTitle(session)}>${escapeText(sessionCostText(session))}</td></tr>`
   }).join('')}</tbody>`
 }
 
@@ -2466,7 +2482,7 @@ function openRhythmDetail(element) {
       { label: 'Tokens', value: fmt.compact(session.totalTokens || 0) },
       { label: 'Wall span', value: session.durHuman || `${Math.round(durationMinutes)} min` },
       { label: 'Token velocity', value: `${fmt.compact(tokensPerMinute)} / min` },
-      { label: 'Period value', value: fmt.usd(session.cost || 0) },
+      { label: 'Period value', value: sessionCostText(session) },
     ],
     sections: [
       { title: 'Recorded session', html: detailList([
@@ -2474,6 +2490,7 @@ function openRhythmDetail(element) {
         { label: 'End', value: `${localDateKey(new Date(end))} / ${clockTime(end)}` },
         { label: 'Provider', value: String(session.provider || 'unknown').toUpperCase() },
         { label: 'Model', value: shortModel(session.primaryModel) },
+        ...(isUnpriced(session) ? [{ label: 'Unpriced', value: session.unpricedModels.map(shortModel).join(', ') }] : []),
       ]) },
       { title: 'Measurement', text: 'Token velocity is total recorded tokens divided by the session wall-clock span. Darker means more tokens per minute. The span may include idle time, because the transcript does not expose a continuous ready, running, or thinking state.' },
     ],

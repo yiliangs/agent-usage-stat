@@ -49,6 +49,13 @@ export interface LogbookRecord {
    * this field, so readers must retain their legacy model-name fallback.
    */
   model_breakdowns?: LogbookModelRecord[];
+  /**
+   * Models no pricing source covered, so their tokens are in the totals and
+   * their cost is not. `total_cost_usd` alone cannot tell a pricing miss from a
+   * free session; this list can. An empty list says every model was priced; a
+   * shard written before the field existed carries no evidence either way.
+   */
+  unpriced_models?: string[];
   /** Turn-scoped slices for accurate time attribution. Older shards omit it. */
   turns?: LogbookTurnRecord[];
   /** Fingerprint of the provider transcript used to build this snapshot. */

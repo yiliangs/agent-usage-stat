@@ -144,6 +144,7 @@ test("all providers serialize the same normalized usage contract", async () => {
             total_cost_usd: 0.002346,
           },
         ],
+        unpriced_models: [],
         turns: [
           {
             turn_id: "turn-1",

@@ -15,7 +15,7 @@ import {
 } from "../core/usage-ledger.js";
 
 const CACHE_FILE = "snapshot-cache.json";
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 const SHARD_CONCURRENCY = 8;
 
 /** Raw JSON also includes legacy shards whose missing/coercible fields are frozen. */
@@ -83,6 +83,9 @@ export interface PortalSessionRecord {
    *  session's total alone cannot be divided between the models that produced
    *  it, so the split is carried rather than reconstructed downstream. */
   byModel: Record<string, PortalSplitRecord>;
+  /** Models no pricing source covered. Their cost is absent from `cost`, not
+   *  zero, so a session naming any reads as unpriced rather than as free. */
+  unpricedModels: string[];
 }
 
 export interface PortalSnapshotSpan {
@@ -110,7 +113,7 @@ export interface PortalSnapshotCacheEntry {
 }
 
 export interface PortalSnapshotCache {
-  version: 2;
+  version: typeof CACHE_VERSION;
   source: string;
   entries: Record<string, PortalSnapshotCacheEntry>;
 }
@@ -362,6 +365,13 @@ function normalizeSession(
     provider: String(record.provider || "claude"),
     byVendor: splits.byVendor,
     byModel: splits.byModel,
+    // Tokens these models spent are in the totals and their cost is not. A
+    // shard written before the field existed says nothing, which reads as none.
+    unpricedModels: Array.isArray(record.unpriced_models)
+      ? record.unpriced_models.filter(
+          (model): model is string => typeof model === "string" && model.trim() !== "",
+        )
+      : [],
   };
 }
 
