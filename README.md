@@ -122,8 +122,12 @@ npm run make
 
 Run that suite locally before you push. GitHub runs no checks on this repository and no pull request gets one, so the local run is the whole gate. The release workflow re-runs `npm test` and `npm run test:desktop` on Windows and macOS, but only on a tag push, so platform-specific breakage still blocks a release rather than slipping into one.
 
+The npm package does not expose a supported JavaScript library API.
+
+## Releases and auto-update
+
 Tagged releases are built for Windows and macOS by `.github/workflows/desktop-release.yml`. Signing credentials are optional. When the Windows certificate secrets are present the installer is signed, and when the Apple certificate and notarization secrets are present the macOS build is signed with the Developer ID identity and notarized. Without them the release still publishes: the Windows installer is unsigned and the macOS application is ad-hoc signed, which means users clear Gatekeeper by hand on first launch.
 
-The npm package does not expose a supported JavaScript library API.
+Signing is currently off, and auto-update is on regardless. The repository has no signing secrets, so both certificate import steps in `.github/workflows/desktop-release.yml` take their `exit 0` branch, which treats a missing certificate as success, and every release so far has been an unsigned Windows installer and an ad-hoc signed, unnotarized macOS application. Those builds are published to GitHub Releases and served from the live update.electronjs.org feed, and `src/desktop/main.ts` calls `updateElectronApp` on every packaged launch except the Squirrel first run and the smoke test, checking hourly. Installed Windows copies therefore download and apply unsigned updates; whether installed macOS copies can apply an ad-hoc signed update at all is unverified (issue #127). This is a posture choice for a private tool, recorded here so it is not mistaken for a working signing pipeline that degraded. Making the release job fail without a certificate would stop every release the project can currently produce, so that change waits on real certificates and on confirming that macOS auto-update works at all against an ad-hoc signature.
 
 Licensed under MIT.
