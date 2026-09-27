@@ -19,7 +19,7 @@ const MIN_AGE_SEC = 120; // skip transcripts modified in the last 2 min
 
 async function loadRecordedIds() {
   // logbook.d/ is the single source of truth; shard filename = session_id
-  // (the legacy logbook.csv was folded in by migrate-csv-to-shards.mjs).
+  // (the legacy logbook.csv was folded into the shards on 2026-07-04).
   if (!existsSync(SHARD_DIR)) return new Set();
   const ids = new Set();
   for (const f of await readdir(SHARD_DIR)) {
