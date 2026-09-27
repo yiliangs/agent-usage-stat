@@ -118,7 +118,7 @@ npm run make
 
 - `npm test` runs the core and portal regression suite.
 - `npm run test:desktop` packages the application and exercises the standalone helper, first-run hook installation, custom protocol, refresh, and renderer.
-- `npm run test:make` runs every installer maker into a scratch directory under `dist/` and asserts that the installers a release uploads were written and that the `postMake` prune kept only them. It takes several minutes and leaves `dist/` empty, so run it before tagging a release rather than before every push.
+- `npm run test:make` runs every installer maker into a scratch directory under `dist/` and asserts that the installers a release uploads were written and that the `postMake` prune kept only them. It takes several minutes and leaves `dist/` empty. `npm version` runs it automatically through the `preversion` hook, so a release tag cannot be cut while a maker or the prune is broken, and it covers only the platform the tag is cut on.
 - `npm start` builds and launches the development desktop application.
 - `npm run make` creates platform installers under `dist/forge/make/`.
 

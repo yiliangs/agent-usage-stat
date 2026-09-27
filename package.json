@@ -31,7 +31,8 @@
     "preview:portal": "vite preview --config portal/vite.config.ts --port 4173",
     "test": "npm run build && node --test test/*.test.mjs",
     "test:desktop": "npm run build && node scripts/test-desktop.mjs",
-    "test:make": "npm run build && node scripts/test-make.mjs"
+    "test:make": "npm run build && node scripts/test-make.mjs",
+    "preversion": "npm run test:make"
   },
   "keywords": [
     "claude-code",
