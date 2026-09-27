@@ -50,7 +50,7 @@ Parser or pricing-version changes, truncation, replacement, and fingerprint mism
 
 Claude main transcripts and recursive subagent transcripts are also append-only in normal operation. Continuous checkpoints keep a versioned session-tree snapshot under `~/.agent-usage-stat/cache/claude/`. Each file has its own byte cursor and rolling tail while billing deduplication remains shared across the tree. New subagent files are incorporated without rereading prior files; partial final JSONL records are deferred. Each file's pending range is read in bounded chunks, as the Codex reader reads its rollout. File removal, truncation, replacement, parser changes, or pricing changes rebuild the derived snapshot.
 
-The hook observation files under `~/.agent-usage-stat/capture-health/` record the last observed attempt, last successful checkpoint, and last failure separately. Absence of a failure does not prove that a host invoked its hook.
+The hook observation files under `~/.agent-usage-stat/capture-health/` record the last observed attempt, last successful checkpoint, and last failure separately. Absence of a failure does not prove that a host invoked its hook. Each installed hook names its host with `--host <provider>`, and the attempt is filed under that host even when the payload fails to parse or no provider is detected; a hook installed before that flag existed falls back to the detected provider until setup rewrites it.
 
 ## Desktop capture monitor
 

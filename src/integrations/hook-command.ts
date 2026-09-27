@@ -1,4 +1,5 @@
 import { installedHelperPath } from "../core/application-paths.js";
+import type { ProviderName } from "../core/provider-definition.js";
 
 export interface CaptureHookCommands {
   unix: string;
@@ -11,6 +12,16 @@ export interface CaptureHookInvocation {
 }
 
 const CAPTURE_ARGS = ["capture", "--detach", "--quiet"] as const;
+
+/**
+ * The capture arguments for one host's hook. Hook event names overlap across
+ * hosts and a payload that fails to parse carries none, so the hook names its
+ * host outright: that host owns the capture-health record of every attempt
+ * the hook makes, including one that fails before any provider is resolved.
+ */
+function captureArgs(host: ProviderName): string[] {
+  return [...CAPTURE_ARGS, "--host", host];
+}
 
 /**
  * The executable every host hook names.
@@ -26,8 +37,8 @@ export function hookExecutablePath(): string {
   return installedHelperPath();
 }
 
-export function captureHookCommands(): CaptureHookCommands {
-  const command = `"${hookExecutablePath()}" ${CAPTURE_ARGS.join(" ")}`;
+export function captureHookCommands(host: ProviderName): CaptureHookCommands {
+  const command = `"${hookExecutablePath()}" ${captureArgs(host).join(" ")}`;
   return { unix: command, powershell: `& ${command}` };
 }
 
@@ -37,8 +48,8 @@ export function captureHookCommands(): CaptureHookCommands {
  * differ per shell and are a recurring source of broken hooks; a host that can
  * spawn a process directly should never have to re-parse a command string.
  */
-export function captureHookInvocation(): CaptureHookInvocation {
-  return { command: hookExecutablePath(), args: [...CAPTURE_ARGS] };
+export function captureHookInvocation(host: ProviderName): CaptureHookInvocation {
+  return { command: hookExecutablePath(), args: captureArgs(host) };
 }
 
 /** Recognize both the current package hook and hooks from its old name. */

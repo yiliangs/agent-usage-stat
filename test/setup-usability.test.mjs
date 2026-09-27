@@ -17,10 +17,19 @@ import { spawn } from "node:child_process";
 import { detectInstalledAgents } from "../dist/commands/setup.js";
 import { helperBinaryName } from "../dist/core/helper-installation.js";
 import {
+  captureHookCommands,
+  captureHookInvocation,
   hookExecutablePath,
   isAgentUsageStatCommand,
 } from "../dist/integrations/hook-command.js";
-import { installCodexHooks } from "../dist/integrations/codex-hooks.js";
+import {
+  inspectCodexHooks,
+  installCodexHooks,
+} from "../dist/integrations/codex-hooks.js";
+import {
+  inspectOpencodeHook,
+  installOpencodeHook,
+} from "../dist/integrations/opencode-hooks.js";
 import { buildPortalData } from "../dist/desktop/portal-data.js";
 import { detectProvider } from "../dist/providers/registry.js";
 
@@ -91,6 +100,65 @@ test("legacy hookless capture config migrates to batch without re-enabling hooks
   }
 });
 
+// Issue #102: every hook names its host with `--host`. The inspectors and the
+// uninstaller must still find a hook carrying it, and a hook installed before
+// the flag existed must be recognised as ours so setup replaces it.
+test("a hook naming its host is still recognised, and setup replaces one without it", async () => {
+  const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-hook-host-"));
+  const hooksPath = join(home, ".codex", "hooks.json");
+  const pluginPath = join(home, ".config", "opencode", "plugin", "agent-usage-stat.js");
+
+  try {
+    await withHome(home, async () => {
+      for (const host of ["claude", "codex", "copilot", "opencode"]) {
+        const commands = captureHookCommands(host);
+        assert.match(commands.unix, new RegExp(` --host ${host}$`));
+        assert.ok(isAgentUsageStatCommand(commands.unix), commands.unix);
+        assert.ok(isAgentUsageStatCommand(commands.powershell), commands.powershell);
+        const invocation = captureHookInvocation(host);
+        assert.deepEqual(invocation.args.slice(-2), ["--host", host]);
+        assert.ok(
+          isAgentUsageStatCommand(`${invocation.command} ${invocation.args.join(" ")}`),
+        );
+      }
+
+      // A Codex hook as written before the flag existed.
+      const helper = hookExecutablePath();
+      const legacy = {
+        type: "command",
+        command: `"${helper}" capture --detach --quiet`,
+        commandWindows: `& "${helper}" capture --detach --quiet`,
+        timeout: 30,
+      };
+      await mkdir(join(home, ".codex"), { recursive: true });
+      await writeFile(hooksPath, JSON.stringify({
+        hooks: {
+          Stop: [{ hooks: [legacy] }],
+          SubagentStop: [{ hooks: [legacy] }],
+        },
+      }), "utf8");
+      assert.equal(await inspectCodexHooks(hooksPath), "configured");
+
+      assert.equal(await installCodexHooks(hooksPath), true);
+      const config = JSON.parse(await readFile(hooksPath, "utf8"));
+      for (const event of ["Stop", "SubagentStop"]) {
+        const hooks = config.hooks[event].flatMap((group) => group.hooks);
+        assert.equal(hooks.length, 1, `${event} keeps exactly one hook of ours`);
+        assert.equal(hooks[0].command, `"${helper}" capture --detach --quiet --host codex`);
+      }
+      assert.equal(await inspectCodexHooks(hooksPath), "configured");
+      // Reinstalling the current command changes nothing.
+      assert.equal(await installCodexHooks(hooksPath), false);
+
+      await installOpencodeHook(pluginPath);
+      assert.match(await readFile(pluginPath, "utf8"), /"--host","opencode"\]/);
+      assert.equal(await inspectOpencodeHook(pluginPath), "configured");
+    });
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("a hook names the installed helper rather than the process writing it", async () => {
   const home = await mkdtemp(join(tmpdir(), "agent-usage-stat-hook-target-"));
   const hooksPath = join(home, ".codex", "hooks.json");
@@ -113,8 +181,11 @@ test("a hook names the installed helper rather than the process writing it", asy
 
     for (const event of ["Stop", "SubagentStop"]) {
       const hook = config.hooks[event][0].hooks[0];
-      assert.equal(hook.command, `"${helper}" capture --detach --quiet`);
-      assert.equal(hook.commandWindows, `& "${helper}" capture --detach --quiet`);
+      assert.equal(hook.command, `"${helper}" capture --detach --quiet --host codex`);
+      assert.equal(
+        hook.commandWindows,
+        `& "${helper}" capture --detach --quiet --host codex`,
+      );
       // Written so the inspectors and the uninstaller find it again.
       assert.ok(
         isAgentUsageStatCommand(hook.command),
@@ -191,7 +262,7 @@ test(
       assert.equal(codexHooks.includes("--provider"), false);
       assert.equal(copilotHooks.version, 1);
       assert.equal(copilotHooks.hooks.SessionEnd.length, 1);
-      assert.match(copilotHooks.hooks.SessionEnd[0].powershell, /capture --detach --quiet/);
+      assert.match(copilotHooks.hooks.SessionEnd[0].powershell, /capture --detach --quiet --host copilot/);
       const claudeSettings = JSON.parse(
         await readFile(join(home, ".claude", "settings.json"), "utf8"),
       );

@@ -31,7 +31,7 @@ export async function inspectCopilotHook(
 /** Install an isolated user-level hook without rewriting Copilot settings. */
 export async function installCopilotHook(hooksPath: string): Promise<void> {
   await mkdir(join(hooksPath, ".."), { recursive: true });
-  const commands = captureHookCommands();
+  const commands = captureHookCommands("copilot");
   const config = {
     version: 1,
     hooks: {
