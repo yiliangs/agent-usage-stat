@@ -82,7 +82,13 @@ const PRICING: Record<string, ModelPricing> = {
 const FAST_MODE_MULTIPLIERS: Record<string, number> = {
   "claude-opus-5": 2,
   "claude-opus-4-8": 2,
-  // Historical Fast requests retain the rate that applied while supported.
+  // Fast mode ran as a research preview at $30/$150 per MTok, 6x standard,
+  // on Opus 4.6 (from Feb 2026) and Opus 4.7. Anthropic's pricing and
+  // fast-mode pages, fetched 2026-09-27, no longer list that rate: a fast
+  // request to 4.7 now errors, and one to 4.6 runs at standard speed and
+  // reports speed: "standard". So these entries are reached only by
+  // archived transcripts. The 4.6 figure is per the owner triage note on
+  // issue #82 (2026-09-05); the 4.7 figure rests on third-party coverage.
   "claude-opus-4-7": 6,
   "claude-opus-4-6": 6,
 };
