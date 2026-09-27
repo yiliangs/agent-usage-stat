@@ -152,6 +152,14 @@ export function inFamily(session, family) {
   return modelShares(session).some((share) => share.family === family)
 }
 
+/** A session naming a model no pricing source covered. Its recorded cost
+ *  leaves those models out rather than pricing them at zero, so the figure is
+ *  unpriced (or, beside priced models, a lower bound), never a free session.
+ *  A snapshot that carries no list says nothing, which reads as priced. */
+export function isUnpriced(session) {
+  return Array.isArray(session.unpricedModels) && session.unpricedModels.length > 0
+}
+
 export function summarizeUsage(sessions) {
   const tokens = sum(sessions, (session) => session.totalTokens || 0)
   const cacheRead = sum(sessions, (session) => session.cacheRead || 0)

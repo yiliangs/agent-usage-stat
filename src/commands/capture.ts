@@ -145,7 +145,7 @@ export class CaptureCommand {
       }
 
       const shardPath = await this.logbookWriter.append(root, {
-        sessionData,
+        ...snapshot,
         transcriptData,
       });
       outcome = {

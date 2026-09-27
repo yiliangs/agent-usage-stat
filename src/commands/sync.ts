@@ -109,8 +109,7 @@ export class SyncCommand {
           if (!sessionData.sourceFingerprint) {
             sessionData = { ...sessionData, sourceFingerprint };
           }
-          const { transcriptData } = snapshot;
-          await this.writer.append(root, { sessionData, transcriptData });
+          await this.writer.append(root, { ...snapshot, sessionData });
           updated++;
         } catch (error) {
           failures.push(this.formatFailure(provider, found, error));

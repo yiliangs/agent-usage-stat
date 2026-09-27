@@ -152,6 +152,7 @@ test("portal artifacts preserve the exact current and legacy ledger boundary", a
         "claude-opus-5": { cost: 0.75, tokens: 120 },
         "gpt-5.6-sol": { cost: 0.5, tokens: 80 },
       },
+      unpricedModels: [],
     };
     const legacySession = {
       slug: "legacy-s",
@@ -197,13 +198,14 @@ test("portal artifacts preserve the exact current and legacy ledger boundary", a
         "gpt-5.4": { cost: 0.3, tokens: 30 },
         "gpt-5.6-sol": { cost: 0.3, tokens: 30 },
       },
+      unpricedModels: [],
     };
     const expectedSessions = [currentSession, legacySession];
     const sessionsRaw = await readFile(join(outDir, "sessions.json"), "utf8");
     assert.equal(sessionsRaw, JSON.stringify(expectedSessions));
 
     const expectedCache = {
-      version: 2,
+      version: 3,
       source: root,
       entries: {
         "01-current.json": {

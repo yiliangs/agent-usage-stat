@@ -3,8 +3,7 @@ import { readFile } from "fs/promises";
 import { basename, dirname } from "path";
 import { hostname } from "os";
 import { writeJsonAtomic } from "../utils/atomic-file.js";
-import type { SessionUsage } from "../types/session.js";
-import type { ParsedTranscript } from "../types/transcript.js";
+import type { ProviderSessionSnapshot } from "../types/provider.js";
 import { vendorForModel } from "./model-vendor.js";
 import { projectNameForCwd } from "./project-name.js";
 import { withShardLock } from "./shard-lock.js";
@@ -13,11 +12,6 @@ import {
   type LogbookModelRecord,
   type LogbookRecord,
 } from "./usage-ledger.js";
-
-export interface UsageRecordData {
-  sessionData: SessionUsage;
-  transcriptData: ParsedTranscript;
-}
 
 /**
  * Records one session per JSON file under <root>/logbook.d/.
@@ -38,7 +32,7 @@ export class LogbookWriter {
    * old single CSV writer swallowed every error, which is exactly how the data
    * loss stayed invisible. The caller logs the outcome.
    */
-  async append(root: string, data: UsageRecordData): Promise<string> {
+  async append(root: string, data: ProviderSessionSnapshot): Promise<string> {
     let record = this.buildRecord(data);
     // A record always carries the session id its provider reported, so the key
     // here is the one sync fingerprints against. The slug-and-time fallback
@@ -109,7 +103,7 @@ export class LogbookWriter {
     };
   }
 
-  private buildRecord(data: UsageRecordData): LogbookRecord {
+  private buildRecord(data: ProviderSessionSnapshot): LogbookRecord {
     const { sessionData, transcriptData } = data;
     const durationMs =
       transcriptData.endTime.getTime() - transcriptData.startTime.getTime();
@@ -149,6 +143,7 @@ export class LogbookWriter {
           breakdown.cacheReadTokens,
         total_cost_usd: Number(breakdown.cost.toFixed(6)),
       })),
+      unpriced_models: [...new Set(data.unknownModels)].sort(),
       turns: sessionData.turns?.map((turn) => ({
         turn_id: turn.id,
         start_time: turn.startTime,
