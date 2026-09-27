@@ -111,16 +111,18 @@ Node.js 20 or newer is required for development only.
 npm install
 npm test
 npm run test:desktop
+npm run test:make
 npm start
 npm run make
 ```
 
 - `npm test` runs the core and portal regression suite.
 - `npm run test:desktop` packages the application and exercises the standalone helper, first-run hook installation, custom protocol, refresh, and renderer.
+- `npm run test:make` runs every installer maker into a scratch directory under `dist/` and asserts that the installers a release uploads were written and that the `postMake` prune kept only them. It takes several minutes and leaves `dist/` empty. `npm version` runs it automatically through the `preversion` hook, so a release tag cannot be cut while a maker or the prune is broken, and it covers only the platform the tag is cut on.
 - `npm start` builds and launches the development desktop application.
 - `npm run make` creates platform installers under `dist/forge/make/`.
 
-Run that suite locally before you push. GitHub runs no checks on this repository and no pull request gets one, so the local run is the whole gate. The release workflow re-runs `npm test` and `npm run test:desktop` on Windows and macOS, but only on a tag push, so platform-specific breakage still blocks a release rather than slipping into one.
+Run that suite locally before you push. GitHub runs no checks on this repository and no pull request gets one, so the local run is the whole gate. The release workflow re-runs `npm test` and `npm run test:desktop` on Windows and macOS, but only on a tag push, so platform-specific breakage still blocks a release rather than slipping into one. That workflow's `npm run make` step is the first time CI runs the makers, after the tag is already pushed; `npm run test:make` is the check that catches a maker or prune regression before then, and it covers only the platform it runs on.
 
 The npm package does not expose a supported JavaScript library API.
 
