@@ -5,7 +5,15 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CopilotProvider } from "../dist/providers/copilot/provider.js";
-import { normalizeModelId, priceFor } from "../dist/providers/copilot/pricing.js";
+import {
+  DOTTED_CLAUDE_ID_RULES,
+  NANO_AIU_PER_USD,
+  nativeUsdCost,
+  normalizeModelId,
+  priceFor,
+  pricingFingerprintSource,
+} from "../dist/providers/copilot/pricing.js";
+import { pricingFingerprintSource as sharedPricingFingerprintSource } from "../dist/providers/claude/pricing.js";
 import { detectProvider } from "../dist/providers/registry.js";
 
 test("Copilot shutdown usage becomes one normalized provider session", async () => {
@@ -172,6 +180,29 @@ test("Copilot prices both dotted Claude id orderings", () => {
     assert.equal(normalizeModelId(raw), expected);
     assert.ok(priceFor(raw), `${raw} misses the pricing table`);
   }
+});
+
+test("Copilot converts native nanoAIU to USD at one cent per AI Credit", () => {
+  // 2.325 AI Credits at $0.01 each.
+  assert.equal(nativeUsdCost(2_325_000_000), 0.02325);
+  assert.equal(nativeUsdCost(NANO_AIU_PER_USD), 1);
+  assert.equal(nativeUsdCost(0), null);
+  assert.equal(nativeUsdCost(-1), null);
+  assert.equal(nativeUsdCost("2325000000"), null);
+  assert.equal(nativeUsdCost(Number.NaN), null);
+});
+
+test("Copilot fingerprints the inputs to its native cost, not only the shared tables", () => {
+  const source = JSON.parse(pricingFingerprintSource());
+  // The AIU-to-USD rate and the dotted-id rules both move a recorded cost, so
+  // a change to either must change every Copilot transcript fingerprint.
+  assert.equal(source.nanoAiuPerUsd, NANO_AIU_PER_USD);
+  assert.deepEqual(
+    source.dottedClaudeIds,
+    DOTTED_CLAUDE_ID_RULES.map((rule) => rule.source),
+  );
+  assert.equal(source.shared, sharedPricingFingerprintSource());
+  assert.notEqual(pricingFingerprintSource(), sharedPricingFingerprintSource());
 });
 
 test("Copilot returns unknown pricing models in the same immutable snapshot", async () => {

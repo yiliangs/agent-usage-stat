@@ -7,6 +7,7 @@ import { buildSessionUsage } from "../../core/usage-summary.js";
 import {
   displayModelName,
   normalizeModelId,
+  nativeUsdCost,
   priceFor,
 } from "./pricing.js";
 import type {
@@ -127,15 +128,6 @@ function toTranscript(
     gitBranch: start.context?.branch,
     cwd,
   };
-}
-
-/** GitHub records billionths of one AI Credit; one AI Credit is USD $0.01. */
-function nativeUsdCost(totalNanoAiu: unknown): number | null {
-  return typeof totalNanoAiu === "number" &&
-    Number.isFinite(totalNanoAiu) &&
-    totalNanoAiu > 0
-    ? totalNanoAiu / 100_000_000_000
-    : null;
 }
 
 function tokenTotals(metric: CopilotModelMetric): TokenTotals {
