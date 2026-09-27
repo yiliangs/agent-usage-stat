@@ -492,16 +492,22 @@ test(
       const setup = await runCli(["setup", "--data-root", dataRoot], home);
       assert.equal(setup.code, 0, setup.output);
       assert.equal(existsSync(copilotHook), true);
+      // The wrapper block is what shadows `claude` and `codex` once the helper
+      // it points at is gone, so removal is only proven against a profile that
+      // carried it.
+      assert.match(
+        await readFile(join(home, SHELL_PROFILE_NAME), "utf8"),
+        /Agent Usage Stat terminal message/,
+      );
 
       await writeFile(claudeSettings, '{\n  "hooks": {},\n}\n', "utf8");
       const removal = await runCli(["setup", "--uninstall"], home);
       assert.equal(removal.code, 0, removal.output);
       assert.doesNotMatch(await readFile(codexHooks, "utf8"), /agent-usage-stat/);
       assert.equal(existsSync(copilotHook), false);
-      assert.doesNotMatch(
-        await readFile(join(home, SHELL_PROFILE_NAME), "utf8"),
-        /Agent Usage Stat/,
-      );
+      const profile = await readFile(join(home, SHELL_PROFILE_NAME), "utf8");
+      assert.doesNotMatch(profile, /Agent Usage Stat/);
+      assert.doesNotMatch(profile, /function global:\w+ \{|^\w+\(\) \{/m);
       assert.ok(
         removal.output.includes("Claude Code"),
         `the failing host is not named: ${removal.output}`,

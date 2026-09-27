@@ -48,6 +48,8 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `src/desktop/logbook-watcher.ts`: debounced shard-write observer behind the dashboard's auto-refresh
 - `src/desktop/status-area.ts`: the notification-area icon and the glance panel window behind it
 - `src/desktop/status-area-policy.ts`: which platforms carry that icon, and where its panel opens
+- `src/desktop/application-menu.ts`: the application menu template, per platform
+- `src/desktop/integration-removal.ts`: which platforms offer in-app removal of every hook and terminal wrapper, and what it asks and reports
 - `src/helper.ts`: standalone headless helper entry
 - `src/commands/setup.ts`: setup flow and terminal-wrapper installation
 - `src/integrations/agent-integrations.ts`: the single registry for host detection and hook lifecycle
@@ -99,6 +101,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - The portal names no colour a palette variable does not own. Dark mode redefines every entry in `:root` and leaves a literal untouched, so a hard-coded hue survives the switch and lands unreadable.
 - The portal builds two documents from one Vite root: `index.html` for the dashboard and `panel.html` for the status-area glance. Both read the same generated snapshot, and both take summing, day bucketing, traffic bins, and series colours from `usage-model.js`, `token-traffic.js`, and `timeline-colors.js`; neither aggregates the ledger on its own.
 - The status-area icon exists on Windows only, decided in `status-area-policy.ts`. Wherever it exists, closing the dashboard hands the application to it rather than quitting, and its panel window is what keeps the process alive.
+- Removing every integration is one helper call, `setup --uninstall`, named once as `REMOVE_INTEGRATIONS_ARGS`. Windows runs it from the Squirrel uninstall event; macOS, where trashing the bundle runs nothing, offers it as an application-menu command, decided in `integration-removal.ts`. It never touches the usage ledger.
 - The panel document draws the panel's only frame. Its window is transparent so it reserves no non-client margin: the window rect is the content rect, `PANEL_SIZE` means on screen what `panelPlacement` clamps against, and the shell's own window border never lands on the hairline the document draws at the edge of its content.
 - Every asset `portal/index.html` references lives inside the Vite root. A path that leaves `portal/` resolves during the build and falls through to the SPA fallback in the development server.
 - The application ships the faces it is designed in. Naming a family in `--sans`, `--mono`, or `--serif` only states a preference, so a machine without it falls silently through to the next entry in the list. Both surfaces that declare those tokens carry their own faces: the dashboard from `portal/fonts/`, the first-run window inline, because it loads from a `data:` URL and has no path to resolve against. Bundle the weights the rendered surface asks for, measured rather than read off the declarations.

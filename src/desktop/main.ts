@@ -5,7 +5,6 @@ import {
   Menu,
   nativeTheme,
   shell,
-  type MenuItemConstructorOptions,
 } from "electron";
 import { updateElectronApp } from "update-electron-app";
 import { spawn } from "node:child_process";
@@ -20,7 +19,13 @@ import {
   installedHelperPath,
 } from "../core/application-paths.js";
 import { changeDataRoot } from "./data-root-change.js";
-import { HelperRuntime } from "./helper-runtime.js";
+import { applicationMenuTemplate } from "./application-menu.js";
+import { HelperRuntime, type HelperRunResult } from "./helper-runtime.js";
+import {
+  integrationRemovalNotice,
+  integrationRemovalPrompt,
+  REMOVE_INTEGRATIONS_ARGS,
+} from "./integration-removal.js";
 import { LogbookWatcher } from "./logbook-watcher.js";
 import {
   PANEL_URL,
@@ -424,52 +429,42 @@ async function createWindow(
 }
 
 function installApplicationMenu(): void {
-  const applicationItems: MenuItemConstructorOptions[] = [
-    {
-      label: "Refresh Data",
-      accelerator: "CmdOrCtrl+R",
-      click: () => void refreshAndReload(),
-    },
-    { type: "separator" },
-    {
-      label: "Settings...",
-      accelerator: "CmdOrCtrl+,",
-      click: () => void openSettings(),
-    },
-  ];
-
-  const template: MenuItemConstructorOptions[] = process.platform === "darwin"
-    ? [
-      {
-        label: app.name,
-        submenu: [
-          { role: "about" },
-          { type: "separator" },
-          ...applicationItems,
-          { type: "separator" },
-          { role: "hide" },
-          { role: "hideOthers" },
-          { role: "unhide" },
-          { type: "separator" },
-          { role: "quit" },
-        ],
-      },
-      { role: "editMenu" },
-      { role: "windowMenu" },
-    ]
-    : [
-      {
-        label: "Application",
-        submenu: [
-          ...applicationItems,
-          { type: "separator" },
-          { role: "quit" },
-        ],
-      },
-      { role: "viewMenu" },
-      { role: "help", submenu: [{ role: "about" }] },
-    ];
+  const template = applicationMenuTemplate(process.platform, app.name, {
+    refresh: () => void refreshAndReload(),
+    openSettings: () => void openSettings(),
+    removeIntegrations: () => void removeIntegrations(),
+  });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+/**
+ * Asks, then withdraws every hook and terminal wrapper, and quits once they
+ * are gone so no running copy implies capture that no longer happens.
+ */
+async function removeIntegrations(): Promise<void> {
+  const question = integrationRemovalPrompt();
+  const reply = await showMessageBox({
+    type: "warning",
+    title: "Remove Agent Integrations",
+    message: question.message,
+    detail: setupQuestionDetail(question),
+    buttons: question.options.map((option) => option.label),
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  });
+  if (setupAnswerAt(question, reply.response, false)?.value !== "remove") return;
+
+  let result: HelperRunResult;
+  try {
+    result = await helperRuntime.removeIntegrations();
+  } catch (error) {
+    await showOperationError("The integrations could not be removed.", error);
+    return;
+  }
+  const notice = integrationRemovalNotice(result);
+  await notifyWithDialog(notice);
+  if (notice.tone !== "error") app.quit();
 }
 
 async function refreshAndReload(): Promise<boolean> {
@@ -789,7 +784,7 @@ async function performSquirrelEvent(event: string): Promise<void> {
   if (event === "--squirrel-uninstall") {
     const helper = installedHelperPath();
     if (existsSync(helper)) {
-      await spawnAndWait(helper, ["setup", "--uninstall"]).catch(() => undefined);
+      await spawnAndWait(helper, [...REMOVE_INTEGRATIONS_ARGS]).catch(() => undefined);
     }
     await Promise.all([
       rm(join(helper, ".."), { recursive: true, force: true }),

@@ -28,6 +28,7 @@ import {
   resolveProviderDataRoots,
 } from "../utils/provider-data-roots.js";
 import { resolveUsageRootFromDisk } from "../utils/usage-root.js";
+import { REMOVE_INTEGRATIONS_ARGS } from "./integration-removal.js";
 
 export interface HelperRunResult {
   code: number;
@@ -259,6 +260,17 @@ export class HelperRuntime {
 
   resetSetup(): Promise<void> {
     return rm(desktopSetupStatePath(), { force: true });
+  }
+
+  /**
+   * Withdraws every hook and terminal wrapper the helper installed. Once they
+   * are gone the setup state no longer describes the machine, so it goes too,
+   * and the next launch installs them again rather than trusting it.
+   */
+  async removeIntegrations(): Promise<HelperRunResult> {
+    const result = await this.run([...REMOVE_INTEGRATIONS_ARGS]);
+    if (result.code === 0) await this.resetSetup();
+    return result;
   }
 
   private bundledPath(): string {
