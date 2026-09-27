@@ -153,15 +153,12 @@ test("the detach shim reads a bounded head of a Claude transcript", () => {
 });
 
 test("no code path reads or writes a CSV spend source", () => {
-  // logbook.d/ is the only spend source. Two files still name the retired CSV,
-  // and both exist to keep it retired rather than to read it: the one-shot
-  // that folded the legacy file into the shards, and the health check that
-  // reports one reappearing beside them. They are named here so a third file
-  // learning to read a CSV is a failure rather than a silent second source.
-  const RETIRING_THE_CSV = [
-    join("scripts", "health-check.mjs"),
-    join("scripts", "migrate-csv-to-shards.mjs"),
-  ];
+  // logbook.d/ is the only spend source. One file still names the retired CSV,
+  // and it exists to keep it retired rather than to read it: the health check
+  // that reports one reappearing beside the shards. It is named here so a
+  // second file learning to read a CSV is a failure rather than a silent
+  // second source.
+  const RETIRING_THE_CSV = [join("scripts", "health-check.mjs")];
 
   const offenders = sourceFiles()
     .filter((path) => /\.csv\b/i.test(readCode(path)))

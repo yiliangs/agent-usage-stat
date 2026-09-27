@@ -2,8 +2,8 @@
 /**
  * health-check.mjs: integrity guard for the usage data pipeline.
  *
- * The logbook is one directory of per-session JSON shards (logbook.d/, see
- * migrate-csv-to-shards.mjs) that every consumer sums directly. This script
+ * The logbook is one directory of per-session JSON shards (logbook.d/)
+ * that every consumer sums directly. This script
  * checks the invariants that keep those numbers trustworthy and exits 1 if
  * any RED finding fires, so it can run headless (cron / on demand) and fail
  * loudly instead of letting the dashboard drift quietly.
@@ -68,7 +68,7 @@ ok(`${shards.length} shards parsed`);
 
 // ---- resurrected CSV ----
 if (existsSync(join(ROOT, "logbook.csv"))) {
-  fail("logbook.csv reappeared — some machine runs a pre-shard clone; its sessions are being DROPPED. Update that clone (git pull + npm run build), then re-run migrate-csv-to-shards.mjs.");
+  fail("logbook.csv reappeared — some machine runs a pre-shard clone; its sessions are being DROPPED. Update that clone (git pull + npm run build) and let its sync rebuild those sessions from their transcripts, then remove the CSV.");
 } else ok("no legacy logbook.csv");
 
 // ---- forked local shards ----
