@@ -7,6 +7,7 @@ Agent Usage Stat is a standalone desktop analytics application for Claude Code, 
 ```bash
 npm test
 npm run test:desktop
+npm run test:make
 npm run build
 npm start
 npm run make
@@ -79,6 +80,7 @@ Everything upstream of `SessionUsage` and `ParsedTranscript` is provider-specifi
 - `scripts/portal-heatmap-probe.js`: reports what clicking each heatmap day cell opens
 - `scripts/portal-header-probe.js`: reports what the rendered page states about the ledger behind it
 - `scripts/typeface-probe.js`: reports faces a rendered surface draws with but does not ship
+- `scripts/test-make.mjs`: runs every maker into a scratch output and asserts the release installers and the `postMake` prune
 - `scripts/install-local.mjs`: refreshes the installed application in place from a packaged build
 
 ## Invariants
