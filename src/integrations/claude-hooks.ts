@@ -74,7 +74,7 @@ export async function installClaudeHook(settingsPath: string): Promise<void> {
   }
 
   settings.hooks ||= {};
-  const hookCommand = captureHookCommands().unix;
+  const hookCommand = captureHookCommands("claude").unix;
   let updating = false;
   for (const event of CAPTURE_EVENTS) {
     const groups = (settings.hooks[event] ?? []) as ClaudeHookGroup[];

@@ -82,9 +82,11 @@ async function main(argv: string[]): Promise<void> {
 
 async function capture(argv: string[]): Promise<void> {
   const quiet = hasFlag(argv, "--quiet");
+  const host = optionValue(argv, "--host");
   if (hasFlag(argv, "--detach")) {
     runDetachShim({
       quiet,
+      host,
       workerArgsPrefix: isSea() ? [] : [process.argv[1]],
     });
     return;
@@ -94,6 +96,7 @@ async function capture(argv: string[]): Promise<void> {
   await new CaptureCommand().execute({
     session: optionValue(argv, "--session"),
     inputFile: optionValue(argv, "--input-file"),
+    host,
     quiet,
   });
 }

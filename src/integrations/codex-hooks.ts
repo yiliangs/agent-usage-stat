@@ -66,7 +66,7 @@ export async function installCodexHooks(hooksPath: string): Promise<boolean> {
   }
 
   config.hooks ||= {};
-  const commands = captureHookCommands();
+  const commands = captureHookCommands("codex");
   const handler: CommandHook = {
     type: "command",
     command: commands.unix,

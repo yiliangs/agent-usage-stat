@@ -21,6 +21,11 @@ import type { HookData } from "../types/session-hook.js";
  */
 export interface DetachShimOptions {
   quiet?: boolean;
+  /**
+   * The host whose installed hook invoked the shim, passed through verbatim.
+   * The worker validates it; the shim stays free of provider imports.
+   */
+  host?: string;
   /** Arguments placed before the worker command when re-launching this runtime. */
   workerArgsPrefix?: string[];
 }
@@ -113,6 +118,9 @@ export function runDetachShim(options: DetachShimOptions): void {
   ];
   if (options.quiet) {
     args.push("--quiet");
+  }
+  if (options.host) {
+    args.push("--host", options.host);
   }
 
   try {

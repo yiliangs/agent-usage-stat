@@ -28,6 +28,10 @@ import type { HookData } from "../types/session-hook.js";
 import type { SessionProvider } from "../types/provider.js";
 import type { CaptureOutcome } from "../utils/capture-run.js";
 import { recordCaptureHealth } from "../utils/capture-health.js";
+import {
+  isProviderName,
+  type ProviderName,
+} from "../core/provider-definition.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -35,6 +39,8 @@ export interface CaptureOptions {
   session?: string;
   detach?: boolean;
   inputFile?: string;
+  /** The host whose installed hook invoked this capture, from `--host`. */
+  host?: string;
   quiet?: boolean;
 }
 
@@ -48,6 +54,8 @@ export class CaptureCommand {
       isSilent: !!options.quiet,
     }).start();
     logHookEvent(`invoke pid=${process.pid} cwd=${process.cwd()}`);
+    const host = isProviderName(options.host) ? options.host : undefined;
+    if (options.host && !host) logHookEvent(`ignoring unknown host=${options.host}`);
 
     let hookData: HookData | null = null;
     let provider: SessionProvider | undefined;
@@ -87,7 +95,7 @@ export class CaptureCommand {
         if (hookData && !existsSync(resolve(expandHome(transcriptPath)))) {
           outcome = { status: "no_usage", reason: "transcript_missing" };
           provider = await detectProvider(transcriptPath, config).catch(() => undefined);
-          await this.recordHookHealth(hookData, provider, outcome);
+          await this.recordHookHealth(host, hookData, provider, outcome);
           spinner.info("No transcript was written for this session.");
           logHookEvent(`skip missing-transcript session=${sessionId ?? "?"}`);
           return;
@@ -131,7 +139,7 @@ export class CaptureCommand {
 
       if (sessionData.totalTokens <= 0) {
         outcome = { status: "no_usage", reason: "zero_tokens" };
-        await this.recordHookHealth(hookData, provider, outcome);
+        await this.recordHookHealth(host, hookData, provider, outcome);
         spinner.info("No token usage to record.");
         logHookEvent(`skip zero-token session=${sessionId ?? "?"}`);
         return;
@@ -155,7 +163,7 @@ export class CaptureCommand {
         total_cost_usd: Number(sessionData.totalCost.toFixed(6)),
         shard_path: shardPath,
       };
-      await this.recordHookHealth(hookData, provider, outcome);
+      await this.recordHookHealth(host, hookData, provider, outcome);
       logHookEvent(
         `done provider=${provider.name} tokens=${sessionData.totalTokens} cost=${sessionData.totalCost.toFixed(6)} shard=${shardPath}`,
       );
@@ -163,7 +171,7 @@ export class CaptureCommand {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       outcome = { status: "failed", message };
-      await this.recordHookHealth(hookData, provider, outcome);
+      await this.recordHookHealth(host, hookData, provider, outcome);
       spinner.fail("Failed to record usage.");
       logHookEvent(`fatal: ${message}`);
       if (!options.quiet) console.error(chalk.red(`Error: ${message}`));
@@ -238,22 +246,33 @@ export class CaptureCommand {
     }
   }
 
+  /**
+   * File the attempt under the host whose hook made it. An installed hook
+   * names that host with `--host`, which holds even when the payload failed
+   * to parse or no provider could be detected, and wins over detection when
+   * the two disagree, because the monitor reports on that host's hook. Hooks
+   * installed before the flag existed fall back to the detected provider, and
+   * a capture that is neither a named hook nor a hook payload (a manual
+   * `capture --session`) records nothing.
+   */
   private async recordHookHealth(
+    host: ProviderName | undefined,
     hookData: HookData | null,
     provider: SessionProvider | undefined,
     outcome: CaptureOutcome,
   ): Promise<void> {
-    if (!hookData?.hook_event_name || !provider) return;
+    const owner = host ?? (hookData?.hook_event_name ? provider?.name : undefined);
+    if (!owner) return;
     try {
       await recordCaptureHealth({
-        provider: provider.name,
-        hookEventName: hookData.hook_event_name,
+        provider: owner,
+        hookEventName: hookData?.hook_event_name || "unknown",
         status: outcome.status,
         ...(outcome.status === "failed" ? { message: outcome.message } : {}),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      logHookEvent(`health update failed provider=${provider.name}: ${message}`);
+      logHookEvent(`health update failed provider=${owner}: ${message}`);
     }
   }
 
