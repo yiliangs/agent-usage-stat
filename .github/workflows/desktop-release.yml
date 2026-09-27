@@ -32,6 +32,8 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_BASE64) -or
               [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
             Write-Host "No Windows signing certificate configured. Building unsigned."
+            # A missing certificate is success, and the unsigned build still reaches the
+            # auto-update feed. See README.md, "Releases and auto-update".
             exit 0
           }
           $certificatePath = Join-Path $env:RUNNER_TEMP "agent-usage-stat.pfx"
@@ -76,6 +78,8 @@ jobs:
         run: |
           if [[ -z "$APPLE_CERTIFICATE_BASE64" || -z "$APPLE_CERTIFICATE_PASSWORD" ]]; then
             echo "No macOS signing certificate configured. Building ad-hoc signed and unnotarized."
+            # A missing certificate is success, and the ad-hoc build still reaches the
+            # auto-update feed. See README.md, "Releases and auto-update".
             exit 0
           fi
           certificate_path="$RUNNER_TEMP/agent-usage-stat.p12"
